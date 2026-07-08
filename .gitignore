@@ -8,6 +8,8 @@ backup-*/
 CLAUDE.md
 SPEC.md
 IDEAS.md
+SPEC-WEB.md
+SPEC-WEB-AUDIT.md
 
 # website build output
 website/.next/
