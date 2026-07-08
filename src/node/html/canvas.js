@@ -6,10 +6,10 @@
  * single-file page for live sessions and frozen exports.
  */
 
-import { escapeHtml, serializeForInlineScript } from "../utils.js";
+import { escapeHtml, serializeForInlineScript } from "../../core/utils.js";
 import { getClientBundle, getDompurifyScript, getFrozenClientBundle, getKatexCss } from "./built-assets.js";
-import { CANVAS_SHELL } from "./shell.js";
-import { CANVAS_STYLES } from "./styles.js";
+import { CANVAS_SHELL } from "../../core/html/shell.js";
+import { CANVAS_STYLES } from "../../core/html/styles.js";
 
 export function buildCanvasHtml(hydration) {
   const title = hydration?.title || "Rabbithole";

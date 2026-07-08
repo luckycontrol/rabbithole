@@ -3,8 +3,11 @@ import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { openBrowser } from "./browser.js";
 import { log, error as logError } from "../logger.js";
-import { addAssetsToHole, getAssetContentType, resolveAsset, saveHole } from "../storage.js";
-import { inheritedNodeBaseUrl, maybeUpgradeBaseUrlFromFrontmatter, normalizeBaseUrl } from "../base-url.js";
+import { addAssetsToHole, defaultFsStore, getAssetContentType, resolveAsset } from "../fs-store.js";
+import { maybeUpgradeBaseUrlFromFrontmatter, normalizeBaseUrl } from "../../core/base-url.js";
+import { extractAssetRefsFromMarkdown } from "../../core/assets.js";
+import { createHoleState, holeStateToHole, reduceHoleEvent } from "../../core/reducer.js";
+import { lineageTitlesFromMap } from "../../core/model.js";
 import { buildJsonError, parseRequestBody, closeServerGracefully, CLOSE_TIMEOUT_MS } from "./http.js";
 import { writeSseEvent } from "./sse.js";
 
@@ -46,15 +49,19 @@ export class RabbitHoleSession {
     this.rootId = rootId || null;
     this.createdAt = createdAt || new Date().toISOString();
     this.assetNames = new Set(assetNames || []);
-    this.viewState = viewState ?? null;
     this.renderPage = renderPage;
     this.onClose = onClose;
 
-    /** @type {Map<string, object>} */
-    this.nodes = new Map();
-    for (const node of nodes || []) {
-      this.nodes.set(node.id, node);
-    }
+    this.state = createHoleState({
+      hole_id: this.holeId,
+      title: this.title,
+      root_id: this.rootId,
+      created_at: this.createdAt,
+      view_state: viewState ?? null,
+      nodes,
+    });
+    this.nodes = this.state.nodes;
+    this.viewState = this.state.view_state;
 
     this.pendingByRequest = new Map(); // request_id -> node_id
     // Requests whose node was deleted mid-answer: a late answer_branch for one
@@ -371,16 +378,16 @@ export class RabbitHoleSession {
 
   // ---- node tree ----------------------------------------------------------
 
+  dispatchHoleEvent(event, options = {}) {
+    const reduced = reduceHoleEvent(this.state, event, options);
+    this.state = reduced.state;
+    this.nodes = this.state.nodes;
+    this.viewState = this.state.view_state;
+    return reduced.effects || {};
+  }
+
   lineageTitles(nodeId) {
-    const titles = [];
-    let current = this.nodes.get(nodeId);
-    const guard = new Set();
-    while (current && !guard.has(current.id)) {
-      guard.add(current.id);
-      titles.push(current.title || "Untitled");
-      current = current.parent_id ? this.nodes.get(current.parent_id) : null;
-    }
-    return titles.reverse();
+    return lineageTitlesFromMap(this.nodes, nodeId);
   }
 
   // For the browser page. Markdown is canonical on the wire; the page derives
@@ -446,13 +453,10 @@ export class RabbitHoleSession {
     // Answered nodes persist in full. Pending nodes persist as durable asks —
     // the question and its anchor survive, but any half-streamed markdown is
     // dropped: on resume the question is re-asked and answered fresh.
+    const hole = holeStateToHole(this.state);
     return {
-      hole_id: this.holeId,
-      title: this.title,
-      root_id: this.rootId,
-      created_at: this.createdAt,
-      view_state: this.viewState,
-      nodes: [...this.nodes.values()]
+      ...hole,
+      nodes: hole.nodes
         .filter((n) => (n.status ?? "answered") === "answered" || n.status === "pending")
         .map((n) => (n.status === "pending" ? { ...n, markdown: "" } : n)),
     };
@@ -473,7 +477,7 @@ export class RabbitHoleSession {
     const snapshot = this.toHole();
     this.savingChain = this.savingChain
       .catch(() => {})
-      .then(() => saveHole(snapshot))
+      .then(() => defaultFsStore.saveHole(snapshot))
       .catch((err) => logError(`Save failed: ${err.message}`));
     return this.savingChain;
   }
@@ -504,25 +508,31 @@ export class RabbitHoleSession {
     for (const asset of addedAssets) this.assetNames.add(asset.name);
 
     const explicitBaseUrl = normalizeBaseUrl(baseUrl);
-    if (explicitBaseUrl) {
-      node.base_url = explicitBaseUrl;
-      node.base_url_source = "explicit";
-    }
+    const baseUrlFields = explicitBaseUrl
+      ? { base_url: explicitBaseUrl, base_url_source: "explicit" }
+      : { base_url: node.base_url, base_url_source: node.base_url_source };
 
     // A partial call streams a chunk into the pending node and returns right
     // away — the request stays claimable, the watchdog stays armed (a death
     // mid-stream should still surface as stalled), and nothing persists yet.
     if (partial) {
-      node.markdown = (node.markdown || "") + String(content ?? "");
+      const markdown = (node.markdown || "") + String(content ?? "");
+      this.dispatchHoleEvent({
+        type: "node_progress",
+        node_id: node.id,
+        markdown,
+        ...baseUrlFields,
+      });
+      const updated = this.nodes.get(node.id);
       this.startAnswerWatchdog();
       this.broadcast({
         type: "node_progress",
-        node_id: node.id,
-        markdown: node.markdown,
-        base_url: node.base_url,
-        base_url_source: node.base_url_source,
+        node_id: updated.id,
+        markdown: updated.markdown,
+        base_url: updated.base_url,
+        base_url_source: updated.base_url_source,
       });
-      return { ok: true, node_id: node.id, request_id: requestId, partial: true };
+      return { ok: true, node_id: updated.id, request_id: requestId, partial: true };
     }
 
     // Claim the request before the async render boundary so a concurrent
@@ -535,26 +545,45 @@ export class RabbitHoleSession {
     // finishes, append; if content restates everything, replace).
     const tail = String(content ?? "");
     const buffered = node.markdown || "";
-    node.markdown = buffered && !tail.startsWith(buffered) ? buffered + tail : tail;
-    node.title = String(title ?? node.title ?? "Untitled").trim() || "Untitled";
-    if (!explicitBaseUrl) maybeUpgradeBaseUrlFromFrontmatter(node);
-    node.status = "answered";
-    // Fresh answers land unread; the client flips this the moment the human
-    // actually opens them (and immediately if they're watching it stream).
-    node.read = false;
+    const answered = {
+      ...node,
+      ...baseUrlFields,
+      markdown: buffered && !tail.startsWith(buffered) ? buffered + tail : tail,
+      title: String(title ?? node.title ?? "Untitled").trim() || "Untitled",
+      status: "answered",
+      // Fresh answers land unread; the client flips this the moment the human
+      // actually opens them (and immediately if they're watching it stream).
+      read: false,
+    };
+    if (!explicitBaseUrl) maybeUpgradeBaseUrlFromFrontmatter(answered);
+    this.dispatchHoleEvent({
+      type: "node_answered",
+      node_id: answered.id,
+      parent_id: answered.parent_id,
+      title: answered.title,
+      markdown: answered.markdown,
+      base_url: answered.base_url,
+      base_url_source: answered.base_url_source,
+      origin: answered.origin,
+      position: answered.position,
+      size: answered.size,
+      font_scale: answered.font_scale,
+      read: answered.read,
+    });
+    const finalNode = this.nodes.get(nodeId);
 
     this.broadcast({
       type: "node_answered",
-      node_id: node.id,
-      parent_id: node.parent_id,
-      title: node.title,
-      markdown: node.markdown,
-      base_url: node.base_url,
-      base_url_source: node.base_url_source,
-      origin: node.origin,
-      position: node.position,
-      size: node.size,
-      font_scale: node.font_scale,
+      node_id: finalNode.id,
+      parent_id: finalNode.parent_id,
+      title: finalNode.title,
+      markdown: finalNode.markdown,
+      base_url: finalNode.base_url,
+      base_url_source: finalNode.base_url_source,
+      origin: finalNode.origin,
+      position: finalNode.position,
+      size: finalNode.size,
+      font_scale: finalNode.font_scale,
     });
     this.flushSave();
 
@@ -621,35 +650,11 @@ export class RabbitHoleSession {
 
     const requestId = String(payload.request_id || randomUUID());
     const nodeId = String(payload.node_id || randomUUID());
-    const selectedText = String(payload.selected_text ?? "").trim();
-    const question = String(payload.question ?? "").trim();
-    // A lens ask carries the full crafted question for the agent plus a short
-    // lens key so every UI surface can show a tidy badge instead of the prompt.
-    const lens = normalizeLens(payload.lens);
-    // A synthesis ask ("summarize this whole journey") is a whole-document ask
-    // that the UI renders as a distinct branch node, not a chat turn.
-    const synthesis = payload.synthesis === true;
-    const anchor = normalizeAnchor(payload.anchor);
-    const branchType = normalizeBranchType(payload.branch_type, selectedText);
-    const inheritedBase = inheritedNodeBaseUrl(parent);
-
-    const node = {
-      id: nodeId,
-      parent_id: parentId,
-      title: synthesis ? "Synthesis" : lens ? LENS_LABELS[lens] : question ? truncate(question, 48) : "…",
-      markdown: "",
-      base_url: inheritedBase.base_url,
-      base_url_source: inheritedBase.base_url_source,
-      origin: { selected_text: selectedText, question, lens, synthesis, anchor, branch_type: branchType },
-      position: normalizePosition(payload.position),
-      size: normalizeSize(payload.size),
-      font_scale: 1,
-      collapsed: false,
-      status: "pending",
-      read: false,
-      created_at: new Date().toISOString(),
-    };
-    this.nodes.set(nodeId, node);
+    const effects = this.dispatchHoleEvent(
+      { ...payload, type: "branch_request", request_id: requestId, node_id: nodeId, parent_id: parentId },
+      { now: new Date().toISOString() }
+    );
+    const node = effects.createdNode;
     this.pendingByRequest.set(requestId, nodeId);
 
     const event = {
@@ -659,10 +664,10 @@ export class RabbitHoleSession {
       node_id: nodeId,
       parent_node_id: parentId,
       parent_node_title: parent.title || "Untitled",
-      selected_text: selectedText,
-      question,
-      lens,
-      ...(synthesis ? { synthesis: true } : {}),
+      selected_text: node.origin.selected_text,
+      question: node.origin.question,
+      lens: node.origin.lens,
+      ...(node.origin.synthesis ? { synthesis: true } : {}),
       lineage: this.lineageTitles(parentId),
     };
 
@@ -679,35 +684,17 @@ export class RabbitHoleSession {
     return { ok: true, node_id: nodeId, request_id: requestId };
   }
 
-  applyNodeFields(node, payload) {
-    if (payload.position) node.position = normalizePosition(payload.position);
-    if (payload.size) node.size = normalizeSize(payload.size);
-    if (typeof payload.collapsed === "boolean") node.collapsed = payload.collapsed;
-    if (Number.isFinite(payload.font_scale)) node.font_scale = payload.font_scale;
-    if (typeof payload.read === "boolean") node.read = payload.read;
-  }
-
   // Remove a branch and its whole subtree. Any in-flight ask targeting a doomed
   // node is cancelled (a late answer is absorbed, not errored), queued requests
   // the agent never saw are dropped, and the SSE replay buffer is scrubbed so a
   // reconnect can't resurrect a deleted node via node_answered self-healing.
-  handleDeleteNode(payload) {
+  async handleDeleteNode(payload) {
     const targetId = String(payload.node_id || "");
     if (!targetId || targetId === this.rootId) throw buildJsonError("Cannot delete the root document", 400);
     if (!this.nodes.has(targetId)) return { ok: true, deleted: [] };
 
-    const doomed = new Set([targetId]);
-    let grew = true;
-    while (grew) {
-      grew = false;
-      for (const n of this.nodes.values()) {
-        if (n.parent_id && doomed.has(n.parent_id) && !doomed.has(n.id)) {
-          doomed.add(n.id);
-          grew = true;
-        }
-      }
-    }
-    for (const id of doomed) this.nodes.delete(id);
+    const effects = this.dispatchHoleEvent({ type: "delete_node", node_id: targetId });
+    const doomed = new Set(effects.deletedNodeIds || []);
     for (const [reqId, nodeId] of [...this.pendingByRequest]) {
       if (doomed.has(nodeId)) {
         this.pendingByRequest.delete(reqId);
@@ -717,26 +704,45 @@ export class RabbitHoleSession {
     }
     this.queue = this.queue.filter((ev) => !(ev.node_id && doomed.has(ev.node_id)));
     this.outboundEvents = this.outboundEvents.filter((e) => !(e.data.node_id && doomed.has(e.data.node_id)));
+    await this.gcAssetsForDeletedNodes(effects.deletedNodes || []);
     this.broadcast({ type: "node_deleted", node_ids: [...doomed] });
     this.scheduleSave();
     return { ok: true, deleted: [...doomed] };
   }
 
+  async gcAssetsForDeletedNodes(deletedNodes) {
+    const deletedRefs = new Set();
+    for (const node of deletedNodes) {
+      for (const name of extractAssetRefsFromMarkdown(node.markdown)) deletedRefs.add(name);
+    }
+    if (!deletedRefs.size) return;
+
+    const remainingRefs = new Set();
+    for (const node of this.nodes.values()) {
+      for (const name of extractAssetRefsFromMarkdown(node.markdown)) remainingRefs.add(name);
+    }
+
+    for (const name of deletedRefs) {
+      if (remainingRefs.has(name)) continue;
+      try {
+        await defaultFsStore.deleteAsset(this.holeId, name);
+        this.assetNames.delete(name);
+      } catch (err) {
+        logError(`Asset GC failed for ${name}: ${err.message}`);
+      }
+    }
+  }
+
   handleNodeUpdate(payload) {
-    const node = this.nodes.get(String(payload.node_id || ""));
-    if (!node) return { ok: true }; // tolerate updates for transient nodes
-    this.applyNodeFields(node, payload);
+    if (!this.nodes.has(String(payload.node_id || ""))) return { ok: true }; // tolerate updates for transient nodes
+    this.dispatchHoleEvent({ ...payload, type: "node_update" });
     this.scheduleSave();
     return { ok: true };
   }
 
   // Batched layout update (e.g. Tidy) — one request, one debounced save.
   handleNodesUpdate(payload) {
-    const updates = Array.isArray(payload.nodes) ? payload.nodes : [];
-    for (const u of updates) {
-      const node = this.nodes.get(String(u?.node_id || ""));
-      if (node) this.applyNodeFields(node, u);
-    }
+    this.dispatchHoleEvent({ ...payload, type: "nodes_update" });
     this.scheduleSave();
     return { ok: true };
   }
@@ -753,7 +759,7 @@ export class RabbitHoleSession {
       case "delete_node":
         return this.handleDeleteNode(payload);
       case "view_state":
-        this.viewState = normalizeViewState(payload.state);
+        this.dispatchHoleEvent({ ...payload, type: "view_state" });
         this.scheduleSave();
         return { ok: true };
       case "done":
@@ -894,67 +900,6 @@ function rawAssetRequestName(reqUrl) {
   const name = rawPath.slice("/assets/".length);
   if (!name || /[\/\\%]/.test(name)) return null;
   return name;
-}
-
-function truncate(s, n) {
-  s = String(s);
-  return s.length > n ? s.slice(0, n).trimEnd() + "…" : s;
-}
-
-// The preset lenses the ask popup offers. Keys travel in origin.lens; labels
-// name the node so a lens branch reads "ELI5", not its canned prompt.
-const LENS_LABELS = { explain: "Explain", eli5: "ELI5", example: "Example", deeper: "Go Deeper" };
-
-function normalizeLens(lens) {
-  const key = String(lens ?? "").trim();
-  return Object.prototype.hasOwnProperty.call(LENS_LABELS, key) ? key : null;
-}
-
-function normalizeBranchType(type, selectedText) {
-  const key = String(type ?? "").trim();
-  if (key === "selection" || key === "followup") return key;
-  return selectedText ? "selection" : "followup";
-}
-
-function normalizePosition(pos) {
-  return {
-    x: Number(pos?.x) || 0,
-    y: Number(pos?.y) || 0,
-  };
-}
-
-function normalizeSize(size) {
-  if (!size) return null;
-  const w = Number(size.w);
-  const h = Number(size.h);
-  if (!w || !h) return null;
-  return { w, h };
-}
-
-function normalizeAnchor(anchor) {
-  if (!anchor) return null;
-  const start = Math.max(0, Number(anchor.offset_start) || 0);
-  const end = Math.max(start, Number(anchor.offset_end) || start);
-  return { offset_start: start, offset_end: end };
-}
-
-// The persisted "where was I" blob — kept tiny and strictly shaped so a
-// malformed client post can't bloat the hole file.
-function normalizeViewState(s) {
-  if (!s || typeof s !== "object") return null;
-  const out = {
-    mode: s.mode === "canvas" ? "canvas" : "reader",
-    node_id: typeof s.node_id === "string" ? s.node_id.slice(0, 128) : null,
-    scroll: Math.max(0, Number(s.scroll) || 0),
-  };
-  if (s.view && typeof s.view === "object") {
-    out.view = {
-      x: Number(s.view.x) || 0,
-      y: Number(s.view.y) || 0,
-      scale: Math.min(2.5, Math.max(0.15, Number(s.view.scale) || 1)),
-    };
-  }
-  return out;
 }
 
 // Download filename for /export — slug of the title, safe for a header.

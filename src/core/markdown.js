@@ -1,11 +1,24 @@
-import { Buffer } from "node:buffer";
 import { defaultAssetUrlResolver } from "./assets.js";
 import { createMarkdownRenderer } from "./markdown-renderer.js";
 
 export { MARKDOWN_RENDERER_SENTINEL, createMarkdownRenderer } from "./markdown-renderer.js";
 
+const BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
 export function encodeBase64Utf8(value) {
-  return Buffer.from(String(value ?? ""), "utf8").toString("base64");
+  const bytes = new TextEncoder().encode(String(value ?? ""));
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 3) {
+    const a = bytes[i];
+    const b = i + 1 < bytes.length ? bytes[i + 1] : 0;
+    const c = i + 2 < bytes.length ? bytes[i + 2] : 0;
+    const n = (a << 16) | (b << 8) | c;
+    out += BASE64[(n >> 18) & 63];
+    out += BASE64[(n >> 12) & 63];
+    out += i + 1 < bytes.length ? BASE64[(n >> 6) & 63] : "=";
+    out += i + 2 < bytes.length ? BASE64[n & 63] : "=";
+  }
+  return out;
 }
 
 const nodeRenderer = createMarkdownRenderer({

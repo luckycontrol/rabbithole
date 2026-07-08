@@ -1,6 +1,6 @@
-import { openRabbithole, answerBranch, ingestPdf, listRabbitholes } from "../core/index.js";
-import { normalizeBaseUrl } from "../core/base-url.js";
-import { MAX_ASSETS_PER_CALL, validateAssetEntriesSync } from "../core/storage.js";
+import { openRabbithole, answerBranch, ingestPdf, listRabbitholes } from "../index.js";
+import { normalizeBaseUrl } from "../../core/base-url.js";
+import { MAX_ASSETS_PER_CALL, validateAssetEntriesSync } from "../fs-store.js";
 
 function str(description, extra = {}) {
   return { kind: "string", description, ...extra };

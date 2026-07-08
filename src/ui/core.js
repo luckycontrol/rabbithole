@@ -1,10 +1,28 @@
+import {
+  BRANCH_FOLLOWUP,
+  BRANCH_SELECTION,
+  LENSES,
+  branchTypeOfNode,
+  lensLabel as sharedLensLabel,
+  truncate as sharedTruncate
+} from "../core/model.js";
+import {
+  DEFAULT_CHILD,
+  DEFAULT_ROOT,
+  TREE_PARENT_GAP,
+  TREE_STACK_GAP,
+  boundsOverlap as sharedBoundsOverlap,
+  nodeBounds as sharedNodeBounds,
+  nodeOrder as sharedNodeOrder,
+  shiftBounds as sharedShiftBounds,
+  unionBounds as sharedUnionBounds
+} from "../core/layout.js";
+
+export { BRANCH_FOLLOWUP, BRANCH_SELECTION, DEFAULT_CHILD, DEFAULT_ROOT, LENSES, TREE_PARENT_GAP, TREE_STACK_GAP };
+
 export var SVGNS = "http://www.w3.org/2000/svg";
-export var DEFAULT_ROOT = { w: 480, h: 580 };
-export var DEFAULT_CHILD = { w: 420, h: 460 };
 export var MIN_SCALE = 0.15, MAX_SCALE = 2.5;
 export var READER_BASE = 17, CANVAS_BASE = 14, MIN_FS = 0.7, MAX_FS = 2.4;
-export var BRANCH_SELECTION = "selection", BRANCH_FOLLOWUP = "followup";
-export var TREE_PARENT_GAP = 70, TREE_STACK_GAP = 30;
 
 export var hydration = null;
 export var rootId = null;
@@ -151,20 +169,17 @@ export function uuid() {
     return "n-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
   }
 export function esc(s){ var d=document.createElement("div"); d.textContent = (s==null?"":String(s)); return d.innerHTML; }
-export function truncate(s, n){ s = String(s); return s.length > n ? s.slice(0, n) + "…" : s; }
+export function truncate(s, n){ return sharedTruncate(s, n); }
 export function childrenOf(id) { var out=[]; for (var k in nodes) if (nodes[k].parent_id === id) out.push(nodes[k]); return out; }
 export function anchorStart(n){ return (n.origin && n.origin.anchor) ? n.origin.anchor.offset_start : 1e9; }
 export function lineageNodes(id){ var arr=[], n=nodes[id], guard={}; while(n && !guard[n.id]){ guard[n.id]=1; arr.push(n); n = n.parent_id ? nodes[n.parent_id] : null; } return arr.reverse(); }
 export function isVisible(node){ var p = node.parent_id ? nodes[node.parent_id] : null; while(p){ if(p.collapsed) return false; p = p.parent_id ? nodes[p.parent_id] : null; } return true; }
 export function fontPx(node, base){ return Math.round(base * (node.font_scale || 1)); }
 export function nodeOrder(a,b){
-    return ((a._order||0) - (b._order||0)) || String(a.id || "").localeCompare(String(b.id || ""));
+    return sharedNodeOrder(a, b);
   }
 export function branchTypeOf(n){
-    if (!n || (!n.origin && !n.parent_id)) return null;
-    var t = n.origin && n.origin.branch_type;
-    if (t === BRANCH_SELECTION || t === BRANCH_FOLLOWUP) return t;
-    return n.origin && n.origin.selected_text ? BRANCH_SELECTION : BRANCH_FOLLOWUP;
+    return branchTypeOfNode(n);
   }
 export function isSelectionBranch(n){ return branchTypeOf(n) === BRANCH_SELECTION; }
   // A follow-up is a branch with no selection: asked from the composer, shown
@@ -176,19 +191,16 @@ export function followupsOf(id){
     return childrenOf(id).filter(isFollowup).sort(nodeOrder);
   }
 export function nodeBounds(n){
-    return { minX: n.x, minY: n.y, maxX: n.x + n.w, maxY: n.y + coreHooks.effH(n) };
+    return sharedNodeBounds(n, { effH: coreHooks.effH });
   }
 export function unionBounds(a,b){
-    if (!a) return b;
-    if (!b) return a;
-    return { minX: Math.min(a.minX,b.minX), minY: Math.min(a.minY,b.minY),
-      maxX: Math.max(a.maxX,b.maxX), maxY: Math.max(a.maxY,b.maxY) };
+    return sharedUnionBounds(a, b);
   }
 export function shiftBounds(b, dx, dy){
-    return { minX: b.minX + dx, minY: b.minY + dy, maxX: b.maxX + dx, maxY: b.maxY + dy };
+    return sharedShiftBounds(b, dx, dy);
   }
 export function boundsOverlap(a,b){
-    return !!(a && b && a.minX < b.maxX && a.maxX > b.minX && a.minY < b.maxY && a.maxY > b.minY);
+    return sharedBoundsOverlap(a, b);
   }
 export function agentDown(){ return closed || connLost || !agentAttached; }
   var reduceMotion = false, reduceMotionMql = null;
@@ -332,16 +344,7 @@ export function updateSince(){
       : n + " answers arrived while you were away";
     sinceEl.classList.add("visible");
   }
-  // ---------- lenses (one-tap preset asks) ----------
-  // Each lens sends its full crafted question to the agent, but every UI
-  // surface shows only the short label (origin.lens carries the key).
-export var LENSES = {
-    explain: { label: "Explain", q: "Explain this clearly and precisely: what it means here, why it matters, and the key intuition an expert would want me to take away." },
-    eli5: { label: "ELI5", q: "Explain this like I'm five: start with a concrete everyday analogy, then translate the analogy back to the real thing, one level more precise." },
-    example: { label: "Example", q: "Show this in action with one concrete worked example: realistic, minimal, step by step. Use runnable code if it's code-shaped, real numbers if it's quantitative." },
-    deeper: { label: "Go Deeper", q: "Go one level deeper than this document does: the underlying mechanism, the important edge cases, and what experts know about this that introductory treatments gloss over." }
-  };
-export function lensLabel(key){ return LENSES[key] ? LENSES[key].label : String(key || ""); }
+export function lensLabel(key){ return sharedLensLabel(key); }
 export function lensBadgeHtml(key){ return '<span class="lens-badge">' + esc(lensLabel(key)) + '</span>'; }
 
   // ---------- loading placeholder (pending answers) ----------

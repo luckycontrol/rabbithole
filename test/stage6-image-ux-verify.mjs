@@ -4,9 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { renderMarkdownToHtml } from "../src/core/markdown.js";
-import { buildCanvasHtml } from "../src/core/html/canvas.js";
+import { buildCanvasHtml } from "../src/node/html/canvas.js";
 import { CANVAS_STYLES } from "../src/core/html/styles.js";
-import { createSession, closeAllSessions } from "../src/core/sessions.js";
+import { createSession, closeAllSessions } from "../src/node/sessions.js";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-stage6-"));

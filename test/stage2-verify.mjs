@@ -5,8 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { TextDecoder } from "node:util";
 import { renderMarkdownToHtml } from "../src/core/markdown.js";
-import { buildCanvasHtml } from "../src/core/html/canvas.js";
-import { getDompurifyScript } from "../src/core/html/built-assets.js";
+import { buildCanvasHtml } from "../src/node/html/canvas.js";
+import { getDompurifyScript } from "../src/node/html/built-assets.js";
 import { mountVisuals } from "../src/ui/visuals.js";
 
 function count(haystack, needle) {

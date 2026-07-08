@@ -1580,20 +1580,209 @@ var RabbitholeClient = (() => {
     startRabbithole: () => startRabbithole
   });
 
+  // src/core/assets.js
+  var ALLOWED_ASSET_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
+  var MAX_ASSET_BYTES = 20 * 1024 * 1024;
+  var ALLOWED_EXTENSIONS = new Set(ALLOWED_ASSET_EXTENSIONS);
+  var ASSET_NAME_RE = /^([a-z0-9][a-z0-9_-]*)\.([a-z0-9]+)$/;
+  var ASSET_URL_RE = /^asset:(.*)$/i;
+  function getAssetExtension(name) {
+    const match = ASSET_NAME_RE.exec(String(name != null ? name : ""));
+    if (!match) return null;
+    const ext = match[2];
+    return ALLOWED_EXTENSIONS.has(ext) ? ext : null;
+  }
+  function isValidAssetName(name) {
+    return getAssetExtension(name) !== null;
+  }
+  function defaultAssetUrlResolver(name) {
+    const slash = String.fromCharCode(47);
+    return slash + "assets" + slash + name;
+  }
+  function resolveAssetMarkdownImageUrl(raw, { assetNames = null, resolveAssetUrl: resolveAssetUrl2 = defaultAssetUrlResolver } = {}) {
+    const match = ASSET_URL_RE.exec(String(raw != null ? raw : ""));
+    if (!match) return void 0;
+    const name = match[1];
+    if (!isValidAssetName(name)) return null;
+    if (assetNames && !assetNames.has(name)) return null;
+    return resolveAssetUrl2(name);
+  }
+
+  // src/core/base-url.js
+  var SCHEME_URL = /^[A-Za-z][A-Za-z0-9+.-]*:/;
+  function shouldResolveUrl(raw, baseUrl) {
+    if (!baseUrl) return false;
+    const value = String(raw != null ? raw : "");
+    if (value.startsWith("#")) return false;
+    return !SCHEME_URL.test(value);
+  }
+  function rewriteGithubImageUrl(value) {
+    let url;
+    try {
+      url = new URL(value);
+    } catch (e) {
+      return value;
+    }
+    if (url.protocol !== "https:" || url.hostname !== "github.com") return value;
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (parts.length < 5) return value;
+    const [owner, repo, mode2, ref, ...pathParts] = parts;
+    if (mode2 !== "blob" && mode2 !== "raw" || !owner || !repo || !ref || pathParts.length === 0) return value;
+    return `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${pathParts.join("/")}`;
+  }
+  function resolveMarkdownUrl(raw, { baseUrl = null, image = false, assetNames = null, resolveAssetUrl: resolveAssetUrl2 = void 0 } = {}) {
+    let value = String(raw != null ? raw : "");
+    if (image) {
+      const assetUrl = resolveAssetMarkdownImageUrl(value, { assetNames, resolveAssetUrl: resolveAssetUrl2 });
+      if (assetUrl !== void 0) return assetUrl;
+    }
+    if (shouldResolveUrl(value, baseUrl)) {
+      try {
+        value = new URL(value, baseUrl).href;
+      } catch (e) {
+      }
+    }
+    return image ? rewriteGithubImageUrl(value) : value;
+  }
+
+  // src/core/model.js
+  var BRANCH_SELECTION = "selection";
+  var BRANCH_FOLLOWUP = "followup";
+  var LENSES = Object.freeze({
+    explain: Object.freeze({
+      label: "Explain",
+      q: "Explain this clearly and precisely: what it means here, why it matters, and the key intuition an expert would want me to take away."
+    }),
+    eli5: Object.freeze({
+      label: "ELI5",
+      q: "Explain this like I'm five: start with a concrete everyday analogy, then translate the analogy back to the real thing, one level more precise."
+    }),
+    example: Object.freeze({
+      label: "Example",
+      q: "Show this in action with one concrete worked example: realistic, minimal, step by step. Use runnable code if it's code-shaped, real numbers if it's quantitative."
+    }),
+    deeper: Object.freeze({
+      label: "Go Deeper",
+      q: "Go one level deeper than this document does: the underlying mechanism, the important edge cases, and what experts know about this that introductory treatments gloss over."
+    })
+  });
+  var LENS_LABELS = Object.freeze(
+    Object.fromEntries(Object.entries(LENSES).map(([key, value]) => [key, value.label]))
+  );
+  function truncate2(value, length) {
+    const s = String(value != null ? value : "");
+    return s.length > length ? `${s.slice(0, length).trimEnd()}\u2026` : s;
+  }
+  function lensLabel(key) {
+    return LENSES[key] ? LENSES[key].label : String(key || "");
+  }
+  function branchTypeOfNode(node) {
+    var _a2, _b;
+    if (!node || !node.origin && !node.parent_id) return null;
+    const type = (_a2 = node.origin) == null ? void 0 : _a2.branch_type;
+    if (type === BRANCH_SELECTION || type === BRANCH_FOLLOWUP) return type;
+    return ((_b = node.origin) == null ? void 0 : _b.selected_text) ? BRANCH_SELECTION : BRANCH_FOLLOWUP;
+  }
+
+  // src/core/layout.js
+  var DEFAULT_ROOT = Object.freeze({ w: 480, h: 580 });
+  var DEFAULT_CHILD = Object.freeze({ w: 420, h: 460 });
+  var TREE_PARENT_GAP = 70;
+  var TREE_STACK_GAP = 30;
+  function nodeOrder(a, b) {
+    return ((a == null ? void 0 : a._order) || 0) - ((b == null ? void 0 : b._order) || 0) || String((a == null ? void 0 : a.id) || "").localeCompare(String((b == null ? void 0 : b.id) || ""));
+  }
+  function nodeX(node) {
+    var _a2, _b;
+    return Number((_b = node == null ? void 0 : node.x) != null ? _b : (_a2 = node == null ? void 0 : node.position) == null ? void 0 : _a2.x) || 0;
+  }
+  function nodeY(node) {
+    var _a2, _b;
+    return Number((_b = node == null ? void 0 : node.y) != null ? _b : (_a2 = node == null ? void 0 : node.position) == null ? void 0 : _a2.y) || 0;
+  }
+  function nodeW(node, fallback = DEFAULT_CHILD.w) {
+    var _a2, _b;
+    return Number((_b = node == null ? void 0 : node.w) != null ? _b : (_a2 = node == null ? void 0 : node.size) == null ? void 0 : _a2.w) || fallback;
+  }
+  function nodeH(node, fallback = DEFAULT_CHILD.h) {
+    var _a2, _b;
+    return Number((_b = node == null ? void 0 : node.h) != null ? _b : (_a2 = node == null ? void 0 : node.size) == null ? void 0 : _a2.h) || fallback;
+  }
+  function nodeBounds(node, { effH: effH2 = null } = {}) {
+    const x = nodeX(node);
+    const y = nodeY(node);
+    const w = nodeW(node);
+    const h = typeof effH2 === "function" ? effH2(node) : nodeH(node);
+    return { minX: x, minY: y, maxX: x + w, maxY: y + h };
+  }
+  function unionBounds(a, b) {
+    if (!a) return b;
+    if (!b) return a;
+    return {
+      minX: Math.min(a.minX, b.minX),
+      minY: Math.min(a.minY, b.minY),
+      maxX: Math.max(a.maxX, b.maxX),
+      maxY: Math.max(a.maxY, b.maxY)
+    };
+  }
+  function shiftBounds(bounds, dx, dy) {
+    return {
+      minX: bounds.minX + dx,
+      minY: bounds.minY + dy,
+      maxX: bounds.maxX + dx,
+      maxY: bounds.maxY + dy
+    };
+  }
+  function boundsOverlap(a, b) {
+    return !!(a && b && a.minX < b.maxX && a.maxX > b.minX && a.minY < b.maxY && a.maxY > b.minY);
+  }
+  function subtreeBounds(node, { childrenOf: childrenOf2, effH: effH2 = null, sort = nodeOrder } = {}) {
+    let bounds = nodeBounds(node, { effH: effH2 });
+    if (!(node == null ? void 0 : node.collapsed) && typeof childrenOf2 === "function") {
+      for (const child of childrenOf2(node.id).sort(sort)) {
+        bounds = unionBounds(bounds, subtreeBounds(child, { childrenOf: childrenOf2, effH: effH2, sort }));
+      }
+    }
+    return bounds;
+  }
+  function placeChild(parent, branchType, { childrenOf: childrenOf2, effH: effH2 = null, sort = nodeOrder, childSize = DEFAULT_CHILD } = {}) {
+    const type = branchType === BRANCH_SELECTION ? BRANCH_SELECTION : BRANCH_FOLLOWUP;
+    const parentX = nodeX(parent);
+    const parentY = nodeY(parent);
+    const parentW = nodeW(parent);
+    const x = type === BRANCH_SELECTION ? parentX + parentW + TREE_PARENT_GAP : parentX;
+    let y = type === BRANCH_SELECTION ? parentY : parentY + (typeof effH2 === "function" ? effH2(parent) : nodeH(parent)) + TREE_PARENT_GAP;
+    const siblings = typeof childrenOf2 === "function" ? childrenOf2(parent.id).sort(sort) : [];
+    for (const sibling of siblings) {
+      if (branchTypeOfNode(sibling) === type) {
+        y = Math.max(y, subtreeBounds(sibling, { childrenOf: childrenOf2, effH: effH2, sort }).maxY + TREE_STACK_GAP);
+      }
+    }
+    const blockers = siblings.filter((sibling) => branchTypeOfNode(sibling) !== type).map((sibling) => subtreeBounds(sibling, { childrenOf: childrenOf2, effH: effH2, sort })).sort((a, b) => a.minY - b.minY || a.minX - b.minX);
+    let candidate = { minX: x, minY: y, maxX: x + childSize.w, maxY: y + childSize.h };
+    let bumped = true;
+    let guard = 0;
+    while (bumped && guard++ < 100) {
+      bumped = false;
+      for (const blocker of blockers) {
+        if (boundsOverlap(candidate, blocker)) {
+          y = blocker.maxY + TREE_STACK_GAP;
+          candidate = { minX: x, minY: y, maxX: x + childSize.w, maxY: y + childSize.h };
+          bumped = true;
+        }
+      }
+    }
+    return { x, y };
+  }
+
   // src/ui/core.js
   var SVGNS = "http://www.w3.org/2000/svg";
-  var DEFAULT_ROOT = { w: 480, h: 580 };
-  var DEFAULT_CHILD = { w: 420, h: 460 };
   var MIN_SCALE = 0.15;
   var MAX_SCALE = 2.5;
   var READER_BASE = 17;
   var CANVAS_BASE = 14;
   var MIN_FS = 0.7;
   var MAX_FS = 2.4;
-  var BRANCH_SELECTION = "selection";
-  var BRANCH_FOLLOWUP = "followup";
-  var TREE_PARENT_GAP = 70;
-  var TREE_STACK_GAP = 30;
   var hydration = null;
   var rootId = null;
   var frozen = false;
@@ -1766,9 +1955,8 @@ var RabbitholeClient = (() => {
     d.textContent = s == null ? "" : String(s);
     return d.innerHTML;
   }
-  function truncate2(s, n) {
-    s = String(s);
-    return s.length > n ? s.slice(0, n) + "\u2026" : s;
+  function truncate3(s, n) {
+    return truncate2(s, n);
   }
   function childrenOf(id) {
     var out = [];
@@ -1798,14 +1986,11 @@ var RabbitholeClient = (() => {
   function fontPx(node, base) {
     return Math.round(base * (node.font_scale || 1));
   }
-  function nodeOrder(a, b) {
-    return (a._order || 0) - (b._order || 0) || String(a.id || "").localeCompare(String(b.id || ""));
+  function nodeOrder2(a, b) {
+    return nodeOrder(a, b);
   }
   function branchTypeOf(n) {
-    if (!n || !n.origin && !n.parent_id) return null;
-    var t = n.origin && n.origin.branch_type;
-    if (t === BRANCH_SELECTION || t === BRANCH_FOLLOWUP) return t;
-    return n.origin && n.origin.selected_text ? BRANCH_SELECTION : BRANCH_FOLLOWUP;
+    return branchTypeOfNode(n);
   }
   function isSelectionBranch(n) {
     return branchTypeOf(n) === BRANCH_SELECTION;
@@ -1814,26 +1999,19 @@ var RabbitholeClient = (() => {
     return branchTypeOf(n) === BRANCH_FOLLOWUP;
   }
   function followupsOf(id) {
-    return childrenOf(id).filter(isFollowup).sort(nodeOrder);
+    return childrenOf(id).filter(isFollowup).sort(nodeOrder2);
   }
-  function nodeBounds(n) {
-    return { minX: n.x, minY: n.y, maxX: n.x + n.w, maxY: n.y + coreHooks.effH(n) };
+  function nodeBounds2(n) {
+    return nodeBounds(n, { effH: coreHooks.effH });
   }
-  function unionBounds(a, b) {
-    if (!a) return b;
-    if (!b) return a;
-    return {
-      minX: Math.min(a.minX, b.minX),
-      minY: Math.min(a.minY, b.minY),
-      maxX: Math.max(a.maxX, b.maxX),
-      maxY: Math.max(a.maxY, b.maxY)
-    };
+  function unionBounds2(a, b) {
+    return unionBounds(a, b);
   }
-  function shiftBounds(b, dx, dy) {
-    return { minX: b.minX + dx, minY: b.minY + dy, maxX: b.maxX + dx, maxY: b.maxY + dy };
+  function shiftBounds2(b, dx, dy) {
+    return shiftBounds(b, dx, dy);
   }
-  function boundsOverlap(a, b) {
-    return !!(a && b && a.minX < b.maxX && a.maxX > b.minX && a.minY < b.maxY && a.maxY > b.minY);
+  function boundsOverlap2(a, b) {
+    return boundsOverlap(a, b);
   }
   function agentDown() {
     return closed || connLost2 || !agentAttached2;
@@ -1998,17 +2176,11 @@ var RabbitholeClient = (() => {
     sinceMsg.textContent = n === 1 ? "An answer arrived while you were away" : n + " answers arrived while you were away";
     sinceEl.classList.add("visible");
   }
-  var LENSES = {
-    explain: { label: "Explain", q: "Explain this clearly and precisely: what it means here, why it matters, and the key intuition an expert would want me to take away." },
-    eli5: { label: "ELI5", q: "Explain this like I'm five: start with a concrete everyday analogy, then translate the analogy back to the real thing, one level more precise." },
-    example: { label: "Example", q: "Show this in action with one concrete worked example: realistic, minimal, step by step. Use runnable code if it's code-shaped, real numbers if it's quantitative." },
-    deeper: { label: "Go Deeper", q: "Go one level deeper than this document does: the underlying mechanism, the important edge cases, and what experts know about this that introductory treatments gloss over." }
-  };
-  function lensLabel(key) {
-    return LENSES[key] ? LENSES[key].label : String(key || "");
+  function lensLabel2(key) {
+    return lensLabel(key);
   }
   function lensBadgeHtml(key) {
-    return '<span class="lens-badge">' + esc(lensLabel(key)) + "</span>";
+    return '<span class="lens-badge">' + esc(lensLabel2(key)) + "</span>";
   }
   var LOADING_BUNNY_HTML = '<span class="loading-bunny" aria-hidden="true"><svg width="22" height="17" viewBox="0 0 44 34" fill="currentColor" focusable="false" aria-hidden="true"><circle cx="8.2" cy="18.2" r="3.6"/><path d="M16.8 27.4c-6.4 0-11.1-3.6-11.1-8.4 0-5.1 4.8-8.7 11.4-8.7 6.7 0 11.9 3.9 11.9 8.9 0 4.9-4.9 8.2-12.2 8.2z"/><path d="M29.5 21.2c-4 0-7.1-2.7-7.1-6.2 0-3.6 3.2-6.3 7.2-6.3 4.1 0 7.3 2.7 7.3 6.2 0 3.7-3.2 6.3-7.4 6.3z"/><path d="M27.4 10.4c-.9.3-1.9-.2-2.2-1.1L22.7 2.7c-.4-1 .1-2 1.1-2.4 1-.3 1.9.2 2.3 1.1l2.8 6.7c.4 1-.3 1.9-1.5 2.3z"/><path d="M31.9 10.2c-1 .1-1.8-.5-2-1.5l-1-7.1c-.1-1 .6-1.9 1.6-2 1-.1 1.8.6 2 1.6l1.1 7.1c.1 1-.6 1.8-1.7 1.9z"/><path d="M11.5 28.2h7.6c.5 0 .8.4.6.9-.1.3-.4.6-.8.6l-8.3 1.4c-.8.1-1.5-.5-1.5-1.3 0-.9.8-1.6 2.4-1.6z"/></svg></span>';
   function buildLoading(node) {
@@ -2327,7 +2499,7 @@ var RabbitholeClient = (() => {
         ctx.innerHTML = '<span class="rc-label">Synthesis</span>The journey so far, distilled';
       } else if (node.origin.selected_text) {
         var tail = node.origin.lens ? " \u2014 " + lensBadgeHtml(node.origin.lens) : node.origin.question ? " \u2014 " + esc(node.origin.question) : "";
-        ctx.innerHTML = '<span class="rc-label">From</span>\u201C' + esc(truncate2(node.origin.selected_text, 200)) + "\u201D" + tail + '<span class="rc-go">\u2192</span>';
+        ctx.innerHTML = '<span class="rc-label">From</span>\u201C' + esc(truncate3(node.origin.selected_text, 200)) + "\u201D" + tail + '<span class="rc-go">\u2192</span>';
       } else {
         ctx.innerHTML = '<span class="rc-label">Follow-up</span>' + (node.origin.lens ? lensBadgeHtml(node.origin.lens) : esc(node.origin.question || ""));
       }
@@ -2507,7 +2679,7 @@ var RabbitholeClient = (() => {
       var status = pending ? pendingStatusHtml(k) : isUnread(k) ? '<span class="si-new">new \u2014 open \u2192</span>' : "open \u2192";
       html2 += '<div class="side-item' + (pending ? " pending" : "") + '" data-child="' + k.id + '">';
       html2 += '<div class="si-q"><span class="si-num">' + (i2 + 1) + "</span><span>" + qHtml + "</span></div>";
-      if (quote) html2 += '<div class="si-quote">\u201C' + esc(truncate2(quote, 80)) + "\u201D</div>";
+      if (quote) html2 += '<div class="si-quote">\u201C' + esc(truncate3(quote, 80)) + "\u201D</div>";
       html2 += '<div class="si-status">' + status + "</div>";
       if (pending && k.html) html2 += '<div class="si-live"><div class="md">' + k.html + "</div></div>";
       html2 += "</div>";
@@ -3034,7 +3206,7 @@ var RabbitholeClient = (() => {
     } else if (node.origin && (node.origin.question || node.origin.lens)) {
       var fq = document.createElement("div");
       fq.className = "origin-quote";
-      fq.textContent = node.origin.lens ? "Follow-up \u2014 " + lensLabel(node.origin.lens) : node.origin.question;
+      fq.textContent = node.origin.lens ? "Follow-up \u2014 " + lensLabel2(node.origin.lens) : node.origin.question;
       body.appendChild(fq);
     }
     var dc = buildDocContent(node, CANVAS_BASE);
@@ -3225,9 +3397,42 @@ var RabbitholeClient = (() => {
     return pt.x + " " + (pt.y - d);
   }
   var edgeEls = {};
-  function drawEdges() {
+  var edgeGeometry = {};
+  function ensureEdgeEls(childId) {
+    var els = edgeEls[childId];
+    if (els) return els;
+    var path2 = document.createElementNS(SVGNS, "path");
+    path2.setAttribute("data-child", childId);
+    var dot = document.createElementNS(SVGNS, "circle");
+    dot.setAttribute("r", "3");
+    dot.setAttribute("data-child", childId);
+    edgesSvg.appendChild(path2);
+    edgesSvg.appendChild(dot);
+    edgeEls[childId] = [path2, dot];
+    return edgeEls[childId];
+  }
+  function removeEdge(childId) {
+    var els = edgeEls[childId];
+    if (els) {
+      for (var i2 = 0; i2 < els.length; i2++) if (els[i2].parentNode) els[i2].parentNode.removeChild(els[i2]);
+    }
+    delete edgeEls[childId];
+    delete edgeGeometry[childId];
+    delete edgeHl[childId];
+  }
+  function applyEdgeClasses(childId, path2, dot, anchored) {
+    path2.classList.toggle("edge-hl", !!edgeHl[childId]);
+    dot.classList.toggle("edge-hl", !!edgeHl[childId]);
+    dot.classList.toggle("anchored", !!anchored);
+  }
+  function rebuildEdges() {
     while (edgesSvg.firstChild) edgesSvg.removeChild(edgesSvg.firstChild);
     edgeEls = {};
+    edgeGeometry = {};
+    drawEdges();
+  }
+  function drawEdges() {
+    var live = {};
     var visCache = {};
     function vis(node) {
       var k = node.id;
@@ -3240,28 +3445,30 @@ var RabbitholeClient = (() => {
       var p = nodes[n.parent_id];
       if (!p || !p.el) continue;
       if (!vis(n) || !vis(p)) continue;
+      live[n.id] = true;
       var sides = edgeSides(p, n);
       var start = edgeStart(p, n, sides[0]);
       var end = edgeEnd(n, sides[1]);
       var horiz = sides[0] === "left" || sides[0] === "right";
       var reach = Math.max(40, (horiz ? Math.abs(end.x - start.x) : Math.abs(end.y - start.y)) / 2);
       var d = "M " + start.x + " " + start.y + " C " + ctrlPt(start, sides[0], reach) + " " + ctrlPt(end, sides[1], reach) + " " + end.x + " " + end.y;
-      var path2 = document.createElementNS(SVGNS, "path");
-      path2.setAttribute("d", d);
-      path2.setAttribute("data-child", n.id);
-      var dot = document.createElementNS(SVGNS, "circle");
-      dot.setAttribute("cx", start.x);
-      dot.setAttribute("cy", start.y);
-      dot.setAttribute("r", "3");
-      dot.setAttribute("data-child", n.id);
-      if (start.anchored) dot.classList.add("anchored");
-      if (edgeHl[n.id]) {
-        path2.classList.add("edge-hl");
-        dot.classList.add("edge-hl");
-      }
-      edgesSvg.appendChild(path2);
-      edgesSvg.appendChild(dot);
-      edgeEls[n.id] = [path2, dot];
+      var geom = {
+        d,
+        cx: String(start.x),
+        cy: String(start.y),
+        anchored: !!start.anchored
+      };
+      var els = ensureEdgeEls(n.id);
+      var path2 = els[0], dot = els[1], prev = edgeGeometry[n.id];
+      if (!prev || prev.d !== geom.d) path2.setAttribute("d", geom.d);
+      if (!prev || prev.cx !== geom.cx) dot.setAttribute("cx", geom.cx);
+      if (!prev || prev.cy !== geom.cy) dot.setAttribute("cy", geom.cy);
+      if (!prev || prev.anchored !== geom.anchored) applyEdgeClasses(n.id, path2, dot, geom.anchored);
+      else if (!!edgeHl[n.id] !== path2.classList.contains("edge-hl")) applyEdgeClasses(n.id, path2, dot, geom.anchored);
+      edgeGeometry[n.id] = geom;
+    }
+    for (var childId in edgeEls) {
+      if (!live[childId]) removeEdge(childId);
     }
   }
   var edgeHl = {};
@@ -3406,7 +3613,7 @@ var RabbitholeClient = (() => {
       node.y += dy;
       childrenOf(node.id).filter(function(k) {
         return visited[k.id];
-      }).sort(nodeOrder).forEach(function(k) {
+      }).sort(nodeOrder2).forEach(function(k) {
         moveSubtree(k, dx, dy);
       });
     }
@@ -3414,9 +3621,9 @@ var RabbitholeClient = (() => {
       visited[node.id] = true;
       node.x = x;
       node.y = y;
-      var bounds = nodeBounds(node);
+      var bounds = nodeBounds2(node);
       if (node.collapsed) return bounds;
-      var kids = childrenOf(node.id).sort(nodeOrder);
+      var kids = childrenOf(node.id).sort(nodeOrder2);
       var selectionKids = kids.filter(isSelectionBranch);
       var followupKids = kids.filter(isFollowup);
       var sideBounds = null;
@@ -3424,19 +3631,19 @@ var RabbitholeClient = (() => {
       var sideY = node.y;
       selectionKids.forEach(function(k) {
         var kb = place(k, sideX, sideY);
-        sideBounds = unionBounds(sideBounds, kb);
-        bounds = unionBounds(bounds, kb);
+        sideBounds = unionBounds2(sideBounds, kb);
+        bounds = unionBounds2(bounds, kb);
         sideY = kb.maxY + TREE_STACK_GAP;
       });
       var belowY = node.y + effH(node) + TREE_PARENT_GAP;
       followupKids.forEach(function(k) {
         var kb = place(k, node.x, belowY);
-        if (boundsOverlap(kb, sideBounds)) {
+        if (boundsOverlap2(kb, sideBounds)) {
           var dy = sideBounds.maxY + TREE_STACK_GAP - kb.minY;
           moveSubtree(k, 0, dy);
-          kb = shiftBounds(kb, 0, dy);
+          kb = shiftBounds2(kb, 0, dy);
         }
-        bounds = unionBounds(bounds, kb);
+        bounds = unionBounds2(bounds, kb);
         belowY = kb.maxY + TREE_STACK_GAP;
       });
       return bounds;
@@ -3452,7 +3659,7 @@ var RabbitholeClient = (() => {
       moved.push(nn);
     });
     canvasHooks.persistNodesBulk(moved);
-    drawEdges();
+    rebuildEdges();
     frameAll(true, source2);
   }
   function ensureCanvasBuilt() {
@@ -3475,7 +3682,7 @@ var RabbitholeClient = (() => {
       canvasHooks.hidePeek();
       document.body.classList.add("mode-canvas");
       requestAnimationFrame(function() {
-        drawEdges();
+        rebuildEdges();
         if (!canvasFramed) {
           setCanvasFramed(true);
           frameAll();
@@ -3630,12 +3837,12 @@ var RabbitholeClient = (() => {
     var lens = lensKey && LENSES[lensKey] ? lensKey : null;
     var question = lens ? LENSES[lens].q : askText.value.trim();
     var requestId = uuid(), childId = uuid();
-    var pos = placeChild(parent, BRANCH_SELECTION);
+    var pos = placeChild2(parent, BRANCH_SELECTION);
     var anchor = { offset_start: pendingAsk.startOff, offset_end: pendingAsk.endOff };
     var node = {
       id: childId,
       parent_id: parent.id,
-      title: lens ? lensLabel(lens) : question ? truncate(question, 48) : "\u2026",
+      title: lens ? lensLabel2(lens) : question ? truncate(question, 48) : "\u2026",
       html: "",
       md: "",
       base_url: parent.base_url || null,
@@ -3705,11 +3912,11 @@ var RabbitholeClient = (() => {
   }
   function sendFollowup(parent, question, lens, synthesis) {
     var requestId = uuid(), childId = uuid();
-    var pos = placeChild(parent, BRANCH_FOLLOWUP);
+    var pos = placeChild2(parent, BRANCH_FOLLOWUP);
     var node = {
       id: childId,
       parent_id: parent.id,
-      title: synthesis ? "Synthesis" : lens ? lensLabel(lens) : truncate(question, 48),
+      title: synthesis ? "Synthesis" : lens ? lensLabel2(lens) : truncate(question, 48),
       html: "",
       md: "",
       base_url: parent.base_url || null,
@@ -3815,43 +4022,13 @@ var RabbitholeClient = (() => {
     refreshAmbient();
     flashHint("Couldn't reach the agent \u2014 that ask was undone.");
   }
-  function subtreeBounds(node) {
-    var b = nodeBounds(node);
-    if (!node.collapsed) {
-      childrenOf(node.id).sort(nodeOrder).forEach(function(k) {
-        b = unionBounds(b, subtreeBounds(k));
-      });
-    }
-    return b;
-  }
-  function placeChild(parent, branchType) {
-    var type = branchType === BRANCH_SELECTION ? BRANCH_SELECTION : BRANCH_FOLLOWUP;
-    var x = type === BRANCH_SELECTION ? parent.x + parent.w + TREE_PARENT_GAP : parent.x;
-    var y = type === BRANCH_SELECTION ? parent.y : parent.y + effH(parent) + TREE_PARENT_GAP;
-    var sibs = childrenOf(parent.id).sort(nodeOrder);
-    sibs.forEach(function(s) {
-      if (branchTypeOf(s) === type) {
-        y = Math.max(y, subtreeBounds(s).maxY + TREE_STACK_GAP);
-      }
+  function placeChild2(parent, branchType) {
+    return placeChild(parent, branchType, {
+      childrenOf,
+      effH,
+      sort: nodeOrder2,
+      childSize: DEFAULT_CHILD
     });
-    var blockers = sibs.filter(function(s) {
-      return branchTypeOf(s) !== type;
-    }).map(subtreeBounds).sort(function(a, b) {
-      return a.minY - b.minY || a.minX - b.minX;
-    });
-    var candidate = { minX: x, minY: y, maxX: x + DEFAULT_CHILD.w, maxY: y + DEFAULT_CHILD.h };
-    var bumped = true, guard = 0;
-    while (bumped && guard++ < 100) {
-      bumped = false;
-      blockers.forEach(function(b) {
-        if (boundsOverlap(candidate, b)) {
-          y = b.maxY + TREE_STACK_GAP;
-          candidate = { minX: x, minY: y, maxX: x + DEFAULT_CHILD.w, maxY: y + DEFAULT_CHILD.h };
-          bumped = true;
-        }
-      });
-    }
-    return { x, y };
   }
 
   // src/ui/image-ux.js
@@ -4268,10 +4445,10 @@ var RabbitholeClient = (() => {
       }
     }
     var quote = n.origin && n.origin.selected_text;
-    if (quote) return "\u201C" + hiTokens(truncate2(quote, 90), tokens) + "\u201D";
+    if (quote) return "\u201C" + hiTokens(truncate3(quote, 90), tokens) + "\u201D";
     var q = n.origin && n.origin.question;
-    if (q) return hiTokens(truncate2(q, 100), tokens);
-    return esc(truncate2(body, 100));
+    if (q) return hiTokens(truncate3(q, 100), tokens);
+    return esc(truncate3(body, 100));
   }
   function hiTokens(text2, tokens) {
     if (!tokens.length) return esc(text2);
@@ -4691,7 +4868,7 @@ var RabbitholeClient = (() => {
   function originLine(n) {
     if (!n.origin) return "";
     if (n.origin.synthesis) return "> \u2726 Synthesis of the whole Rabbithole\n\n";
-    var ask2 = n.origin.lens ? lensLabel(n.origin.lens) : n.origin.question || "";
+    var ask2 = n.origin.lens ? lensLabel2(n.origin.lens) : n.origin.question || "";
     if (n.origin.selected_text) return "> Asked about: \u201C" + n.origin.selected_text + "\u201D" + (ask2 ? " \u2014 " + ask2 : "") + "\n\n";
     return ask2 ? "> Follow-up \u2014 " + ask2 + "\n\n" : "";
   }
@@ -4710,7 +4887,7 @@ var RabbitholeClient = (() => {
     closeShare();
     var n = nodes[currentNodeId];
     if (!n) return;
-    copyText(docMarkdown(n, 0), "Copied \u201C" + truncate2(n.title || "Untitled", 40) + "\u201D as Markdown");
+    copyText(docMarkdown(n, 0), "Copied \u201C" + truncate3(n.title || "Untitled", 40) + "\u201D as Markdown");
   }
   function onCopyTrail() {
     closeShare();
@@ -4784,7 +4961,7 @@ var RabbitholeClient = (() => {
     var ids = collectSubtree(node.id, []);
     branchHooks.post({ type: "delete_node", node_id: node.id });
     removeNodesLocal(ids, node.parent_id);
-    flashHint(ids.length > 1 ? "Removed \u201C" + truncate2(title, 40) + "\u201D and " + (ids.length - 1) + " inside it" : "Removed \u201C" + truncate2(title, 40) + "\u201D");
+    flashHint(ids.length > 1 ? "Removed \u201C" + truncate3(title, 40) + "\u201D and " + (ids.length - 1) + " inside it" : "Removed \u201C" + truncate3(title, 40) + "\u201D");
   }
   function removeNodesLocal(ids, parentId) {
     var currentGone = false;
@@ -30799,71 +30976,6 @@ ${text2}</tr>
   var PARA_SEP = new RegExp(String.fromCharCode(8233), "g");
   function escapeHtml2(str) {
     return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-  }
-
-  // src/core/assets.js
-  var ALLOWED_ASSET_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
-  var MAX_ASSET_BYTES = 20 * 1024 * 1024;
-  var ALLOWED_EXTENSIONS = new Set(ALLOWED_ASSET_EXTENSIONS);
-  var ASSET_NAME_RE = /^([a-z0-9][a-z0-9_-]*)\.([a-z0-9]+)$/;
-  var ASSET_URL_RE = /^asset:(.*)$/i;
-  function getAssetExtension(name) {
-    const match = ASSET_NAME_RE.exec(String(name != null ? name : ""));
-    if (!match) return null;
-    const ext = match[2];
-    return ALLOWED_EXTENSIONS.has(ext) ? ext : null;
-  }
-  function isValidAssetName(name) {
-    return getAssetExtension(name) !== null;
-  }
-  function defaultAssetUrlResolver(name) {
-    const slash = String.fromCharCode(47);
-    return slash + "assets" + slash + name;
-  }
-  function resolveAssetMarkdownImageUrl(raw, { assetNames = null, resolveAssetUrl: resolveAssetUrl2 = defaultAssetUrlResolver } = {}) {
-    const match = ASSET_URL_RE.exec(String(raw != null ? raw : ""));
-    if (!match) return void 0;
-    const name = match[1];
-    if (!isValidAssetName(name)) return null;
-    if (assetNames && !assetNames.has(name)) return null;
-    return resolveAssetUrl2(name);
-  }
-
-  // src/core/base-url.js
-  var SCHEME_URL = /^[A-Za-z][A-Za-z0-9+.-]*:/;
-  function shouldResolveUrl(raw, baseUrl) {
-    if (!baseUrl) return false;
-    const value = String(raw != null ? raw : "");
-    if (value.startsWith("#")) return false;
-    return !SCHEME_URL.test(value);
-  }
-  function rewriteGithubImageUrl(value) {
-    let url;
-    try {
-      url = new URL(value);
-    } catch (e) {
-      return value;
-    }
-    if (url.protocol !== "https:" || url.hostname !== "github.com") return value;
-    const parts = url.pathname.split("/").filter(Boolean);
-    if (parts.length < 5) return value;
-    const [owner, repo, mode2, ref, ...pathParts] = parts;
-    if (mode2 !== "blob" && mode2 !== "raw" || !owner || !repo || !ref || pathParts.length === 0) return value;
-    return `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${pathParts.join("/")}`;
-  }
-  function resolveMarkdownUrl(raw, { baseUrl = null, image = false, assetNames = null, resolveAssetUrl: resolveAssetUrl2 = void 0 } = {}) {
-    let value = String(raw != null ? raw : "");
-    if (image) {
-      const assetUrl = resolveAssetMarkdownImageUrl(value, { assetNames, resolveAssetUrl: resolveAssetUrl2 });
-      if (assetUrl !== void 0) return assetUrl;
-    }
-    if (shouldResolveUrl(value, baseUrl)) {
-      try {
-        value = new URL(value, baseUrl).href;
-      } catch (e) {
-      }
-    }
-    return image ? rewriteGithubImageUrl(value) : value;
   }
 
   // src/core/markdown-renderer.js

@@ -4,14 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { warn } from "./logger.js";
-import { backfillLegacyHoleBaseUrls, normalizeStoredBaseUrlFields } from "./base-url.js";
+import { migratePersistedHole, toPersistedHole } from "../core/schema.js";
 import {
   ALLOWED_ASSET_EXTENSIONS,
   MAX_ASSET_BYTES,
   MAX_ASSETS_PER_CALL,
   getAssetContentType,
   validateAssetName,
-} from "./assets.js";
+} from "../core/assets.js";
 
 /**
  * Holes are persisted one JSON file per hole under ~/.rabbithole/.
@@ -142,6 +142,91 @@ async function validateAssetEntries(assets) {
     })
   );
 }
+
+async function bytesToBuffer(bytes, label = "asset bytes") {
+  let buffer;
+  if (bytes instanceof Uint8Array) {
+    buffer = Buffer.from(bytes);
+  } else if (bytes instanceof ArrayBuffer) {
+    buffer = Buffer.from(bytes);
+  } else if (typeof Blob !== "undefined" && bytes instanceof Blob) {
+    buffer = Buffer.from(await bytes.arrayBuffer());
+  } else {
+    throw new Error(`${label} must be a Blob, ArrayBuffer, or Uint8Array`);
+  }
+  if (buffer.byteLength > MAX_ASSET_BYTES) throw new Error(`${label} exceeds 20 MB`);
+  return buffer;
+}
+
+export class FsStore {
+  async listHoles() {
+    return listHoles();
+  }
+
+  async loadHole(holeId) {
+    let raw;
+    try {
+      raw = await fs.readFile(holePath(holeId), "utf-8");
+    } catch (err) {
+      if (err?.code === "ENOENT") return null;
+      throw err;
+    }
+    const migrated = migratePersistedHole(JSON.parse(raw));
+    if (migrated.changed) {
+      await fs.writeFile(holePath(holeId), JSON.stringify(migrated.hole, null, 2), "utf-8");
+    }
+    return migrated.hole;
+  }
+
+  async saveHole(hole) {
+    await saveHole(hole);
+  }
+
+  async deleteHole(holeId) {
+    await fs.rm(holePath(holeId), { force: true });
+    await deleteHoleAssets(holeId);
+  }
+
+  async listAssets(holeId) {
+    return listAssets(holeId);
+  }
+
+  async getAsset(holeId, name) {
+    const filePath = await resolveAsset(holeId, name);
+    return filePath ? fs.readFile(filePath) : null;
+  }
+
+  async putAsset(holeId, name, bytes) {
+    const safeName = validateAssetName(name);
+    const buffer = await bytesToBuffer(bytes);
+    const dir = await ensureAssetDir(holeId);
+    await fs.writeFile(path.join(dir, safeName), buffer);
+  }
+
+  async deleteAsset(holeId, name) {
+    await deleteAsset(holeId, name);
+  }
+
+  async createStaging() {
+    const staged = await createStagedAssetDir();
+    return { ingest_id: staged.ingest_id };
+  }
+
+  async putStagedAsset(ingestId, name, bytes) {
+    const safeName = validateAssetName(name);
+    const buffer = await bytesToBuffer(bytes, "staged asset bytes");
+    const dir = stagedAssetDir(ingestId);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, safeName), buffer);
+  }
+
+  async adoptStagedAssets(holeId, ingestId) {
+    const moved = await adoptStagedAssets(holeId, ingestId);
+    return moved.map((asset) => asset.name);
+  }
+}
+
+export const defaultFsStore = new FsStore();
 
 export async function addAsset(holeId, { name, file_path: filePath }) {
   const [entry] = await validateAssetEntries([{ name, file_path: filePath }]);
@@ -297,37 +382,7 @@ export {
  */
 export async function saveHole(hole) {
   await ensureDir();
-  const persisted = {
-    hole_id: hole.hole_id,
-    title: hole.title,
-    root_id: hole.root_id,
-    created_at: hole.created_at,
-    updated_at: new Date().toISOString(),
-    // Where the human last was (mode, node, scroll, canvas transform) — restored
-    // on reopen so a resume lands exactly where they left off.
-    view_state: hole.view_state ?? null,
-    nodes: hole.nodes.map((node) => {
-      const base = normalizeStoredBaseUrlFields(node);
-      return {
-        id: node.id,
-        parent_id: node.parent_id ?? null,
-        title: node.title ?? "",
-        markdown: node.markdown ?? "",
-        base_url: base.base_url,
-        base_url_source: base.base_url_source,
-        origin: node.origin ?? null,
-        position: node.position ?? { x: 0, y: 0 },
-        size: node.size ?? null,
-        font_scale: node.font_scale ?? 1,
-        collapsed: !!node.collapsed,
-        status: node.status === "pending" ? "pending" : "answered",
-        // Whether the human has opened this answer — unread answers get a dot and
-        // feed the "since you left" count on the next open.
-        read: !!node.read,
-        created_at: node.created_at ?? null,
-      };
-    }),
-  };
+  const persisted = toPersistedHole(hole);
   // Unique temp name per write so concurrent/overlapping saves of the same hole
   // never clobber each other's temp file mid-write; rename is atomic, last wins.
   const finalPath = holePath(hole.hole_id);
@@ -343,12 +398,8 @@ export async function saveHole(hole) {
 }
 
 export async function loadHole(holeId) {
-  const raw = await fs.readFile(holePath(holeId), "utf-8");
-  const hole = JSON.parse(raw);
-  const changed = backfillLegacyHoleBaseUrls(hole);
-  if (changed) {
-    await fs.writeFile(holePath(holeId), JSON.stringify(hole, null, 2), "utf-8");
-  }
+  const hole = await defaultFsStore.loadHole(holeId);
+  if (!hole) throw new Error(`Hole ${JSON.stringify(holeId)} not found`);
   return hole;
 }
 

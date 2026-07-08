@@ -3,8 +3,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createMarkdownRenderer, encodeBase64Utf8 } from "../src/core/markdown.js";
-import { openRabbithole, answerBranch } from "../src/core/index.js";
-import { closeAllSessions, getSession } from "../src/core/sessions.js";
+import { openRabbithole, answerBranch } from "../src/node/index.js";
+import { closeAllSessions, getSession } from "../src/node/sessions.js";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_MAX_BLOCK_MS = "50";

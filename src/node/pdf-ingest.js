@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createRequire } from "node:module";
-import { createStagedAssetDir, ensureAssetDir, loadHole, validateAssetName } from "./storage.js";
+import { createStagedAssetDir, ensureAssetDir, loadHole, validateAssetName } from "./fs-store.js";
 
 const require = createRequire(import.meta.url);
 

@@ -1,9 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { log, error as logError } from "../core/logger.js";
+import { log, error as logError } from "../logger.js";
 import { buildMcpInputSchema } from "./schema.js";
 import { toolDefinitions } from "../tools/manifest.js";
-import { closeAllSessions } from "../core/sessions.js";
+import { closeAllSessions } from "../sessions.js";
 
 const server = new McpServer(
   { name: "rabbithole", version: "0.1.0" },

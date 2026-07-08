@@ -3,8 +3,8 @@ import { randomUUID } from "node:crypto";
 import { log } from "./logger.js";
 import { buildCanvasHtml } from "./html/canvas.js";
 import { createSession, getSession, getSessionByHole, closeSessionsForHole } from "./sessions.js";
-import { addAssetsToHole, adoptStagedAssets, listAssets, loadHole, listHoles } from "./storage.js";
-import { deriveNodeBaseUrl, normalizeBaseUrl, normalizeStoredBaseUrlFields } from "./base-url.js";
+import { addAssetsToHole, defaultFsStore } from "./fs-store.js";
+import { deriveNodeBaseUrl, normalizeBaseUrl, normalizeStoredBaseUrlFields } from "../core/base-url.js";
 
 async function resolveMarkdown({ content, filePath }) {
   if (content) return content;
@@ -30,9 +30,9 @@ export async function openRabbithole({ title, content, filePath, holeId, baseUrl
   const markdown = await resolveMarkdown({ content, filePath });
   const base = deriveNodeBaseUrl({ markdown, explicitBaseUrl: baseUrl });
   const newHoleId = randomUUID();
-  if (ingestId) await adoptStagedAssets(newHoleId, ingestId);
+  if (ingestId) await defaultFsStore.adoptStagedAssets(newHoleId, ingestId);
   await addAssetsToHole(newHoleId, assets);
-  const assetNames = new Set(await listAssets(newHoleId));
+  const assetNames = new Set(await defaultFsStore.listAssets(newHoleId));
   const rootId = randomUUID();
   const rootNode = {
     id: rootId,
@@ -74,8 +74,9 @@ async function resumeRabbithole(holeId, signal, assets) {
   }
 
   await addAssetsToHole(holeId, assets);
-  const hole = await loadHole(holeId);
-  const assetNames = new Set(await listAssets(hole.hole_id));
+  const hole = await defaultFsStore.loadHole(holeId);
+  if (!hole) throw new Error(`Hole ${holeId} not found.`);
+  const assetNames = new Set(await defaultFsStore.listAssets(hole.hole_id));
 
   // Guard against schema drift / partial files: a hole with no root_id or no
   // root node would open a session the browser can't render and the tool would
@@ -154,5 +155,5 @@ export async function answerBranch({ sessionId, requestId, title, content, parti
 
 /** List saved Rabbitholes (most-recently-updated first). */
 export async function listRabbitholes() {
-  return { holes: await listHoles() };
+  return { holes: await defaultFsStore.listHoles() };
 }

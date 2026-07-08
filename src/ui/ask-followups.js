@@ -3,13 +3,9 @@ import {
   BRANCH_SELECTION,
   DEFAULT_CHILD,
   LENSES,
-  TREE_PARENT_GAP,
-  TREE_STACK_GAP,
   ask,
   askGo,
   askText,
-  boundsOverlap,
-  branchTypeOf,
   canvasBuilt,
   childrenOf,
   closed,
@@ -26,17 +22,18 @@ import {
   mode,
   motionSourceFromEvent,
   nextOrder,
-  nodeBounds,
   nodeOrder,
   nodes,
   readerMain,
   refreshAmbient,
   setSurfaceOrigin,
   shouldReduceMotion,
-  shiftBounds,
-  unionBounds,
   uuid
 } from "./core.js";
+import {
+  placeChild as sharedPlaceChild,
+  subtreeBounds as sharedSubtreeBounds
+} from "../core/layout.js";
 import {
   autoGrowEl,
   createNodeEl,
@@ -315,36 +312,13 @@ export function rollbackBranch(node){
   }
 
 export function subtreeBounds(node){
-    var b = nodeBounds(node);
-    if (!node.collapsed){
-      childrenOf(node.id).sort(nodeOrder).forEach(function(k){ b = unionBounds(b, subtreeBounds(k)); });
-    }
-    return b;
+    return sharedSubtreeBounds(node, { childrenOf: childrenOf, effH: effH, sort: nodeOrder });
   }
 export function placeChild(parent, branchType){
-    var type = branchType === BRANCH_SELECTION ? BRANCH_SELECTION : BRANCH_FOLLOWUP;
-    var x = type === BRANCH_SELECTION ? parent.x + parent.w + TREE_PARENT_GAP : parent.x;
-    var y = type === BRANCH_SELECTION ? parent.y : parent.y + effH(parent) + TREE_PARENT_GAP;
-    var sibs = childrenOf(parent.id).sort(nodeOrder);
-    sibs.forEach(function(s){
-      if (branchTypeOf(s) === type){
-        y = Math.max(y, subtreeBounds(s).maxY + TREE_STACK_GAP);
-      }
+    return sharedPlaceChild(parent, branchType, {
+      childrenOf: childrenOf,
+      effH: effH,
+      sort: nodeOrder,
+      childSize: DEFAULT_CHILD
     });
-    var blockers = sibs.filter(function(s){ return branchTypeOf(s) !== type; }).map(subtreeBounds).sort(function(a,b){
-      return (a.minY - b.minY) || (a.minX - b.minX);
-    });
-    var candidate = { minX: x, minY: y, maxX: x + DEFAULT_CHILD.w, maxY: y + DEFAULT_CHILD.h };
-    var bumped = true, guard = 0;
-    while (bumped && guard++ < 100){
-      bumped = false;
-      blockers.forEach(function(b){
-        if (boundsOverlap(candidate, b)){
-          y = b.maxY + TREE_STACK_GAP;
-          candidate = { minX: x, minY: y, maxX: x + DEFAULT_CHILD.w, maxY: y + DEFAULT_CHILD.h };
-          bumped = true;
-        }
-      });
-    }
-    return { x: x, y: y };
   }

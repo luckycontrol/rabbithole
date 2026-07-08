@@ -8,9 +8,9 @@ import {
   inferBaseUrlFromFrontmatter,
   normalizeBaseUrl,
 } from "../src/core/base-url.js";
-import { RabbitHoleSession } from "../src/core/transport/session.js";
-import { loadHole } from "../src/core/storage.js";
-import { toolDefinitions } from "../src/tools/manifest.js";
+import { RabbitHoleSession } from "../src/node/transport/session.js";
+import { loadHole } from "../src/node/fs-store.js";
+import { toolDefinitions } from "../src/node/tools/manifest.js";
 
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-stage3-"));
 

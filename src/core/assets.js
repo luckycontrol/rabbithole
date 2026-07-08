@@ -5,6 +5,7 @@ export const MAX_ASSET_BYTES = 20 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = new Set(ALLOWED_ASSET_EXTENSIONS);
 const ASSET_NAME_RE = /^([a-z0-9][a-z0-9_-]*)\.([a-z0-9]+)$/;
 const ASSET_URL_RE = /^asset:(.*)$/i;
+const ASSET_REF_RE = /\basset:([a-z0-9][a-z0-9_-]*\.[a-z0-9]+)/gi;
 
 export function getAssetExtension(name) {
   const match = ASSET_NAME_RE.exec(String(name ?? ""));
@@ -62,4 +63,13 @@ export function resolveAssetMarkdownImageUrl(raw, { assetNames = null, resolveAs
   if (!isValidAssetName(name)) return null;
   if (assetNames && !assetNames.has(name)) return null;
   return resolveAssetUrl(name);
+}
+
+export function extractAssetRefsFromMarkdown(markdown) {
+  const refs = new Set();
+  for (const match of String(markdown ?? "").matchAll(ASSET_REF_RE)) {
+    const name = match[1].toLowerCase();
+    if (isValidAssetName(name)) refs.add(name);
+  }
+  return refs;
 }

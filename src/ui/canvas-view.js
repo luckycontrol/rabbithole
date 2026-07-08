@@ -466,36 +466,75 @@ function clamp(lo, hi, v){ return Math.max(lo, Math.min(hi, v)); }
   }
 
   var edgeEls = {};
-export function drawEdges(){
+  var edgeGeometry = {};
+  function ensureEdgeEls(childId){
+    var els = edgeEls[childId];
+    if (els) return els;
+    var path = document.createElementNS(SVGNS, "path");
+    path.setAttribute("data-child", childId);
+    var dot = document.createElementNS(SVGNS, "circle");
+    dot.setAttribute("r", "3");
+    dot.setAttribute("data-child", childId);
+    edgesSvg.appendChild(path);
+    edgesSvg.appendChild(dot);
+    edgeEls[childId] = [path, dot];
+    return edgeEls[childId];
+  }
+  function removeEdge(childId){
+    var els = edgeEls[childId];
+    if (els){
+      for (var i = 0; i < els.length; i++) if (els[i].parentNode) els[i].parentNode.removeChild(els[i]);
+    }
+    delete edgeEls[childId];
+    delete edgeGeometry[childId];
+    delete edgeHl[childId];
+  }
+  function applyEdgeClasses(childId, path, dot, anchored){
+    path.classList.toggle("edge-hl", !!edgeHl[childId]);
+    dot.classList.toggle("edge-hl", !!edgeHl[childId]);
+    dot.classList.toggle("anchored", !!anchored);
+  }
+export function rebuildEdges(){
     while (edgesSvg.firstChild) edgesSvg.removeChild(edgesSvg.firstChild);
     edgeEls = {};
+    edgeGeometry = {};
+    drawEdges();
+  }
+export function drawEdges(){
+    var live = {};
     var visCache = {};
     function vis(node){ var k = node.id; if (k in visCache) return visCache[k]; return (visCache[k] = isVisible(node)); }
     for (var id in nodes){
       var n = nodes[id]; if (!n.parent_id || !n.el) continue; var p = nodes[n.parent_id]; if (!p || !p.el) continue;
       if (!vis(n) || !vis(p)) continue;
+      live[n.id] = true;
       var sides = edgeSides(p, n);
       var start = edgeStart(p, n, sides[0]);
       var end = edgeEnd(n, sides[1]);
       var horiz = sides[0] === "left" || sides[0] === "right";
       var reach = Math.max(40, (horiz ? Math.abs(end.x - start.x) : Math.abs(end.y - start.y)) / 2);
       var d = "M " + start.x + " " + start.y + " C " + ctrlPt(start, sides[0], reach) + " " + ctrlPt(end, sides[1], reach) + " " + end.x + " " + end.y;
-      var path = document.createElementNS(SVGNS, "path");
-      path.setAttribute("d", d);
-      path.setAttribute("data-child", n.id);
-      var dot = document.createElementNS(SVGNS, "circle");
-      dot.setAttribute("cx", start.x); dot.setAttribute("cy", start.y); dot.setAttribute("r", "3");
-      dot.setAttribute("data-child", n.id);
-      if (start.anchored) dot.classList.add("anchored");
-      if (edgeHl[n.id]){ path.classList.add("edge-hl"); dot.classList.add("edge-hl"); }
-      edgesSvg.appendChild(path);
-      edgesSvg.appendChild(dot);
-      edgeEls[n.id] = [path, dot];
+      var geom = {
+        d: d,
+        cx: String(start.x),
+        cy: String(start.y),
+        anchored: !!start.anchored
+      };
+      var els = ensureEdgeEls(n.id);
+      var path = els[0], dot = els[1], prev = edgeGeometry[n.id];
+      if (!prev || prev.d !== geom.d) path.setAttribute("d", geom.d);
+      if (!prev || prev.cx !== geom.cx) dot.setAttribute("cx", geom.cx);
+      if (!prev || prev.cy !== geom.cy) dot.setAttribute("cy", geom.cy);
+      if (!prev || prev.anchored !== geom.anchored) applyEdgeClasses(n.id, path, dot, geom.anchored);
+      else if (!!edgeHl[n.id] !== path.classList.contains("edge-hl")) applyEdgeClasses(n.id, path, dot, geom.anchored);
+      edgeGeometry[n.id] = geom;
+    }
+    for (var childId in edgeEls){
+      if (!live[childId]) removeEdge(childId);
     }
   }
-  // Highlight state lives here, not just on the elements — drawEdges rebuilds
-  // the SVG constantly (streaming, scrolling, dragging) and a class-only
-  // highlight would blink off mid-hover on every redraw.
+  // Highlight state lives here, not just on the elements — edges can be removed
+  // and recreated when visibility changes, so hover state needs a stable source.
   var edgeHl = {};
 export function setEdgeHighlight(childId, on){
     if (on) edgeHl[childId] = true; else delete edgeHl[childId];
@@ -642,7 +681,7 @@ export function tidy(source){
     var moved = [];
     ids.forEach(function(id){ var nn=nodes[id]; layoutNode(nn); moved.push(nn); });
     canvasHooks.persistNodesBulk(moved);
-    drawEdges(); frameAll(true, source);
+    rebuildEdges(); frameAll(true, source);
   }
 
   // Canvas cards (DOM + rendered markdown for every node) are only built the first
@@ -668,7 +707,7 @@ export function setMode(m){
       canvasHooks.hidePeek();
       document.body.classList.add("mode-canvas");
       requestAnimationFrame(function(){
-        drawEdges();
+        rebuildEdges();
         // Frame everything only the first time; afterwards the canvas keeps the
         // pan/zoom you left it at.
         if (!canvasFramed){ setCanvasFramed(true); frameAll(); }
