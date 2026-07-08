@@ -20,11 +20,38 @@ Requires Node 18+ and a browser. Pick your agent:
 claude mcp add rabbithole -- npx -y github:shlokkhemani/rabbithole
 ```
 
+Claude Code's default stdio MCP timeout is already long enough for Rabbithole's
+blocking wait. If you manage `.mcp.json` manually, this optional per-server
+field is also fine:
+
+```json
+{
+  "mcpServers": {
+    "rabbithole": {
+      "command": "npx",
+      "args": ["-y", "github:shlokkhemani/rabbithole"],
+      "timeout": 3600000
+    }
+  }
+}
+```
+
 **Codex**
 
 ```bash
 codex mcp add rabbithole -- npx -y github:shlokkhemani/rabbithole
 ```
+
+Then add the timeout field in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.rabbithole]
+command = "npx"
+args = ["-y", "github:shlokkhemani/rabbithole"]
+tool_timeout_sec = 600
+```
+
+`codex mcp add` cannot set `tool_timeout_sec`; edit the config file directly.
 
 **Any other MCP client** — add this to its MCP config:
 
@@ -68,6 +95,9 @@ Follow these steps exactly:
    for Codex, or write the JSON block into the client's MCP config file).
    The `npx -y github:shlokkhemani/rabbithole` form needs no clone and no
    install step — npx fetches this repo and runs `bin/mcp-server.js` over stdio.
+   For Codex, also add `tool_timeout_sec = 600` under
+   `[mcp_servers.rabbithole]` in `~/.codex/config.toml`; `codex mcp add` cannot
+   set that field.
 3. **Verify**: after the client reconnects, four tools should be available —
    `open_rabbithole`, `answer_branch`, `ingest_pdf`, `list_rabbitholes`. (In Claude Code,
    `claude mcp list` should show `rabbithole` as connected. The server itself
@@ -78,7 +108,9 @@ Follow these steps exactly:
    the markdown came from a URL or repo; add `assets` for local images referenced
    as `asset:name.png`), which blocks until they select text and ask. Answer
    with `answer_branch` (stream chunks with `partial: true`, finish with a
-   titled final call) and keep looping until `status='session_closed'`.
+   titled final call) and keep looping until `status='session_closed'`. If a
+   long wait returns `status='keep_listening'`, immediately call
+   `open_rabbithole` with the returned `{ hole_id }` and do not re-send content.
 
 Notes for you: the tool call blocks by design (long-poll) — that is normal, not
 a hang. First `npx` run takes ~15–30s while it fetches the repo; later runs are
@@ -95,6 +127,9 @@ cached. If the browser must not auto-open (headless), set
 | `list_rabbitholes` | List saved holes to resume by id. |
 
 The loop: `open_rabbithole` → `branch_request` → `answer_branch` → `branch_request` → … → `session_closed`.
+Long waits may return `keep_listening`; immediately call `open_rabbithole`
+again with the returned `hole_id`. If the host reports a tool timeout, do the
+same — questions are saved.
 
 For research PDFs, use page renders as the dependable figure source and embedded
 rasters when they are cleaner. For arXiv links, prefer fetching the HTML version
@@ -132,6 +167,7 @@ and opening that content with `base_url` instead of ingesting the PDF.
 |---------|--------|
 | `RABBITHOLE_DIR` | Override the storage directory (default `~/.rabbithole/`). |
 | `RABBITHOLE_NO_BROWSER=1` | Don't auto-open the browser (headless/testing). |
+| `RABBITHOLE_MAX_BLOCK_MS` | Max time for one blocking MCP wait before returning `keep_listening` (default `240000`). |
 
 ## Repo layout
 

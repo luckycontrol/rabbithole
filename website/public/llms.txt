@@ -17,6 +17,16 @@ Register the MCP server in whichever client you are running inside:
 - Codex: `codex mcp add rabbithole -- npx -y github:shlokkhemani/rabbithole`
 - Any other MCP client — add to its `mcpServers` config:
 
+Claude Code's default stdio MCP timeout is fine. For Codex, also add this to
+`~/.codex/config.toml` (`codex mcp add` cannot set `tool_timeout_sec`):
+
+```toml
+[mcp_servers.rabbithole]
+command = "npx"
+args = ["-y", "github:shlokkhemani/rabbithole"]
+tool_timeout_sec = 600
+```
+
 ```json
 {
   "mcpServers": {
@@ -38,9 +48,9 @@ cd rabbithole && npm install
 # then register:  <client> mcp add rabbithole -- node "$(pwd)/bin/mcp-server.js"
 ```
 
-Verify after reconnecting: three tools should be available —
-`open_rabbithole`, `answer_branch`, `list_rabbitholes`. The server identifies
-itself as `rabbithole` in the MCP initialize handshake.
+Verify after reconnecting: four tools should be available —
+`open_rabbithole`, `answer_branch`, `ingest_pdf`, `list_rabbitholes`. The
+server identifies itself as `rabbithole` in the MCP initialize handshake.
 
 Then tell your human to start a session and say:
 "open <some document> in rabbithole".
@@ -57,6 +67,9 @@ Then tell your human to start a session and say:
   short node title. Chunks concatenate verbatim — never repeat text already
   sent.
 - Loop on branch requests until `status='session_closed'`.
+- Long waits may return `status='keep_listening'` with a `hole_id`. Immediately
+  call `open_rabbithole { hole_id }` and do not re-send content. If the host
+  reports a tool timeout, do the same; questions are saved.
 - A branch request with empty `selected_text` is a follow-up question about
   the whole parent document. One with a `lens` field (explain | eli5 |
   example | deeper) carries the style the human tapped — honor it. One with

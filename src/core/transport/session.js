@@ -18,6 +18,8 @@ const SAVE_DEBOUNCE_MS = 400;
 // human is still reading; the only cost of waiting is that the already-blocking
 // agent call releases a little later after a genuine tab close.
 const DISCONNECT_GRACE_MS = 60 * 1000;
+const DEFAULT_MAX_BLOCK_MS = 240 * 1000;
+const REARM_GRACE_MS = 20 * 1000;
 // Cap on retained SSE events for reconnect replay, so a long-lived session
 // doesn't grow this array without bound.
 const MAX_REPLAY_EVENTS = 500;
@@ -26,6 +28,11 @@ const MAX_REPLAY_EVENTS = 500;
 // (cancelled without an MCP request in flight) — tell the browser so pending
 // asks don't shimmer forever. Self-heals: any later agent call re-attaches.
 const ANSWER_WATCHDOG_MS = 4 * 60 * 1000;
+
+function maxBlockMs() {
+  const value = Number(process.env.RABBITHOLE_MAX_BLOCK_MS);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : DEFAULT_MAX_BLOCK_MS;
+}
 
 /**
  * One live Rabbithole: the node tree, the browser transport, and the
@@ -64,6 +71,8 @@ export class RabbitHoleSession {
     this.waiters = []; // FIFO of {resolve, cleanup} for blocked waitForEvent() calls
     this.agentAttached = true; // false once the agent cancels/stalls; browser is told
     this.watchdogTimer = null;
+    this.rearmDetachTimer = null;
+    this.inFlightBranchRequests = new Map(); // request_id -> last delivered branch_request not yet answered
 
     this.sseClients = new Set();
     this.everConnected = false;
@@ -160,6 +169,7 @@ export class RabbitHoleSession {
       this.timeoutHandle = null;
     }
     this.clearAnswerWatchdog();
+    this.clearRearmDetach();
     this.clearDisconnectClose();
     this.flushSave();
 
@@ -168,6 +178,7 @@ export class RabbitHoleSession {
     // Drop any queued (now unanswerable) branch requests and release every
     // blocked agent call with session_closed.
     this.queue.length = 0;
+    this.inFlightBranchRequests.clear();
     const waiters = this.waiters.splice(0);
     for (const waiter of waiters) {
       waiter.cleanup?.();
@@ -210,26 +221,48 @@ export class RabbitHoleSession {
   waitForEvent(signal) {
     if (this.closed) return Promise.resolve({ status: "session_closed", session_id: this.id });
     this.touch();
-    this.setAgentAttached(true);
+    this.markAgentAttached();
     if (this.queue.length > 0) return Promise.resolve(this.deliverToAgent(this.queue.shift()));
+    const inFlight = this.nextInFlightBranchRequest();
+    if (inFlight) return Promise.resolve(this.deliverToAgent(inFlight));
     // FIFO of waiters so concurrent waitForEvent() calls never orphan each other.
     return new Promise((resolve) => {
-      const waiter = { resolve: (event) => resolve(this.deliverToAgent(event)) };
-      const onAbort = () => {
+      let done = false;
+      let budgetTimer = null;
+      let waiter = null;
+      const finish = (event, { deliver = true } = {}) => {
+        if (done) return;
+        done = true;
         const idx = this.waiters.indexOf(waiter);
         if (idx !== -1) this.waiters.splice(idx, 1);
+        waiter?.cleanup?.();
+        resolve(deliver ? this.deliverToAgent(event) : event);
+      };
+      const onAbort = () => {
         this.clearAnswerWatchdog();
         this.setAgentAttached(false, "cancelled");
-        resolve({ status: "cancelled", session_id: this.id });
+        finish({ status: "cancelled", session_id: this.id }, { deliver: false });
       };
+      const cleanup = () => {
+        if (budgetTimer) {
+          clearTimeout(budgetTimer);
+          budgetTimer = null;
+        }
+        if (signal) signal.removeEventListener("abort", onAbort);
+      };
+      waiter = { resolve: (event) => finish(event), cleanup };
       if (signal) {
         if (signal.aborted) {
           onAbort();
           return;
         }
         signal.addEventListener("abort", onAbort, { once: true });
-        waiter.cleanup = () => signal.removeEventListener("abort", onAbort);
       }
+      budgetTimer = setTimeout(() => {
+        this.scheduleRearmDetach();
+        finish(this.keepListeningResult(), { deliver: false });
+      }, maxBlockMs());
+      budgetTimer.unref?.();
       this.waiters.push(waiter);
     });
   }
@@ -247,8 +280,32 @@ export class RabbitHoleSession {
   // Every branch_request handed to the agent arms the watchdog; any subsequent
   // agent activity (answer_branch, another waitForEvent) clears or re-arms it.
   deliverToAgent(event) {
-    if (event && event.status === "branch_request") this.startAnswerWatchdog();
+    if (event && event.status === "branch_request") {
+      this.inFlightBranchRequests.set(event.request_id, event);
+      this.startAnswerWatchdog();
+    }
     return event;
+  }
+
+  nextInFlightBranchRequest() {
+    for (const [requestId, event] of this.inFlightBranchRequests) {
+      const nodeId = this.pendingByRequest.get(requestId);
+      const node = nodeId ? this.nodes.get(nodeId) : null;
+      if (node && node.status === "pending") return event;
+      this.inFlightBranchRequests.delete(requestId);
+    }
+    return null;
+  }
+
+  keepListeningResult() {
+    return {
+      status: "keep_listening",
+      session_id: this.id,
+      hole_id: this.holeId,
+      instruction:
+        `Immediately call open_rabbithole with {"hole_id":"${this.holeId}"} to keep listening. ` +
+        "Do not re-send content; pending asks are saved and will be delivered on re-attach.",
+    };
   }
 
   startAnswerWatchdog() {
@@ -264,6 +321,27 @@ export class RabbitHoleSession {
       clearTimeout(this.watchdogTimer);
       this.watchdogTimer = null;
     }
+  }
+
+  scheduleRearmDetach() {
+    this.clearRearmDetach();
+    this.rearmDetachTimer = setTimeout(() => {
+      this.rearmDetachTimer = null;
+      if (!this.closed) this.setAgentAttached(false, "cancelled");
+    }, REARM_GRACE_MS);
+    this.rearmDetachTimer.unref?.();
+  }
+
+  clearRearmDetach() {
+    if (this.rearmDetachTimer) {
+      clearTimeout(this.rearmDetachTimer);
+      this.rearmDetachTimer = null;
+    }
+  }
+
+  markAgentAttached() {
+    this.clearRearmDetach();
+    this.setAgentAttached(true);
   }
 
   setAgentAttached(attached, reason = null) {
@@ -427,7 +505,8 @@ export class RabbitHoleSession {
     this.touch();
     if (this.closed) throw new Error("Rabbithole session is already closed");
     this.clearAnswerWatchdog();
-    this.setAgentAttached(true);
+    this.markAgentAttached();
+    this.inFlightBranchRequests.delete(requestId);
 
     // The human deleted this branch while the agent was writing it — absorb the
     // answer quietly: partials ack, the final call just blocks for the next event.
@@ -652,6 +731,7 @@ export class RabbitHoleSession {
       if (doomed.has(nodeId)) {
         this.pendingByRequest.delete(reqId);
         this.cancelledRequests.add(reqId);
+        this.inFlightBranchRequests.delete(reqId);
       }
     }
     this.queue = this.queue.filter((ev) => !(ev.node_id && doomed.has(ev.node_id)));

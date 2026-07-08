@@ -58,6 +58,10 @@ export const toolDefinitions = [
       "text spells out the style the human tapped; honor it. One marked saved=true was asked while no " +
       "agent was listening — answer it like any other. On a resumed hole the first branch_request carries " +
       "a 'rehydration' field with the whole tree (and any saved_asks); read it to reload your context. " +
+      "Long waits periodically return status='keep_listening' with hole_id; immediately call " +
+      "open_rabbithole { hole_id } to keep listening, and do not re-send content. If the host reports " +
+      "a tool timeout (e.g. timed out awaiting tools/call), also re-call open_rabbithole { hole_id }; " +
+      "nothing is lost and asks are saved. " +
       "It returns status='session_closed' when the human clicks Done or closes the tab.",
     input: obj({
       title: str("Document title (required for a new hole)", { optional: true }),
@@ -140,7 +144,7 @@ export const toolDefinitions = [
       "- Emit each visual fence contiguously, ideally in one chunk; readers see a placeholder until the fence closes.",
       "- Interleave prose -> visual -> prose when useful. Use a visual only when it genuinely carries the explanation.",
       "",
-      "Finish streaming by sending the remaining final chunk in a normal call with a short 'title'. Partial chunks concatenate verbatim: include your own spacing/newlines and never repeat text already sent. The final call blocks and returns the next event.",
+      "Finish streaming by sending the remaining final chunk in a normal call with a short 'title'. Partial chunks concatenate verbatim: include your own spacing/newlines and never repeat text already sent. The final call blocks and returns the next event. If it returns status='keep_listening', immediately call open_rabbithole { hole_id }; if the host reports a tool timeout (e.g. timed out awaiting tools/call), do the same. Do not re-send content; asks are saved.",
     ].join("\n"),
     input: obj({
       session_id: str("Active session ID from open_rabbithole"),

@@ -6,6 +6,10 @@ const REPO = 'https://github.com/shlokkhemani/rabbithole';
 
 const CMD_CLAUDE = 'claude mcp add rabbithole -- npx -y github:shlokkhemani/rabbithole';
 const CMD_CODEX = 'codex mcp add rabbithole -- npx -y github:shlokkhemani/rabbithole';
+const CODEX_CONFIG = `[mcp_servers.rabbithole]
+command = "npx"
+args = ["-y", "github:shlokkhemani/rabbithole"]
+tool_timeout_sec = 600`;
 const CMD_JSON = `{
   "mcpServers": {
     "rabbithole": {
@@ -23,20 +27,28 @@ const AGENT_STEPS = `1. Check the runtime: node --version   (needs >= 18)
 
    Claude Code   claude mcp add rabbithole -- npx -y github:shlokkhemani/rabbithole
    Codex         codex mcp add rabbithole -- npx -y github:shlokkhemani/rabbithole
+                 then edit ~/.codex/config.toml:
+                 [mcp_servers.rabbithole]
+                 command = "npx"
+                 args = ["-y", "github:shlokkhemani/rabbithole"]
+                 tool_timeout_sec = 600
    anything else add to the client's MCP config:
                  { "command": "npx", "args": ["-y", "github:shlokkhemani/rabbithole"] }
 
    No clone, no build — npx fetches the repo and runs bin/mcp-server.js
    over stdio. The first run takes ~20s; it's cached after that.
+   Note: codex mcp add cannot set tool_timeout_sec.
 
-3. Reconnect, then verify these three tools exist:
-   open_rabbithole · answer_branch · list_rabbitholes
+3. Reconnect, then verify these four tools exist:
+   open_rabbithole · answer_branch · ingest_pdf · list_rabbitholes
 
 4. Tell your human to say: "open <document> in rabbithole"
    You call open_rabbithole with { title, content } — it opens their browser
    and BLOCKS until they select text and ask. That's a long-poll, not a hang.
    Answer with answer_branch: stream 1-3 sentence chunks with partial: true,
    finish with a titled final call, loop until status = 'session_closed'.
+   If a wait returns status = 'keep_listening', immediately call
+   open_rabbithole with the returned { hole_id }; do not re-send content.
 
 Headless? RABBITHOLE_NO_BROWSER=1 skips auto-opening the browser.
 Storage lives in ~/.rabbithole (override: RABBITHOLE_DIR).`;
@@ -181,12 +193,13 @@ export default function Page() {
               </pre>
               <CopyButton text={CMD_CLAUDE} />
             </div>
+            <p className="hint">Default stdio timeout is fine.</p>
           </div>
 
           <div className="install-block">
             <div className="head">
               <span className="name">Codex</span>
-              <span className="hint">one line, done</span>
+              <span className="hint">one line + config</span>
             </div>
             <div className="codebox">
               <pre>
@@ -194,6 +207,14 @@ export default function Page() {
                 -y github:shlokkhemani/rabbithole
               </pre>
               <CopyButton text={CMD_CODEX} />
+            </div>
+            <p className="hint">
+              Then add this in <code>~/.codex/config.toml</code>;{' '}
+              <code>codex mcp add</code> cannot set the timeout.
+            </p>
+            <div className="codebox">
+              <pre>{CODEX_CONFIG}</pre>
+              <CopyButton text={CODEX_CONFIG} />
             </div>
           </div>
 

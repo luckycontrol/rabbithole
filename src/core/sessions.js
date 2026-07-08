@@ -16,6 +16,13 @@ export function getSession(sessionId) {
   return sessions.get(sessionId) || null;
 }
 
+export function getSessionByHole(holeId) {
+  for (const session of sessions.values()) {
+    if (session.holeId === holeId && !session.isClosed()) return session;
+  }
+  return null;
+}
+
 /**
  * Close any live session for the same hole (e.g. before a resume opens a new
  * one) so a stale tab shows "reopened elsewhere" instead of shimmering forever.

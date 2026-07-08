@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { log } from "./logger.js";
 import { renderMarkdownToHtml } from "./markdown.js";
 import { buildCanvasHtml } from "./html/canvas.js";
-import { createSession, getSession, closeSessionsForHole } from "./sessions.js";
+import { createSession, getSession, getSessionByHole, closeSessionsForHole } from "./sessions.js";
 import { addAssetsToHole, adoptStagedAssets, listAssets, loadHole, listHoles } from "./storage.js";
 import { deriveNodeBaseUrl, normalizeBaseUrl, normalizeStoredBaseUrlFields } from "./base-url.js";
 
@@ -68,6 +68,13 @@ export async function openRabbithole({ title, content, filePath, holeId, baseUrl
 
 async function resumeRabbithole(holeId, signal, assets) {
   log(`resumeRabbithole: ${holeId}`);
+  const liveSession = getSessionByHole(holeId);
+  if (liveSession) {
+    const addedAssets = await addAssetsToHole(liveSession.holeId, assets);
+    for (const asset of addedAssets) liveSession.assetNames.add(asset.name);
+    return liveSession.waitForEvent(signal);
+  }
+
   await addAssetsToHole(holeId, assets);
   const hole = await loadHole(holeId);
   const assetNames = new Set(await listAssets(hole.hole_id));
