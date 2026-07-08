@@ -68,8 +68,8 @@ Follow these steps exactly:
    for Codex, or write the JSON block into the client's MCP config file).
    The `npx -y github:shlokkhemani/rabbithole` form needs no clone and no
    install step — npx fetches this repo and runs `bin/mcp-server.js` over stdio.
-3. **Verify**: after the client reconnects, three tools should be available —
-   `open_rabbithole`, `answer_branch`, `list_rabbitholes`. (In Claude Code,
+3. **Verify**: after the client reconnects, four tools should be available —
+   `open_rabbithole`, `answer_branch`, `ingest_pdf`, `list_rabbitholes`. (In Claude Code,
    `claude mcp list` should show `rabbithole` as connected. The server itself
    also responds to a standard MCP `initialize` with server name `rabbithole`.)
 4. **Tell your human what to do next**: they should start a session and say
@@ -89,11 +89,16 @@ cached. If the browser must not auto-open (headless), set
 
 | Tool | What it does |
 |------|--------------|
-| `open_rabbithole` | Open a doc (`{ title, content }` / `{ title, file_path }`, optional `base_url`, optional `assets`) or resume one (`{ hole_id }`). Opens the canvas in the browser and blocks until the human asks something. |
+| `open_rabbithole` | Open a doc (`{ title, content }` / `{ title, file_path }`, optional `base_url`, optional `assets`, optional `ingest_id`) or resume one (`{ hole_id }`). Opens the canvas in the browser and blocks until the human asks something. |
 | `answer_branch` | Answer a pending branch request → a child document. Stream with `partial: true` chunks, then finish with a normal call carrying the node title; use `base_url` for fetched markdown and `assets` for local images referenced as `asset:name.png`. |
+| `ingest_pdf` | Extract a local PDF into page PNGs (`page-001.png`...), opportunistic embedded rasters (`embed-p001-01.png`...), metadata, and per-page text. Author the markdown yourself, reference returned asset names with `asset:`, then pass `ingest_id` to `open_rabbithole`; or pass `hole_id` to ingest directly into an existing hole. |
 | `list_rabbitholes` | List saved holes to resume by id. |
 
 The loop: `open_rabbithole` → `branch_request` → `answer_branch` → `branch_request` → … → `session_closed`.
+
+For research PDFs, use page renders as the dependable figure source and embedded
+rasters when they are cleaner. For arXiv links, prefer fetching the HTML version
+and opening that content with `base_url` instead of ingesting the PDF.
 
 ## What's inside
 

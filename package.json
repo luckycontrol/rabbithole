@@ -11,11 +11,12 @@
     "url": "git+https://github.com/shlokkhemani/rabbithole.git"
   },
   "scripts": {
-    "test": "npm run test:stage1 && npm run test:stage2 && npm run test:stage3 && npm run test:stage4",
+    "test": "npm run test:stage1 && npm run test:stage2 && npm run test:stage3 && npm run test:stage4 && npm run test:stage5",
     "test:stage1": "node test/stage1-verify.mjs",
     "test:stage2": "node test/stage2-verify.mjs",
     "test:stage3": "node test/stage3-base-url-verify.mjs",
-    "test:stage4": "node test/stage4-assets-verify.mjs"
+    "test:stage4": "node test/stage4-assets-verify.mjs",
+    "test:stage5": "node test/stage5-pdf-verify.mjs"
   },
   "keywords": [
     "mcp",
@@ -45,5 +46,9 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "optionalDependencies": {
+    "@napi-rs/canvas": "^1.0.2",
+    "pdfjs-dist": "^4.0.379"
   }
 }

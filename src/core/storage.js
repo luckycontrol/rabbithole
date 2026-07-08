@@ -37,7 +37,7 @@ async function ensureDir() {
  */
 function assertSafeHoleId(holeId) {
   const id = String(holeId ?? "");
-  if (!/^[A-Za-z0-9._-]+$/.test(id) || id === "." || id === "..") {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)) {
     throw new Error(`Invalid hole id: ${JSON.stringify(holeId)}`);
   }
   return id;
@@ -47,14 +47,43 @@ function holePath(holeId) {
   return path.join(holesDir(), `${assertSafeHoleId(holeId)}.json`);
 }
 
+function assetsDir() {
+  return path.join(holesDir(), "assets");
+}
+
 function assetDir(holeId) {
-  return path.join(holesDir(), "assets", assertSafeHoleId(holeId));
+  return path.join(assetsDir(), assertSafeHoleId(holeId));
 }
 
 async function ensureAssetDir(holeId) {
   const dir = assetDir(holeId);
   await fs.mkdir(dir, { recursive: true });
   return dir;
+}
+
+const STAGING_DIR_NAME = ".staging";
+const STAGING_TTL_MS = 24 * 60 * 60 * 1000;
+
+function assertSafeIngestId(ingestId) {
+  const id = String(ingestId ?? "");
+  if (!/^ingest-[a-z0-9][a-z0-9_-]*$/.test(id)) {
+    throw new Error(`Invalid ingest id: ${JSON.stringify(ingestId)}`);
+  }
+  return id;
+}
+
+function stagingRootDir() {
+  return path.join(assetsDir(), STAGING_DIR_NAME);
+}
+
+function stagedAssetDir(ingestId) {
+  return path.join(stagingRootDir(), assertSafeIngestId(ingestId));
+}
+
+function newIngestId() {
+  const stamp = Date.now().toString(36);
+  const suffix = randomUUID().replace(/-/g, "").slice(0, 16);
+  return `ingest-${stamp}-${suffix}`;
 }
 
 function normalizeAssetEntries(assets) {
@@ -139,6 +168,80 @@ export async function addAssetsToHole(holeId, assets) {
   return added;
 }
 
+async function moveFile(source, dest) {
+  try {
+    await fs.rename(source, dest);
+  } catch (err) {
+    if (err?.code !== "EXDEV") throw err;
+    await fs.copyFile(source, dest);
+    await fs.rm(source, { force: true });
+  }
+}
+
+export async function cleanupStagedAssets({ olderThanMs = STAGING_TTL_MS } = {}) {
+  let entries;
+  try {
+    entries = await fs.readdir(stagingRootDir(), { withFileTypes: true });
+  } catch {
+    return;
+  }
+  const cutoff = Date.now() - olderThanMs;
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const full = path.join(stagingRootDir(), entry.name);
+    try {
+      const stat = await fs.stat(full);
+      if (stat.mtimeMs < cutoff) await fs.rm(full, { recursive: true, force: true });
+    } catch {}
+  }
+}
+
+export async function createStagedAssetDir() {
+  await cleanupStagedAssets();
+  await fs.mkdir(stagingRootDir(), { recursive: true });
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const ingestId = newIngestId();
+    const dir = stagedAssetDir(ingestId);
+    try {
+      await fs.mkdir(dir);
+      return { ingest_id: ingestId, dir };
+    } catch (err) {
+      if (err?.code !== "EEXIST") throw err;
+    }
+  }
+  throw new Error("Unable to allocate a staging directory for PDF assets");
+}
+
+export async function resolveStagedAssetDir(ingestId) {
+  const dir = stagedAssetDir(ingestId);
+  try {
+    const stat = await fs.stat(dir);
+    return stat.isDirectory() ? dir : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function adoptStagedAssets(holeId, ingestId) {
+  const sourceDir = await resolveStagedAssetDir(ingestId);
+  if (!sourceDir) {
+    throw new Error(`Unknown ingest_id ${JSON.stringify(ingestId)}; run ingest_pdf again.`);
+  }
+  const destDir = await ensureAssetDir(holeId);
+  const entries = await fs.readdir(sourceDir, { withFileTypes: true });
+  const moved = [];
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const name = validateAssetName(entry.name, "staged asset name");
+    const source = path.join(sourceDir, name);
+    const dest = path.join(destDir, name);
+    await moveFile(source, dest);
+    moved.push({ name, path: dest });
+  }
+  await fs.rm(sourceDir, { recursive: true, force: true });
+  return moved;
+}
+
 export async function listAssets(holeId) {
   let entries;
   try {
@@ -178,7 +281,16 @@ export async function deleteHoleAssets(holeId) {
   await fs.rm(assetDir(holeId), { recursive: true, force: true });
 }
 
-export { ALLOWED_ASSET_EXTENSIONS, MAX_ASSET_BYTES, MAX_ASSETS_PER_CALL, getAssetContentType, validateAssetName };
+export {
+  ALLOWED_ASSET_EXTENSIONS,
+  MAX_ASSET_BYTES,
+  MAX_ASSETS_PER_CALL,
+  getAssetContentType,
+  validateAssetName,
+  assertSafeHoleId,
+  assetDir,
+  ensureAssetDir,
+};
 
 /**
  * @param {{ hole_id, title, root_id, created_at, nodes: object[] }} hole

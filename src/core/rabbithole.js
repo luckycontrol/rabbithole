@@ -4,7 +4,7 @@ import { log } from "./logger.js";
 import { renderMarkdownToHtml } from "./markdown.js";
 import { buildCanvasHtml } from "./html/canvas.js";
 import { createSession, getSession, closeSessionsForHole } from "./sessions.js";
-import { addAssetsToHole, listAssets, loadHole, listHoles } from "./storage.js";
+import { addAssetsToHole, adoptStagedAssets, listAssets, loadHole, listHoles } from "./storage.js";
 import { deriveNodeBaseUrl, normalizeBaseUrl, normalizeStoredBaseUrlFields } from "./base-url.js";
 
 async function resolveMarkdown({ content, filePath }) {
@@ -19,13 +19,19 @@ async function resolveMarkdown({ content, filePath }) {
  * `signal` is the MCP request's AbortSignal — if the human cancels the tool
  * call, the session tells the browser the agent detached.
  */
-export async function openRabbithole({ title, content, filePath, holeId, baseUrl, assets, signal }) {
-  if (holeId) return resumeRabbithole(holeId, signal, assets);
+export async function openRabbithole({ title, content, filePath, holeId, baseUrl, assets, ingestId, signal }) {
+  if (holeId) {
+    if (ingestId) {
+      throw new Error("ingest_id can only be used when starting a new Rabbithole; use ingest_pdf with hole_id for saved holes.");
+    }
+    return resumeRabbithole(holeId, signal, assets);
+  }
 
   log(`openRabbithole: "${title}"`);
   const markdown = await resolveMarkdown({ content, filePath });
   const base = deriveNodeBaseUrl({ markdown, explicitBaseUrl: baseUrl });
   const newHoleId = randomUUID();
+  if (ingestId) await adoptStagedAssets(newHoleId, ingestId);
   await addAssetsToHole(newHoleId, assets);
   const assetNames = new Set(await listAssets(newHoleId));
   const rootId = randomUUID();
