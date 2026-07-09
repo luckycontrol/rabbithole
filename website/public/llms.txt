@@ -1,100 +1,30 @@
 # Rabbithole
 
-> An infinite canvas for learning. The human opens a document, selects text,
-> asks a question — and the answer opens as a fully-rendered child document
-> they can keep branching from. Rabbithole has two paths: agents install the
-> local MCP server, and humans can open the static browser app at `/app`.
-> Free, MIT-licensed, local-first.
+> An infinite canvas for learning. Humans open the browser app at
+> `https://rabbithole.ing/` and bring their own model key. Agents install the
+> local MCP server and open a local browser canvas for the human.
 
 Source: https://github.com/shlokkhemani/rabbithole
 MCP path requires: Node >= 18 and a browser.
 
 ## Paths
 
+- Human path: open `https://rabbithole.ing/`. OpenRouter is recommended, with
+  Anthropic, OpenAI, and local OpenAI-compatible endpoints also supported. Keys
+  stay in the browser except for requests to the provider origin the human
+  configures. Holes persist in IndexedDB and can be exported/imported as
+  `.rabbithole` files.
 - Agent path: install the MCP server below. The agent does the answering and
   Rabbithole opens a local browser canvas.
-- Human path: open `https://rabbithole.ing/app`. The app is bring-your-own-key:
-  OpenRouter is recommended, with Anthropic, OpenAI, and local
-  OpenAI-compatible endpoints also supported. Keys stay in the browser except
-  for requests to the provider origin the human configures. Holes persist in
-  IndexedDB and can be exported/imported as `.rabbithole` files.
 
-## Setup (do this for your human)
-
-Register the MCP server in whichever client you are running inside:
+## Setup
 
 - Claude Code: `claude mcp add rabbithole -- npx -y github:shlokkhemani/rabbithole`
 - Codex: `codex mcp add rabbithole -- npx -y github:shlokkhemani/rabbithole`
-- Any other MCP client — add to its `mcpServers` config:
-
-Claude Code's default stdio MCP timeout is fine. For Codex, also add this to
-`~/.codex/config.toml` (`codex mcp add` cannot set `tool_timeout_sec`):
-
-```toml
-[mcp_servers.rabbithole]
-command = "npx"
-args = ["-y", "github:shlokkhemani/rabbithole"]
-tool_timeout_sec = 600
-```
-
-```json
-{
-  "mcpServers": {
-    "rabbithole": {
-      "command": "npx",
-      "args": ["-y", "github:shlokkhemani/rabbithole"]
-    }
-  }
-}
-```
-
-No clone, no build step: npx fetches the repo and runs `bin/mcp-server.js`
-over stdio. The first launch takes ~20 seconds while npx fetches; later
-launches are cached. If startup latency matters, clone instead:
-
-```bash
-git clone https://github.com/shlokkhemani/rabbithole.git
-cd rabbithole && npm install
-# then register:  <client> mcp add rabbithole -- node "$(pwd)/bin/mcp-server.js"
-```
-
-Verify after reconnecting: four tools should be available —
-`open_rabbithole`, `answer_branch`, `ingest_pdf`, `list_rabbitholes`. The
-server identifies itself as `rabbithole` in the MCP initialize handshake.
-
-Then tell your human to start a session and say:
-"open <some document> in rabbithole".
-
-## How the tools work
-
-- `open_rabbithole { title, content }` (or `{ title, file_path }`) opens the
-  canvas in the human's browser and BLOCKS until they select text and ask a
-  question. This long-poll is by design — it is not a hang. Pass `{ hole_id }`
-  to resume a saved hole instead.
-- When it returns `status='branch_request'`, answer with `answer_branch`:
-  stream 1–3 sentence chunks with `partial: true` (each returns immediately
-  and appears live on the canvas), then finish with a normal call carrying a
-  short node title. Chunks concatenate verbatim — never repeat text already
-  sent.
-- Loop on branch requests until `status='session_closed'`.
-- Long waits may return `status='keep_listening'` with a `hole_id`. Immediately
-  call `open_rabbithole { hole_id }` and do not re-send content. If the host
-  reports a tool timeout, do the same; questions are saved.
-- A branch request with empty `selected_text` is a follow-up question about
-  the whole parent document. One with a `lens` field (explain | eli5 |
-  example | deeper) carries the style the human tapped — honor it. One with
-  `saved=true` was asked while no agent was listening; answer it normally.
-- On a resumed hole the first branch request includes a `rehydration` field
-  with the full document tree — read it to reload context.
-- `list_rabbitholes` lists saved holes to resume by id.
-
-## Configuration
-
-- `RABBITHOLE_DIR` — override the storage directory (default `~/.rabbithole/`).
-- `RABBITHOLE_NO_BROWSER=1` — don't auto-open the browser (headless/testing).
+- Any other MCP client: add the same `npx -y github:shlokkhemani/rabbithole`
+  command to its MCP server config.
 
 ## Links
 
-- [GitHub repo](https://github.com/shlokkhemani/rabbithole): source, README
-  with the same setup steps
-- [Website](https://rabbithole.ing): human-readable overview
+- App: https://rabbithole.ing/
+- GitHub repo: https://github.com/shlokkhemani/rabbithole

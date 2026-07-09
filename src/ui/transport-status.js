@@ -31,7 +31,8 @@ import {
   setConnLost,
   sideEl,
   updateSince,
-  view
+  view,
+  viewAdjusted
 } from "./core.js";
 import {
   renderBreadcrumb,
@@ -91,7 +92,9 @@ export function scheduleViewSave(){
       if (closed) return;
       var cur = nodes[currentNodeId];
       var scroll = (mode === "reader") ? readerMain.scrollTop : ((cur && cur._scrollTop) || 0);
-      post({ type: "view_state", state: { mode: mode, node_id: currentNodeId, scroll: scroll, view: { x: view.x, y: view.y, scale: view.scale } } });
+      var state = { mode: mode, node_id: currentNodeId, scroll: scroll };
+      if (viewAdjusted) state.view = { x: view.x, y: view.y, scale: view.scale };
+      post({ type: "view_state", state: state });
     }, 600);
   }
   var saveTimers = {};

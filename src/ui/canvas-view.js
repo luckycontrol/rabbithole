@@ -45,6 +45,7 @@ import {
   setCanvasBuilt,
   setCanvasFramed,
   setModeValue,
+  setViewAdjusted,
   shiftBounds,
   shouldReduceMotion,
   unionBounds,
@@ -109,6 +110,7 @@ export function applyTransform(){
         },
         setView: function(x, y, scale){
           viewAnimId++;
+          setViewAdjusted(true);
           view.x = Number(x);
           view.y = Number(y);
           view.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Number(scale)));
@@ -128,6 +130,7 @@ export function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y
     viewAnimId++; // manual zoom cancels any in-flight glide
     next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, next));
     if (next === view.scale) return;
+    setViewAdjusted(true);
     var w = screenToWorld(sx, sy); view.scale = next; view.x = sx - w.x * view.scale; view.y = sy - w.y * view.scale; applyTransform();
   }
   var NODE_EXPAND_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M9.25 3.75h3v3"/><path d="M12.25 3.75 8.75 7.25"/><path d="M6.75 12.25h-3v-3"/><path d="M3.75 12.25l3.5-3.5"/></svg>';
@@ -568,7 +571,7 @@ export function focusOrigin(node, on){
     var sx, sy, ox, oy;
     onPointerGesture(viewport,
       function(e){ if (e.button !== 0 || e.target.closest(".node")) return false; canvasHooks.hideAsk(); viewAnimId++; viewport.classList.add("panning"); sx=e.clientX; sy=e.clientY; ox=view.x; oy=view.y; return true; },
-      function(ev){ view.x = ox + (ev.clientX - sx); view.y = oy + (ev.clientY - sy); applyTransform(); },
+      function(ev){ setViewAdjusted(true); view.x = ox + (ev.clientX - sx); view.y = oy + (ev.clientY - sy); applyTransform(); },
       function(){ viewport.classList.remove("panning"); });
   }
 
@@ -595,7 +598,7 @@ export function focusOrigin(node, on){
     }
     wheelTs = e.timeStamp;
     if (wheelKind === "pan"){
-      e.preventDefault(); viewAnimId++; view.x -= e.deltaX; view.y -= e.deltaY; applyTransform();
+      e.preventDefault(); viewAnimId++; setViewAdjusted(true); view.x -= e.deltaX; view.y -= e.deltaY; applyTransform();
       return;
     }
     var over = (e.target.closest && e.target.closest(".node")) || null;
@@ -623,9 +626,14 @@ export function frameAll(animate, source){
     if (!ids.length) return;
     var minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
     ids.forEach(function(id){ var n=nodes[id]; minX=Math.min(minX,n.x); minY=Math.min(minY,n.y); maxX=Math.max(maxX,n.x+n.w); maxY=Math.max(maxY,n.y+(n.collapsed?40:n.h)); });
-    var vw=viewport.clientWidth||window.innerWidth, vh=viewport.clientHeight||window.innerHeight, pad=100;
+    var fullW=viewport.clientWidth||window.innerWidth, fullH=viewport.clientHeight||window.innerHeight, pad=100;
+    var rail=document.getElementById("web-rail"), toolbar=document.getElementById("toolbar");
+    var insetX=(rail && rail.classList.contains("open")) ? rail.getBoundingClientRect().width : 0;
+    var insetY=toolbar ? toolbar.getBoundingClientRect().height : 0;
+    var vw=fullW-insetX, vh=fullH-insetY;
     var ts = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min((vw-pad)/(maxX-minX), (vh-pad)/(maxY-minY), 1.2)));
-    var tx = vw/2 - (minX+(maxX-minX)/2)*ts, ty = vh/2 - (minY+(maxY-minY)/2)*ts;
+    var tx = insetX+vw/2 - (minX+(maxX-minX)/2)*ts, ty = insetY+vh/2 - (minY+(maxY-minY)/2)*ts;
+    if (source) setViewAdjusted(true);
     if (animate){ animateView(tx, ty, ts, { source: source, duration: 270, ease: "inOut" }); return; }
     view.scale = ts; view.x = tx; view.y = ty; applyTransform();
   }

@@ -1,18 +1,19 @@
 import { createHoleState, holeStateToHole, reduceHoleEvent } from "../../core/reducer.js";
 import { lineageNodesFromMap, truncate } from "../../core/model.js";
 import { extractAssetRefsFromMarkdown } from "../../core/assets.js";
-import { TitleSentinelParser, fallbackTitleForNode, normalizeProviderError } from "../brain/index.js";
+import { ProviderError, TitleSentinelParser, fallbackTitleForNode, normalizeProviderError } from "../brain/index.js";
 
 const SAVE_DEBOUNCE_MS = 400;
 
 export class DirectRabbitholeHost {
-  constructor({ store, hole, brain = null, onEvent = null, onToast = null, onDone = null, onRestore = null } = {}) {
+  constructor({ store, hole, brain = null, onEvent = null, onToast = null, onDone = null, onRestore = null, onAuthRequired = null } = {}) {
     this.store = store;
     this.brain = brain;
     this.onEvent = onEvent;
     this.onToast = onToast;
     this.onDone = onDone;
     this.onRestore = onRestore;
+    this.onAuthRequired = onAuthRequired;
     this.state = createHoleState(hole);
     this.holeId = this.state.hole_id;
     this.title = this.state.title;
@@ -20,6 +21,7 @@ export class DirectRabbitholeHost {
     this.savingChain = Promise.resolve();
     this.abortByNode = new Map();
     this.lastEventId = 0;
+    this.disposed = false;
   }
 
   hydration() {
@@ -67,6 +69,7 @@ export class DirectRabbitholeHost {
   }
 
   async handleBrowserEvent(payload) {
+    if (this.disposed) return { ok: false, error: "This Rabbithole is no longer active." };
     const type = String(payload?.type ?? "");
     try {
       switch (type) {
@@ -198,6 +201,7 @@ export class DirectRabbitholeHost {
   }
 
   startAnswer(nodeId, { reset = false } = {}) {
+    if (this.disposed) return;
     const node = this.state.nodes.get(nodeId);
     if (!node || node.status !== "pending") return;
 
@@ -218,7 +222,13 @@ export class DirectRabbitholeHost {
   async runAnswer(nodeId, controller) {
     const node = this.state.nodes.get(nodeId);
     if (!node || node.status !== "pending") return;
-    if (!this.brain) throw new Error("Add a provider key in Settings before asking.");
+    if (!this.brain) {
+      throw new ProviderError("Add your provider key to keep asking.", {
+        status: 401,
+        code: "missing_key",
+        retryable: true,
+      });
+    }
 
     const context = this.buildBranchContext(node);
     const parser = new TitleSentinelParser({ fallbackTitle: fallbackTitleForNode(node) });
@@ -279,6 +289,9 @@ export class DirectRabbitholeHost {
     const node = this.state.nodes.get(nodeId);
     if (!node || node.status !== "pending") return;
     const normalized = normalizeProviderError(err);
+    if (isAuthError(normalized)) {
+      this.onAuthRequired?.({ node, error: normalized, retry: () => this.handleRetry({ node_id: nodeId }) });
+    }
     this.emit({
       type: "node_error",
       node_id: nodeId,
@@ -344,11 +357,13 @@ export class DirectRabbitholeHost {
   }
 
   scheduleSave() {
+    if (this.disposed) return;
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => this.flushSave(), SAVE_DEBOUNCE_MS);
   }
 
   async flushSave() {
+    if (this.disposed) return this.savingChain;
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = 0;
@@ -358,6 +373,18 @@ export class DirectRabbitholeHost {
       .catch(() => {})
       .then(() => this.store.saveHole(snapshot));
     return this.savingChain;
+  }
+
+  dispose() {
+    this.disposed = true;
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = 0;
+    }
+    for (const controller of this.abortByNode.values()) {
+      try { controller.abort(); } catch {}
+    }
+    this.abortByNode.clear();
   }
 }
 
@@ -391,9 +418,17 @@ export function createHoleFromMarkdown({ title, markdown, baseUrl = null } = {})
   };
 }
 
-function titleFromMarkdown(markdown) {
+export function titleFromMarkdown(markdown) {
   const match = /^#\s+(.+)$/m.exec(String(markdown || ""));
   return match ? truncate(match[1].trim(), 80) : "";
+}
+
+function isAuthError(error) {
+  return error?.status === 401 ||
+    error?.status === 403 ||
+    error?.code === "401" ||
+    error?.code === "403" ||
+    error?.code === "missing_key";
 }
 
 function resetMarkdownForRun(node) {

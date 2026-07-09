@@ -4,33 +4,30 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const websiteDir = path.join(rootDir, "website");
-const websiteOut = path.join(websiteDir, "out");
 const webDist = path.join(rootDir, "web/dist");
 const publishDir = path.join(rootDir, "publish");
-const npmBin = process.platform === "win32" ? "npm.cmd" : "npm";
 
 run(process.execPath, ["build.mjs"], { cwd: rootDir });
 
-if (!(await exists(path.join(websiteDir, "node_modules", "next")))) {
-  run(npmBin, ["ci"], { cwd: websiteDir });
-}
-
-await fs.rm(websiteOut, { recursive: true, force: true });
-run(npmBin, ["run", "build"], { cwd: websiteDir });
-
-await assertFile(path.join(websiteOut, "index.html"), "website/out/index.html");
 await assertFile(path.join(webDist, "index.html"), "web/dist/index.html");
+await assertFile(path.join(webDist, "favicon.svg"), "web/dist/favicon.svg");
 
 await fs.rm(publishDir, { recursive: true, force: true });
 await fs.mkdir(publishDir, { recursive: true });
-await copyContents(websiteOut, publishDir);
-await fs.mkdir(path.join(publishDir, "app"), { recursive: true });
-await copyContents(webDist, path.join(publishDir, "app"));
-await prepareAppSubpath(path.join(publishDir, "app"));
+await copyContents(webDist, publishDir);
+await fs.copyFile(path.join(rootDir, "website/public/og.jpg"), path.join(publishDir, "og.jpg"));
+await fs.copyFile(path.join(rootDir, "website/public/robots.txt"), path.join(publishDir, "robots.txt"));
+await fs.writeFile(path.join(publishDir, "_redirects"), redirectsText(), "utf8");
+await fs.writeFile(path.join(publishDir, "llms.txt"), llmsText(), "utf8");
 
 await assertFile(path.join(publishDir, "index.html"), "publish/index.html");
-await assertFile(path.join(publishDir, "app/index.html"), "publish/app/index.html");
+await assertFile(path.join(publishDir, "app.js"), "publish/app.js");
+await assertFile(path.join(publishDir, "styles.css"), "publish/styles.css");
+await assertFile(path.join(publishDir, "og.jpg"), "publish/og.jpg");
+await assertFile(path.join(publishDir, "robots.txt"), "publish/robots.txt");
+await assertFile(path.join(publishDir, "llms.txt"), "publish/llms.txt");
+await assertFile(path.join(publishDir, "favicon.svg"), "publish/favicon.svg");
+await assertFile(path.join(publishDir, "_redirects"), "publish/_redirects");
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -54,36 +51,31 @@ async function copyContents(sourceDir, targetDir) {
   }
 }
 
-async function exists(file) {
-  try {
-    await fs.access(file);
-    return true;
-  } catch {
-    return false;
-  }
+function redirectsText() {
+  return [
+    "/app / 301",
+    "/app/* /:splat 301",
+    "",
+  ].join("\n");
 }
 
-async function prepareAppSubpath(appDir) {
-  const indexPath = path.join(appDir, "index.html");
-  let html = await fs.readFile(indexPath, "utf8");
-  html = replaceOnce(html, 'href="./styles.css"', 'href="/app/styles.css"');
-  html = replaceOnce(html, 'src="./dompurify.js"', 'src="/app/dompurify.js"');
-  html = replaceOnce(html, 'src="./frozen-source.js"', 'src="/app/frozen-source.js"');
-  html = replaceOnce(html, 'src="./app.js"', 'src="/app/app.js"');
-  html = replaceOnce(
-    html,
-    '<script type="module" src="/app/app.js"></script>',
-    '<script src="/app/asset-base.js"></script>\n<script type="module" src="/app/app.js"></script>'
-  );
-  await fs.writeFile(indexPath, html, "utf8");
-  await fs.writeFile(path.join(appDir, "asset-base.js"), 'window.__RABBITHOLE_WEB_ASSET_BASE__="/app/";\n', "utf8");
-}
-
-function replaceOnce(source, search, replacement) {
-  if (!source.includes(search)) {
-    throw new Error(`Expected app index.html to include ${search}`);
-  }
-  return source.replace(search, replacement);
+function llmsText() {
+  return [
+    "# Rabbithole",
+    "",
+    "Rabbithole is an infinite canvas for learning. Humans open the browser app at https://rabbithole.ing/ and bring their own model key.",
+    "",
+    "Agents install and open Rabbithole through the local MCP server:",
+    "",
+    "```bash",
+    "claude mcp add rabbithole -- npx -y github:shlokkhemani/rabbithole",
+    "```",
+    "",
+    "- Human path: https://rabbithole.ing/",
+    "- Agent path: use the MCP command above from Claude Code or an MCP-compatible coding agent.",
+    "- Source: https://github.com/shlokkhemani/rabbithole",
+    "",
+  ].join("\n");
 }
 
 async function assertFile(file, label) {

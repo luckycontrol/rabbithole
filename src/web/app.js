@@ -1,9 +1,10 @@
 import { CANVAS_SHELL } from "../core/html/shell.js";
 import { createBrain, defaultBrainSettings, presetFor, settingsForPreset, BRAIN_PRESETS } from "./brain/index.js";
 import { IdbStore } from "./store/idb-store.js";
-import { DirectRabbitholeHost, createHoleFromMarkdown } from "./transport/direct-host.js";
+import { DirectRabbitholeHost, createHoleFromMarkdown, titleFromMarkdown } from "./transport/direct-host.js";
 import { startRabbithole } from "../ui/entry.js";
 import { activateFocusTrap } from "../ui/focus-trap.js";
+import { renderMarkdownToHtml } from "../ui/renderer.js";
 import { setSnapshotHooks, buildSnapshotHydration, buildSnapshotHtml } from "../ui/snapshot.js";
 import { openUrlToStoredHole } from "./ingest/url.js";
 import { downloadRabbitholeExport, importRabbitholeFile, rabbitholeFilename } from "./portable.js";
@@ -11,16 +12,41 @@ import { testedModelHint } from "./brain/tested-models.js";
 
 const SETTINGS_KEY = "rh-web-settings";
 const KEY_KEY = "rh-web-api-key";
+const LAST_HOLE_KEY = "rh-last-hole";
+const RAIL_KEY = "rh-rail-open";
 const AGENT_COMMAND = "claude mcp add rabbithole -- npx -y github:shlokkhemani/rabbithole";
-const OPENROUTER_WALKTHROUGH_URL = "https://openrouter.ai/docs/quickstart";
+const OPENROUTER_KEYS_URL = "https://openrouter.ai/keys";
+const OPENROUTER_KEY_CHECK_URL = "https://openrouter.ai/api/v1/key";
 const DEFAULT_FETCH_PROXY_URL =
   typeof __RABBITHOLE_DEFAULT_PROXY_URL__ === "string" ? __RABBITHOLE_DEFAULT_PROXY_URL__ : "";
+
+const INTENTS = Object.freeze({
+  ask: { id: "ask", label: "Ask", primary: "Ask" },
+  document: { id: "document", label: "Open as document", primary: "Open document" },
+  url: { id: "url", label: "Open URL", primary: "Open URL" },
+});
+
+const EXAMPLE_QUESTIONS = [
+  "How do rockets land themselves?",
+  "Explain the attention mechanism",
+  "What actually happens in a black hole?",
+];
 
 const store = new IdbStore();
 let memoryKey = "";
 let currentHost = null;
 let currentHoleId = null;
 let uiStarted = false;
+let railOpen = false;
+let blankZoom = 1;
+let composerTrap = null;
+let settingsTrap = null;
+let composerIntentOverride = "";
+let composerAbortController = null;
+let composerStreamingHoleId = "";
+let pendingComposerAction = null;
+let pendingBranchRetry = null;
+let lastHoleCount = 0;
 
 applyInitialWebTheme();
 
@@ -30,242 +56,486 @@ boot().catch((err) => {
 
 async function boot() {
   document.body.classList.add("web-app");
-  const holeId = holeIdFromHash();
-  if (holeId) {
-    const hole = await store.loadHole(holeId);
-    if (!hole) {
-      history.replaceState(null, "", location.pathname);
-      await renderHome();
-      return;
-    }
-    await startHole(hole, { replace: true });
+  renderShell();
+  initAppChrome();
+  initComposer();
+  initSettingsModal();
+  initGlobalDrops();
+
+  const initial = await chooseInitialHole();
+  await renderRail();
+  if (initial) {
+    await startHole(initial, { replace: true });
   } else {
-    await renderHome();
+    showBlankCanvas({ openComposer: true });
   }
+  exposeTestApi();
 }
 
-async function renderHome() {
-  uiStarted = false;
-  currentHost = null;
-  currentHoleId = null;
-  document.documentElement.classList.add("web-home-active");
-  document.documentElement.classList.remove("web-canvas-active");
-  document.body.classList.remove("mode-canvas");
-  document.body.innerHTML = `<main class="web-home">
-    <header class="home-hero">
-      <div class="home-nav">
-        <div class="home-wordmark">
-          <span class="home-mark">${bunnyMarkSvg()}</span>
-          <h1>Rabbithole</h1>
+function renderShell() {
+  document.documentElement.classList.remove("web-home-active");
+  document.documentElement.classList.add("web-canvas-active");
+  document.body.classList.add("mode-canvas", "web-shell");
+  document.body.innerHTML = `<div id="canvas-root">${CANVAS_SHELL}</div>
+    <aside id="web-rail" class="web-rail" aria-label="Rabbitholes" tabindex="-1"></aside>
+    <div id="composer-modal" class="composer-modal" role="dialog" aria-modal="true" aria-labelledby="composer-title" hidden>
+      <div class="composer-card" id="composer-card">
+        <div class="composer-question" id="composer-question" hidden></div>
+        <textarea id="composer-input" rows="1" placeholder="What do you want to understand?" autocomplete="off" spellcheck="true"></textarea>
+        <div class="composer-subline">Paste a doc or URL — or drop a PDF anywhere</div>
+        <div class="intent-row" role="group" aria-label="Intent">
+          ${Object.values(INTENTS).map((intent) => `<button class="intent-chip" type="button" data-intent="${intent.id}" aria-pressed="false">${escapeHtml(intent.label)}</button>`).join("")}
+          <label class="intent-chip improve-chip" id="improve-chip" hidden>
+            <input id="composer-improve" type="checkbox">
+            <span>Improve structure</span>
+          </label>
         </div>
-        <button class="web-secondary settings-open" id="settings-open" type="button" aria-controls="settings-panel" aria-expanded="false">Settings</button>
-      </div>
-      <p class="home-promise">An infinite canvas for learning.</p>
-      <p class="home-lede">Open a document, select what makes you curious, ask, and the answer opens beside it.</p>
-    </header>
-
-    <section class="hole-list-wrap" id="saved-section">
-      <div class="hole-list-head">
-        <h2>Saved holes</h2>
-        <button id="refresh-list" class="web-secondary" type="button">Refresh</button>
-      </div>
-      <div id="hole-list" class="hole-list"></div>
-    </section>
-
-    <section class="new-hole" aria-labelledby="composer-heading">
-      <div class="new-hole-main">
-        <div class="composer-head">
-          <div>
-            <h2 id="composer-heading">Open a document</h2>
-            <p>Paste markdown, drop a PDF, or open a URL.</p>
-          </div>
-          <label class="drop-md" id="drop-md">
+        <div id="composer-examples" class="composer-examples" hidden></div>
+        <div id="composer-key-panel" class="inline-key-slot" hidden></div>
+        <div id="composer-stream" class="composer-stream" hidden>
+          <div id="composer-stream-doc" class="composer-stream-doc md" aria-live="polite"></div>
+        </div>
+        <div id="ingest-status" class="ingest-status" aria-live="polite" aria-atomic="true"></div>
+        <div class="composer-actions">
+          <label class="file-pick" for="file-md">
             <input id="file-md" type="file" accept=".md,.markdown,.pdf,.rabbithole,text/markdown,text/plain,application/pdf,application/json">
             <span>Choose file</span>
           </label>
+          <button id="composer-primary" class="web-primary" type="button">Ask</button>
         </div>
-        <label class="field title-field" for="new-title">
-          <span>Title</span>
-          <input id="new-title" class="web-input" placeholder="Untitled Rabbithole" autocomplete="off">
-        </label>
-        <label class="field paste-field" for="paste-md">
-          <span>Markdown or notes</span>
-          <textarea id="paste-md" class="paste-md" placeholder="Paste markdown, notes, or source text here."></textarea>
-        </label>
-        <label class="switch-field author-toggle" for="improve-structure">
-          <input id="improve-structure" type="checkbox" role="switch">
-          <span class="switch-track" aria-hidden="true"></span>
-          <span class="switch-copy"><strong>Improve structure</strong><small>Use the author model before opening.</small></span>
-        </label>
-        <div class="composer-footer">
-          <p class="drop-hint">Drop .md, .pdf, or .rabbithole anywhere here.</p>
-          <button id="create-hole" class="web-primary" type="button">Open on the canvas</button>
-        </div>
-        <div class="url-open-row">
-          <label class="field url-field" for="open-url-input">
-            <span>URL</span>
-            <input id="open-url-input" class="web-input" placeholder="https://example.com/paper.pdf" inputmode="url" autocomplete="url">
-          </label>
-          <button id="open-url" class="web-secondary" type="button">Open URL</button>
-        </div>
-        <div id="ingest-status" class="ingest-status" aria-live="polite" aria-atomic="true"></div>
       </div>
-    </section>
-
-    <section class="settings-panel home-settings" id="settings-panel" aria-label="AI provider settings"></section>
-
-    <section class="home-footnotes" aria-label="Setup notes">
-      <span class="agent-path">Using a coding agent? <code>${escapeHtml(AGENT_COMMAND)}</code> <button class="copy-command" type="button" data-copy-agent>Copy</button></span>
-    </section>
-  </main><div id="web-toast" class="web-toast" aria-live="polite"></div>`;
-
-  initSettingsPanel();
-  const settings = loadSettings();
-  const needsKey = presetFor(settings.preset).requires_key && !getApiKey(settings);
-  const settingsPanel = document.getElementById("settings-panel");
-  const settingsOpen = document.getElementById("settings-open");
-  settingsPanel.classList.toggle("expanded", needsKey);
-  settingsPanel.classList.toggle("needs-key", needsKey);
-  settingsOpen.setAttribute("aria-expanded", settingsPanel.classList.contains("expanded") ? "true" : "false");
-  document.getElementById("settings-open").addEventListener("click", () => {
-    settingsPanel.classList.toggle("expanded");
-    settingsOpen.setAttribute("aria-expanded", settingsPanel.classList.contains("expanded") ? "true" : "false");
-    if (settingsPanel.classList.contains("expanded")) {
-      settingsPanel.querySelector("select, input, button, summary")?.focus();
-    }
-  });
-  document.getElementById("create-hole").addEventListener("click", createFromPaste);
-  document.getElementById("open-url").addEventListener("click", createFromUrl);
-  document.getElementById("open-url-input").addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      createFromUrl();
-    }
-  });
-  document.getElementById("refresh-list").addEventListener("click", renderHoleList);
-  document.querySelectorAll("[data-copy-agent]").forEach((button) => {
-    button.addEventListener("click", () => copyText(AGENT_COMMAND, "Command copied."));
-  });
-  initDrop();
-  window.__rhWebApp = {
-    store,
-    importRabbitholeForTest: (text) => importRabbitholeFile(store, text),
-    exportRabbitholeForTest: (id) => downloadRabbitholeExport(store, id),
-    currentHoleId: () => currentHoleId,
-    readRawHole: (id = currentHoleId) => id ? store.readRawHoleForTest(id) : null,
-  };
-  await renderHoleList();
+    </div>
+    <div id="blank-start-hint" class="blank-start-hint" hidden>Press N to start a new Rabbithole</div>
+    <div id="web-settings-modal" class="web-settings-modal" role="dialog" aria-modal="true" aria-label="Provider settings" hidden>
+      <div class="web-settings-dialog">
+        <button id="web-settings-close" class="web-close" type="button">Close</button>
+        <div id="settings-inline-key" class="settings-inline-key" hidden></div>
+        <section id="settings-panel" class="settings-panel expanded"></section>
+      </div>
+    </div>
+    <div id="web-toast" class="web-toast" aria-live="polite"></div>`;
+  railOpen = loadRailOpen();
+  applyRailState();
 }
 
-async function renderHoleList() {
-  const listEl = document.getElementById("hole-list");
-  if (!listEl) return;
-  const holes = await store.listHoles();
-  if (!holes.length) {
-    listEl.innerHTML = `<div class="hole-empty">No saved holes yet.</div>`;
-    return;
+async function chooseInitialHole() {
+  const hashHole = holeIdFromHash();
+  if (hashHole) {
+    const hole = await store.loadHole(hashHole);
+    if (hole) return hole;
   }
-  listEl.innerHTML = holes.map((hole) => `<article class="hole-row" data-hole="${escapeAttr(hole.hole_id)}">
-    <button class="hole-open" type="button">
-      <span class="hole-title">${escapeHtml(hole.title || "Untitled")}</span>
-      <span class="hole-meta"><span>${escapeHtml(formatRelativeDate(hole.updated_at))}</span><span>${hole.node_count} ${hole.node_count === 1 ? "node" : "nodes"}</span></span>
-    </button>
-    <div class="hole-actions">
-      <button class="hole-export" type="button" aria-label="Export ${escapeAttr(hole.title || "Untitled")}">Export</button>
-      <button class="hole-delete" type="button" aria-label="Delete ${escapeAttr(hole.title || "Untitled")}">Delete</button>
-    </div>
-  </article>`).join("");
-  listEl.querySelectorAll(".hole-open").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const row = button.closest(".hole-row");
-      const hole = await store.loadHole(row.dataset.hole);
+  const storedId = safeLocalStorageGet(LAST_HOLE_KEY);
+  if (storedId && storedId !== hashHole) {
+    const stored = await store.loadHole(storedId);
+    if (stored) return stored;
+  }
+  const holes = await store.listHoles();
+  lastHoleCount = holes.length;
+  if (!holes.length) return null;
+  return store.loadHole(holes[0].hole_id);
+}
+
+function initAppChrome() {
+  const rail = document.getElementById("web-rail");
+  document.getElementById("t-rail")?.addEventListener("click", () => toggleRail());
+  document.getElementById("t-new")?.addEventListener("click", () => openComposer({ source: "button" }));
+  document.getElementById("t-settings")?.addEventListener("click", () => openSettingsModal());
+  rail?.addEventListener("click", async (event) => {
+    const row = event.target?.closest?.(".rail-row");
+    if (!row) return;
+    const id = row.dataset.hole;
+    if (event.target.closest(".rail-delete")) {
+      event.preventDefault();
+      event.stopPropagation();
+      await deleteHoleFromRail(id);
+      return;
+    }
+    if (event.target.closest(".rail-export")) {
+      event.preventDefault();
+      event.stopPropagation();
+      await exportHoleFromRail(id);
+      return;
+    }
+    if (event.target.closest(".rail-open")) {
+      event.preventDefault();
+      if (!id || id === currentHoleId) return;
+      await currentHost?.flushSave();
+      const hole = await store.loadHole(id);
       if (hole) await startHole(hole);
+    }
+  });
+  document.getElementById("t-theme")?.addEventListener("click", () => {
+    if (currentHoleId) return;
+    toggleBlankTheme();
+  });
+  document.getElementById("t-zin")?.addEventListener("click", () => {
+    if (!currentHoleId) setBlankZoom(blankZoom * 1.15);
+  });
+  document.getElementById("t-zout")?.addEventListener("click", () => {
+    if (!currentHoleId) setBlankZoom(blankZoom * 0.87);
+  });
+  document.getElementById("zoom-label")?.addEventListener("click", () => {
+    if (!currentHoleId) setBlankZoom(1);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.metaKey || event.ctrlKey || event.altKey || isEditableTarget(event.target)) return;
+    if (event.key === "n" || event.key === "N") {
+      event.preventDefault();
+      openComposer({ source: "keyboard" });
+    } else if (event.key === "s" || event.key === "S") {
+      event.preventDefault();
+      toggleRail();
+    }
+  });
+}
+
+function initComposer() {
+  const modal = document.getElementById("composer-modal");
+  const input = document.getElementById("composer-input");
+  const primary = document.getElementById("composer-primary");
+  const fileInput = document.getElementById("file-md");
+
+  input.addEventListener("input", () => {
+    autoGrowTextarea(input, 240);
+    updateComposerIntent();
+  });
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      runComposer();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      closeComposer();
+    }
+  });
+  primary.addEventListener("click", runComposer);
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files?.[0];
+    if (file) await createFromFile(file);
+    fileInput.value = "";
+  });
+  modal.querySelectorAll(".intent-chip[data-intent]").forEach((button) => {
+    button.addEventListener("click", () => {
+      composerIntentOverride = button.dataset.intent;
+      updateComposerIntent();
     });
   });
-  listEl.querySelectorAll(".hole-delete").forEach((button) => {
-    button.addEventListener("click", () => deleteHoleFromHome(button.closest(".hole-row").dataset.hole));
+  for (const type of ["dragenter", "dragover"]) {
+    modal.addEventListener(type, (event) => {
+      event.preventDefault();
+      modal.classList.add("dragging");
+    });
+  }
+  for (const type of ["dragleave", "drop"]) {
+    modal.addEventListener(type, (event) => {
+      event.preventDefault();
+      modal.classList.remove("dragging");
+    });
+  }
+  modal.addEventListener("drop", async (event) => {
+    const file = event.dataTransfer?.files?.[0];
+    if (file) await createFromFile(file);
   });
-  listEl.querySelectorAll(".hole-export").forEach((button) => {
-    button.addEventListener("click", () => exportHoleFromHome(button.closest(".hole-row").dataset.hole));
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) closeComposer();
   });
 }
 
-async function createFromPaste() {
-  const title = document.getElementById("new-title").value.trim();
-  const markdown = document.getElementById("paste-md").value.trim();
+function initGlobalDrops() {
+  const viewport = document.getElementById("viewport");
+  for (const type of ["dragenter", "dragover"]) {
+    viewport.addEventListener(type, (event) => {
+      if (currentHoleId || !event.dataTransfer?.types?.includes("Files")) return;
+      event.preventDefault();
+      document.body.classList.add("blank-dragging");
+    });
+  }
+  for (const type of ["dragleave", "drop"]) {
+    viewport.addEventListener(type, (event) => {
+      if (currentHoleId) return;
+      event.preventDefault();
+      document.body.classList.remove("blank-dragging");
+    });
+  }
+  viewport.addEventListener("drop", async (event) => {
+    if (currentHoleId) return;
+    const file = event.dataTransfer?.files?.[0];
+    if (!file) return;
+    openComposer({ source: "drop" });
+    await createFromFile(file);
+  });
+}
+
+function openComposer({ source = "button", value = "" } = {}) {
+  const modal = document.getElementById("composer-modal");
+  const input = document.getElementById("composer-input");
+  const examples = document.getElementById("composer-examples");
+  const hint = document.getElementById("blank-start-hint");
+
+  pendingComposerAction = null;
+  composerIntentOverride = "";
+  setIngestStatus("");
+  clearComposerKeyPanel();
+  resetComposerStreaming();
+  document.getElementById("composer-question").hidden = true;
+  document.getElementById("composer-stream").hidden = true;
+  document.getElementById("composer-input").hidden = false;
+  document.querySelector(".composer-subline").hidden = false;
+  document.querySelector(".intent-row").hidden = false;
+  document.querySelector(".composer-actions").hidden = false;
+  input.value = value;
+  autoGrowTextarea(input, 240);
+  renderComposerExamples();
+  examples.hidden = lastHoleCount !== 0 || source !== "empty";
+  modal.hidden = false;
+  hint.hidden = true;
+  updateComposerIntent();
+  if (composerTrap) composerTrap();
+  composerTrap = activateFocusTrap(modal, {
+    initialFocus: input,
+    onEscape: closeComposer,
+  });
+  input.focus({ preventScroll: true });
+}
+
+function closeComposer() {
+  if (composerAbortController) {
+    composerAbortController.abort();
+    cleanupStreamingHole();
+  }
+  const modal = document.getElementById("composer-modal");
+  modal.hidden = true;
+  modal.classList.remove("dragging", "streaming");
+  pendingComposerAction = null;
+  clearComposerKeyPanel();
+  if (composerTrap) {
+    composerTrap();
+    composerTrap = null;
+  }
+  if (!currentHoleId && lastHoleCount === 0) {
+    document.getElementById("blank-start-hint").hidden = false;
+  }
+}
+
+function renderComposerExamples() {
+  const examples = document.getElementById("composer-examples");
+  examples.innerHTML = EXAMPLE_QUESTIONS.map((question) =>
+    `<button type="button" class="example-chip">${escapeHtml(question)}</button>`
+  ).join("");
+  examples.querySelectorAll(".example-chip").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.getElementById("composer-input").value = button.textContent.trim();
+      composerIntentOverride = "ask";
+      autoGrowTextarea(document.getElementById("composer-input"), 240);
+      updateComposerIntent();
+      document.getElementById("composer-input").focus();
+    });
+  });
+}
+
+function updateComposerIntent() {
+  const input = document.getElementById("composer-input");
+  const inferred = inferIntent(input.value);
+  const active = composerIntentOverride || inferred;
+  document.querySelectorAll(".intent-chip[data-intent]").forEach((button) => {
+    const isActive = button.dataset.intent === active;
+    button.classList.toggle("active", isActive);
+    button.classList.toggle("inferred", button.dataset.intent === inferred);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+  document.getElementById("improve-chip").hidden = active !== "document";
+  document.getElementById("composer-primary").textContent = INTENTS[active]?.primary || "Ask";
+}
+
+function inferIntent(value) {
+  const text = String(value || "").trim();
+  if (isSingleHttpUrl(text)) return "url";
+  if (looksLikeDocument(text)) return "document";
+  return "ask";
+}
+
+async function runComposer() {
+  const input = document.getElementById("composer-input");
+  const value = input.value.trim();
+  const intent = document.querySelector(".intent-chip.active")?.dataset.intent || inferIntent(value);
+  if (intent === "url") return createFromUrl(value);
+  if (intent === "document") return createFromComposerDocument(value);
+  return createFromAsk(value);
+}
+
+async function createFromComposerDocument(markdown) {
   if (!markdown) {
-    showToast({ message: "Paste markdown first." });
+    setIngestStatus("Paste a document first.", "error");
     return;
   }
+  const action = () => createFromComposerDocument(markdown);
+  if (shouldImproveStructure() && !(await ensureKeyForComposerAction(action))) return;
   try {
     const authored = await maybeAuthorMarkdown({
-      title,
+      title: "",
       markdown,
       sourceName: "pasted text",
       kind: "paste",
     });
-    const hole = createHoleFromMarkdown({ title, markdown: authored });
+    const hole = createHoleFromMarkdown({ title: "", markdown: authored });
     await store.saveHole(hole);
     setIngestStatus("");
     await startHole(await store.loadHole(hole.hole_id) || hole);
   } catch (err) {
-    setIngestStatus(`Authoring failed. ${err?.message || String(err)}`, "error");
+    setIngestStatus(`Document import failed. ${err?.message || String(err)}`, "error");
   }
 }
 
-function initDrop() {
-  const drop = document.getElementById("drop-md");
-  const zone = document.querySelector(".new-hole");
-  const input = document.getElementById("file-md");
-  input.addEventListener("change", async () => {
-    const file = input.files?.[0];
-    if (file) await createFromFile(file);
-    input.value = "";
-  });
-  for (const type of ["dragenter", "dragover"]) {
-    zone.addEventListener(type, (event) => {
-      event.preventDefault();
-      zone.classList.add("dragging");
-      drop.classList.add("dragging");
-    });
+async function createFromAsk(question) {
+  if (!question) {
+    setIngestStatus("Ask a question first.", "error");
+    return;
   }
-  for (const type of ["dragleave", "drop"]) {
-    zone.addEventListener(type, (event) => {
-      event.preventDefault();
-      zone.classList.remove("dragging");
-      drop.classList.remove("dragging");
-    });
+  const action = () => createFromAsk(question);
+  if (!(await ensureKeyForComposerAction(action))) return;
+
+  const settings = loadSettings();
+  const key = getApiKey(settings);
+  const brain = createBrain(settings, key);
+  const controller = new AbortController();
+  composerAbortController = controller;
+  composerStreamingHoleId = "";
+
+  const modal = document.getElementById("composer-modal");
+  const questionEl = document.getElementById("composer-question");
+  const stream = document.getElementById("composer-stream");
+  const streamDoc = document.getElementById("composer-stream-doc");
+  modal.classList.add("streaming");
+  questionEl.hidden = false;
+  questionEl.textContent = question;
+  stream.hidden = false;
+  streamDoc.innerHTML = "";
+  document.getElementById("composer-input").hidden = true;
+  document.querySelector(".composer-subline").hidden = true;
+  document.querySelector(".intent-row").hidden = true;
+  document.querySelector(".composer-actions").hidden = true;
+  setIngestStatus("Writing the root document...", "busy");
+
+  let markdown = "";
+  let hole = null;
+  try {
+    for await (const chunk of brain.authorExplainer({ question }, controller.signal)) {
+      if (controller.signal.aborted) return;
+      markdown += chunk;
+      renderComposerStream(markdown);
+      if (!hole && markdown.trim()) {
+        hole = createHoleFromMarkdown({ title: "", markdown });
+        composerStreamingHoleId = hole.hole_id;
+        await store.saveHole(hole);
+      }
+    }
+    if (!markdown.trim()) throw new Error("The provider returned an empty document.");
+    if (!hole) {
+      hole = createHoleFromMarkdown({ title: "", markdown });
+      composerStreamingHoleId = hole.hole_id;
+    }
+    updateHoleRootMarkdown(hole, markdown);
+    await store.saveHole(hole);
+    setIngestStatus("");
+    composerStreamingHoleId = "";
+    await startHole(await store.loadHole(hole.hole_id) || hole);
+  } catch (err) {
+    if (controller.signal.aborted) return;
+    await cleanupStreamingHole();
+    const message = err?.message || String(err);
+    if (isAuthLikeError(err)) {
+      showComposerKeyPanel({
+        message,
+        afterValidated: action,
+      });
+    } else {
+      setIngestStatus(`Ask failed. ${message}`, "error");
+    }
+  } finally {
+    if (composerAbortController === controller) composerAbortController = null;
   }
-  zone.addEventListener("drop", async (event) => {
-    const file = event.dataTransfer?.files?.[0];
-    if (file) await createFromFile(file);
-  });
+}
+
+function renderComposerStream(markdown) {
+  const streamDoc = document.getElementById("composer-stream-doc");
+  streamDoc.innerHTML = `${renderMarkdownToHtml(markdown)}<span class="stream-caret" aria-hidden="true"></span>`;
+  const stream = document.getElementById("composer-stream");
+  stream.scrollTop = stream.scrollHeight;
+}
+
+function updateHoleRootMarkdown(hole, markdown) {
+  const title = titleFromMarkdown(markdown) || hole.title || "Untitled";
+  hole.title = title;
+  const root = hole.nodes?.find((node) => node.id === hole.root_id) || hole.nodes?.[0];
+  if (root) {
+    root.title = title;
+    root.markdown = markdown;
+    root.status = "answered";
+    root.read = true;
+  }
+}
+
+async function cleanupStreamingHole() {
+  const id = composerStreamingHoleId;
+  composerStreamingHoleId = "";
+  if (!id) return;
+  try { await store.deleteHole(id); } catch {}
+  await renderRail();
+}
+
+function resetComposerStreaming() {
+  if (composerAbortController) {
+    composerAbortController.abort();
+    composerAbortController = null;
+  }
+  composerStreamingHoleId = "";
+  document.getElementById("composer-modal")?.classList.remove("streaming");
+}
+
+async function createFromUrl(rawUrl) {
+  if (!rawUrl) {
+    setIngestStatus("Enter a URL first.", "error");
+    return;
+  }
+  try {
+    const settings = loadSettings();
+    setIngestStatus("Fetching URL...", "busy");
+    const { hole } = await openUrlToStoredHole({
+      rawUrl,
+      store,
+      title: "",
+      proxyBaseUrl: settings.fetch_proxy_url || "",
+      onProgress: (progress) => {
+        if (progress.phase === "fetch") setIngestStatus(`Fetching URL via ${progress.via}...`, "busy");
+        else if (progress.phase === "page") setIngestStatus(`Importing PDF page ${progress.index}/${progress.total}...`, "busy");
+      },
+    });
+    setIngestStatus("");
+    await startHole(await store.loadHole(hole.hole_id) || hole);
+  } catch (err) {
+    setIngestStatus(err?.message || String(err), "error");
+  }
 }
 
 async function createFromFile(file) {
-  if (isRabbitholeFile(file)) {
-    await createFromRabbitholeFile(file);
-    return;
-  }
-  if (isPdfFile(file)) {
-    await createFromPdfFile(file);
-    return;
-  }
+  if (isRabbitholeFile(file)) return createFromRabbitholeFile(file);
+  if (isPdfFile(file)) return createFromPdfFile(file);
   if (!isMarkdownFile(file)) {
     setIngestStatus("Choose a markdown, PDF, or .rabbithole file.", "error");
     return;
   }
+  const action = () => createFromFile(file);
+  if (shouldImproveStructure() && !(await ensureKeyForComposerAction(action))) return;
   try {
     setIngestStatus("Reading markdown file...", "busy");
     const markdown = await file.text();
-    const title = document.getElementById("new-title").value.trim() || file.name.replace(/\.[^.]+$/, "");
     const authored = await maybeAuthorMarkdown({
-      title,
+      title: file.name.replace(/\.[^.]+$/, ""),
       markdown,
       sourceName: file.name,
       kind: "file",
     });
-    const hole = createHoleFromMarkdown({ title, markdown: authored });
+    const hole = createHoleFromMarkdown({ title: "", markdown: authored });
     await store.saveHole(hole);
     setIngestStatus("");
     await startHole(await store.loadHole(hole.hole_id) || hole);
@@ -291,11 +561,10 @@ async function createFromPdfFile(file) {
   try {
     const { ingestPdfToStoredHole } = await import("./ingest/pdf.js");
     setIngestStatus("Loading PDF importer...", "busy");
-    const title = document.getElementById("new-title").value.trim();
     const { hole } = await ingestPdfToStoredHole({
       source: file,
       store,
-      title,
+      title: "",
       onProgress: ({ page, index, total }) => {
         if (page) setIngestStatus(`Importing PDF page ${index}/${total}...`, "busy");
       },
@@ -307,81 +576,10 @@ async function createFromPdfFile(file) {
   }
 }
 
-async function createFromUrl() {
-  const rawUrl = document.getElementById("open-url-input").value.trim();
-  if (!rawUrl) {
-    setIngestStatus("Enter a URL first.", "error");
-    return;
-  }
-  try {
-    const settings = loadSettings();
-    const title = document.getElementById("new-title").value.trim();
-    setIngestStatus("Fetching URL...", "busy");
-    const { hole } = await openUrlToStoredHole({
-      rawUrl,
-      store,
-      title,
-      proxyBaseUrl: settings.fetch_proxy_url || "",
-      transformMarkdown: shouldImproveStructure()
-        ? ({ markdown, title: sourceTitle, baseUrl }) => maybeAuthorMarkdown({
-            title: sourceTitle,
-            markdown,
-            baseUrl,
-            sourceName: rawUrl,
-            kind: "url",
-          })
-        : null,
-      onProgress: (progress) => {
-        if (progress.phase === "fetch") setIngestStatus(`Fetching URL via ${progress.via}...`, "busy");
-        else if (progress.phase === "page") setIngestStatus(`Importing PDF page ${progress.index}/${progress.total}...`, "busy");
-      },
-    });
-    setIngestStatus("");
-    await startHole(await store.loadHole(hole.hole_id) || hole);
-  } catch (err) {
-    setIngestStatus(err?.message || String(err), "error");
-  }
-}
-
-async function deleteHoleFromHome(holeId) {
-  const hole = await store.loadHole(holeId);
-  if (!hole) return;
-  const assets = [];
-  for (const name of await store.listAssets(holeId)) {
-    assets.push({ name, blob: await store.getAsset(holeId, name) });
-  }
-  await store.deleteHole(holeId);
-  await renderHoleList();
-  showToast({
-    message: `Deleted "${hole.title || "Untitled"}"`,
-    actionLabel: "Undo",
-    timeoutMs: 10000,
-    onAction: async () => {
-      await store.saveHole(hole);
-      for (const asset of assets) {
-        if (asset.blob) await store.putAsset(holeId, asset.name, asset.blob);
-      }
-      await renderHoleList();
-    },
-  });
-}
-
-async function exportHoleFromHome(holeId) {
-  try {
-    const payload = await downloadRabbitholeExport(store, holeId);
-    showToast({ message: `Exported ${rabbitholeFilename(payload.hole?.title)}.` });
-  } catch (err) {
-    showToast({ message: err?.message || String(err) });
-  }
-}
-
 async function maybeAuthorMarkdown({ title = "", markdown = "", sourceName = "", kind = "source", baseUrl = "" } = {}) {
   if (!shouldImproveStructure()) return markdown;
   const settings = loadSettings();
   const key = getApiKey(settings);
-  if (presetFor(settings.preset).requires_key && !key) {
-    throw new Error("Add a provider key in Settings before using Improve structure.");
-  }
   setIngestStatus("Improving structure with the author model...", "busy");
   const brain = createBrain(settings, key);
   const controller = new AbortController();
@@ -400,31 +598,63 @@ async function maybeAuthorMarkdown({ title = "", markdown = "", sourceName = "",
 }
 
 function shouldImproveStructure() {
-  return document.getElementById("improve-structure")?.checked === true;
+  return document.getElementById("composer-improve")?.checked === true &&
+    !document.getElementById("improve-chip")?.hidden;
+}
+
+async function ensureKeyForComposerAction(action) {
+  const settings = loadSettings();
+  const preset = presetFor(settings.preset);
+  if (!preset.requires_key || getApiKey(settings)) return true;
+  pendingComposerAction = action;
+  showComposerKeyPanel({
+    message: shouldImproveStructure()
+      ? "Improve structure uses your model key."
+      : "Ask uses your model key.",
+    afterValidated: action,
+  });
+  return false;
+}
+
+function showComposerKeyPanel({ message = "", afterValidated = null } = {}) {
+  const slot = document.getElementById("composer-key-panel");
+  slot.hidden = false;
+  renderInlineKeyPanel(slot, {
+    idPrefix: "composer",
+    message,
+    afterValidated: async () => {
+      slot.hidden = true;
+      pendingComposerAction = null;
+      await afterValidated?.();
+    },
+  });
+}
+
+function clearComposerKeyPanel() {
+  const slot = document.getElementById("composer-key-panel");
+  if (slot) {
+    slot.hidden = true;
+    slot.innerHTML = "";
+  }
 }
 
 async function startHole(hole, { replace = false } = {}) {
   if (uiStarted) {
+    await currentHost?.flushSave();
     location.hash = `hole=${encodeURIComponent(hole.hole_id)}`;
     location.reload();
     return;
   }
   uiStarted = true;
   currentHoleId = hole.hole_id;
-  document.documentElement.classList.remove("web-home-active");
-  document.documentElement.classList.add("web-canvas-active");
+  currentHost = null;
+  document.body.classList.remove("web-blank-canvas");
+  document.getElementById("blank-start-hint").hidden = true;
+  closeComposerSilently();
+  safeLocalStorageSet(LAST_HOLE_KEY, hole.hole_id);
   if (replace) history.replaceState(null, "", `#hole=${encodeURIComponent(hole.hole_id)}`);
   else history.pushState(null, "", `#hole=${encodeURIComponent(hole.hole_id)}`);
 
-  document.body.innerHTML = `<div class="web-canvas-bar">
-    <button id="web-home" class="web-secondary" type="button">Home</button>
-    <button id="web-settings" class="web-secondary" type="button">Settings</button>
-  </div>
-  <div id="web-settings-modal" class="web-settings-modal" hidden><div class="web-settings-dialog"><button id="web-settings-close" class="web-close" type="button">Close</button><div id="settings-panel" class="settings-panel expanded"></div></div></div>
-  <div id="canvas-root">${CANVAS_SHELL}</div>
-  <div id="web-toast" class="web-toast" aria-live="polite"></div>`;
-
-  initCanvasSettings();
   setSnapshotHooks({
     fetchAssetData: async (name) => blobToDataUrl(await store.getAsset(currentHoleId, name)),
     getFrozenClientSource: () => window.__RABBITHOLE_FROZEN_CLIENT__ || "",
@@ -439,11 +669,13 @@ async function startHole(hole, { replace = false } = {}) {
     hole,
     brain,
     onToast: showToast,
-    onDone: () => {
-      history.pushState(null, "", location.pathname);
+    onDone: async () => {
+      await currentHost?.flushSave();
+      history.replaceState(null, "", location.pathname);
       location.reload();
     },
     onRestore: () => location.reload(),
+    onAuthRequired: handleBranchAuthRequired,
   });
 
   const hydration = currentHost.hydration();
@@ -452,24 +684,29 @@ async function startHole(hole, { replace = false } = {}) {
     transport: currentHost.adapter(),
     exportPortable: exportCurrentRabbithole,
   });
+  document.getElementById("r-canvas")?.click();
+  await renderRail();
+  exposeTestApi();
+}
 
-  document.getElementById("web-home").addEventListener("click", async () => {
-    await currentHost?.flushSave();
-    history.pushState(null, "", location.pathname);
-    location.reload();
-  });
+function closeComposerSilently() {
+  const modal = document.getElementById("composer-modal");
+  if (modal) modal.hidden = true;
+  if (composerTrap) {
+    composerTrap();
+    composerTrap = null;
+  }
+}
 
-  window.__rhWebApp = {
-    store,
-    exportSnapshotForTest: async () => buildSnapshotHtml(await buildSnapshotHydration()),
-    exportRabbitholeForTest: async (id = currentHoleId) => {
-      await currentHost?.flushSave();
-      return downloadRabbitholeExport(store, id);
-    },
-    importRabbitholeForTest: (text) => importRabbitholeFile(store, text),
-    currentHoleId: () => currentHoleId,
-    readRawHole: (id = currentHoleId) => store.readRawHoleForTest(id),
-  };
+function showBlankCanvas({ openComposer: shouldOpenComposer = false } = {}) {
+  uiStarted = false;
+  currentHost = null;
+  currentHoleId = null;
+  document.body.classList.add("mode-canvas", "web-blank-canvas");
+  document.getElementById("world").innerHTML = `<svg id="edges"></svg>`;
+  setBlankZoom(1);
+  history.replaceState(null, "", location.pathname);
+  if (shouldOpenComposer) openComposer({ source: "empty" });
 }
 
 async function exportCurrentRabbithole() {
@@ -479,85 +716,235 @@ async function exportCurrentRabbithole() {
   return { filename: rabbitholeFilename(payload.hole?.title), payload };
 }
 
-function initCanvasSettings() {
-  const modal = document.getElementById("web-settings-modal");
-  const open = document.getElementById("web-settings");
-  const close = document.getElementById("web-settings-close");
-  let releaseTrap = null;
-  initSettingsPanel();
-  const closeModal = () => {
-    modal.hidden = true;
-    if (releaseTrap) {
-      releaseTrap();
-      releaseTrap = null;
-    }
-  };
-  open.addEventListener("click", () => {
-    modal.hidden = false;
-    if (releaseTrap) releaseTrap();
-    releaseTrap = activateFocusTrap(modal, {
-      initialFocus: modal.querySelector("select, input, button"),
-      onEscape: closeModal,
-    });
+async function renderRail() {
+  const rail = document.getElementById("web-rail");
+  if (!rail) return;
+  const summaries = await store.listHoles();
+  lastHoleCount = summaries.length;
+  const holes = [];
+  for (const summary of summaries) {
+    const hole = await store.loadHole(summary.hole_id);
+    if (hole) holes.push({ summary, hole });
+  }
+  rail.innerHTML = `<div class="rail-inner">
+    <header class="rail-head">
+      <div class="rail-wordmark"><span class="rail-mark">${bunnyMarkSvg()}</span><span>Rabbithole</span></div>
+      <span class="rail-count">${holes.length}</span>
+    </header>
+    <div class="rail-list" id="rail-list">
+      ${holes.length ? holes.map(({ summary, hole }) => railRowHtml(summary, hole)).join("") : `<div class="rail-empty">No Rabbitholes yet.</div>`}
+    </div>
+    <footer class="rail-footer">
+      <details>
+        <summary>Use with a coding agent</summary>
+        <div class="agent-command-row">
+          <code>${escapeHtml(AGENT_COMMAND)}</code>
+          <button class="rail-mini" type="button" data-copy-agent>Copy</button>
+        </div>
+      </details>
+      <a href="https://github.com/shlokkhemani/rabbithole" target="_blank" rel="noreferrer">GitHub</a>
+    </footer>
+  </div>`;
+  rail.querySelectorAll("[data-copy-agent]").forEach((button) => {
+    button.addEventListener("click", () => copyText(AGENT_COMMAND, "Command copied."));
   });
-  close.addEventListener("click", closeModal);
+  rail.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") setRailOpen(false);
+  });
+  applyRailState();
+}
+
+function railRowHtml(summary, hole) {
+  const title = summary.title || hole.title || "Untitled";
+  return `<article class="rail-row${summary.hole_id === currentHoleId ? " current" : ""}" data-hole="${escapeAttr(summary.hole_id)}">
+    <button class="rail-open" type="button">
+      <span class="rail-thumb" aria-hidden="true">${constellationSvg(hole)}</span>
+      <span class="rail-row-copy">
+        <span class="rail-title">${escapeHtml(title)}</span>
+        <span class="rail-meta">${summary.node_count} ${summary.node_count === 1 ? "node" : "nodes"} · ${escapeHtml(formatRelativeDate(summary.updated_at, { compact: true }))}</span>
+      </span>
+    </button>
+    <span class="rail-actions">
+      <button class="rail-icon rail-export" type="button" aria-label="Export ${escapeAttr(title)}"><svg width="15" height="15" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M8 2.75v7"/><path d="M5.25 7.1 8 9.85l2.75-2.75"/><path d="M3.25 12.75h9.5"/></svg></button>
+      <button class="rail-icon rail-delete" type="button" aria-label="Delete ${escapeAttr(title)}"><svg width="15" height="15" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M3.25 4.25h9.5"/><path d="M6.25 2.75h3.5"/><path d="M5.25 4.25v8.25h5.5V4.25"/><path d="M7 6.5v3.75"/><path d="M9 6.5v3.75"/></svg></button>
+    </span>
+  </article>`;
+}
+
+async function deleteHoleFromRail(holeId) {
+  if (!holeId) return;
+  const deletingCurrent = holeId === currentHoleId;
+  if (deletingCurrent) {
+    await currentHost?.flushSave();
+    currentHost?.dispose?.();
+    currentHost = null;
+  }
+  const hole = await store.loadHole(holeId);
+  if (!hole) return;
+  const assets = [];
+  for (const name of await store.listAssets(holeId)) {
+    assets.push({ name, blob: await store.getAsset(holeId, name) });
+  }
+  await store.deleteHole(holeId);
+  if (safeLocalStorageGet(LAST_HOLE_KEY) === holeId) localStorage.removeItem(LAST_HOLE_KEY);
+  await renderRail();
+  showToast({
+    message: `Deleted "${hole.title || "Untitled"}"`,
+    actionLabel: "Undo",
+    timeoutMs: 10000,
+    onAction: async () => {
+      await store.saveHole(hole);
+      for (const asset of assets) {
+        if (asset.blob) await store.putAsset(holeId, asset.name, asset.blob);
+      }
+      await renderRail();
+    },
+  });
+  if (deletingCurrent) {
+    const next = (await store.listHoles())[0];
+    if (next) {
+      const nextHole = await store.loadHole(next.hole_id);
+      if (nextHole) await startHole(nextHole, { replace: true });
+    } else {
+      location.hash = "";
+      location.reload();
+    }
+  }
+}
+
+async function exportHoleFromRail(holeId) {
+  try {
+    if (holeId === currentHoleId) await currentHost?.flushSave();
+    const payload = await downloadRabbitholeExport(store, holeId);
+    showToast({ message: `Exported ${rabbitholeFilename(payload.hole?.title)}.` });
+  } catch (err) {
+    showToast({ message: err?.message || String(err) });
+  }
+}
+
+function toggleRail() {
+  setRailOpen(!railOpen);
+}
+
+function setRailOpen(value) {
+  railOpen = !!value;
+  safeLocalStorageSet(RAIL_KEY, railOpen ? "1" : "0");
+  applyRailState();
+  if (railOpen) document.getElementById("web-rail")?.focus({ preventScroll: true });
+}
+
+function applyRailState() {
+  document.body.classList.toggle("rail-open", railOpen);
+  const rail = document.getElementById("web-rail");
+  const toggle = document.getElementById("t-rail");
+  if (rail) rail.classList.toggle("open", railOpen);
+  if (toggle) toggle.setAttribute("aria-expanded", railOpen ? "true" : "false");
+}
+
+function loadRailOpen() {
+  const raw = safeLocalStorageGet(RAIL_KEY);
+  if (raw === "1") return true;
+  if (raw === "0") return false;
+  return window.innerWidth >= 1100;
+}
+
+function initSettingsModal() {
+  initSettingsPanel();
+  const modal = document.getElementById("web-settings-modal");
+  const close = document.getElementById("web-settings-close");
+  close.addEventListener("click", closeSettingsModal);
   modal.addEventListener("click", (event) => {
-    if (event.target === modal) closeModal();
+    if (event.target === modal) closeSettingsModal();
   });
   modal.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") closeModal();
+    if (event.key === "Escape") closeSettingsModal();
   });
+}
+
+function openSettingsModal({ focusKey = false } = {}) {
+  const modal = document.getElementById("web-settings-modal");
+  initSettingsPanel();
+  modal.hidden = false;
+  document.getElementById("t-settings")?.setAttribute("aria-expanded", "true");
+  if (settingsTrap) settingsTrap();
+  settingsTrap = activateFocusTrap(modal, {
+    initialFocus: focusKey ? modal.querySelector("#api-key") : modal.querySelector("select, input, button, summary"),
+    onEscape: closeSettingsModal,
+  });
+}
+
+function closeSettingsModal() {
+  const modal = document.getElementById("web-settings-modal");
+  modal.hidden = true;
+  document.getElementById("t-settings")?.setAttribute("aria-expanded", "false");
+  const inline = document.getElementById("settings-inline-key");
+  inline.hidden = true;
+  inline.innerHTML = "";
+  pendingBranchRetry = null;
+  if (settingsTrap) {
+    settingsTrap();
+    settingsTrap = null;
+  }
 }
 
 function initSettingsPanel() {
   const panel = document.getElementById("settings-panel");
+  if (!panel) return;
   const settings = loadSettings();
-  const presetOptions = Object.values(BRAIN_PRESETS).map((preset) => {
-    const label = preset.recommended ? `${preset.label} (recommended)` : preset.label;
-    return `<option value="${preset.id}" ${settings.preset === preset.id ? "selected" : ""}>${escapeHtml(label)}</option>`;
+  const preset = presetFor(settings.preset);
+  const presetOptions = Object.values(BRAIN_PRESETS).map((item) => {
+    const label = item.recommended ? `${item.label} (recommended)` : item.label;
+    return `<option value="${item.id}" ${preset.id === item.id ? "selected" : ""}>${escapeHtml(label)}</option>`;
   }).join("");
-  panel.dataset.preset = presetFor(settings.preset).id;
+  panel.dataset.preset = preset.id;
   panel.innerHTML = `<div class="settings-inner">
-    <div class="settings-head">
+    <div class="settings-hero">
       <div>
-        <h2>Provider settings</h2>
-        <p>Connect the model Rabbithole uses when you ask from a selection.</p>
+        <h2>OpenRouter</h2>
+        <p>Use one key for Rabbithole's Ask and Improve structure actions.</p>
       </div>
+      <a class="key-walkthrough" href="${OPENROUTER_KEYS_URL}" target="_blank" rel="noreferrer">Get a key in 30 seconds →</a>
     </div>
-    <div class="settings-basic">
-      <label class="field provider-field" for="provider-preset">
-        <span>Provider</span>
-        <select id="provider-preset">${presetOptions}</select>
-      </label>
-      <label class="field custom-only" for="provider-base">
-        <span>Base URL</span>
-        <input id="provider-base" value="${escapeAttr(settings.base_url || "")}" placeholder="http://localhost:11434/v1">
-      </label>
+    <div class="settings-basic settings-openrouter">
       <div class="field key-field">
         <label for="api-key">API key</label>
         <div class="secret-input">
           <input id="api-key" type="password" autocomplete="off" placeholder="${escapeAttr(apiKeyPlaceholder(settings.preset))}" value="${escapeAttr(getApiKey(settings))}">
           <button id="api-key-toggle" class="web-secondary" type="button" aria-label="Show API key" aria-pressed="false">Show</button>
         </div>
+        <div id="api-key-status" class="key-status" aria-live="polite"></div>
       </div>
-      <label class="switch-field" for="session-only">
-        <input id="session-only" type="checkbox" role="switch" ${settings.session_only !== false ? "checked" : ""}>
+      <label class="switch-field remember-field" for="session-only">
+        <input id="session-only" type="checkbox" role="switch" ${settings.session_only === false ? "checked" : ""}>
         <span class="switch-track" aria-hidden="true"></span>
-        <span class="switch-copy"><strong>Session only</strong><small>Keep this key in memory for this tab.</small></span>
+        <span class="switch-copy"><strong>Remember on this device</strong><small>Off keeps the key only in this tab.</small></span>
       </label>
     </div>
+    <details class="settings-other">
+      <summary>Other providers</summary>
+      <div class="settings-other-grid">
+        <label class="field provider-field" for="provider-preset">
+          <span>Provider</span>
+          <select id="provider-preset">${presetOptions}</select>
+        </label>
+        <label class="field custom-only" for="provider-base">
+          <span>Base URL</span>
+          <input id="provider-base" value="${escapeAttr(settings.base_url || "")}" placeholder="http://localhost:11434/v1">
+        </label>
+      </div>
+    </details>
     <details class="settings-advanced">
       <summary>Advanced</summary>
       <div class="settings-advanced-grid">
         <label class="field" for="answer-model">
           <span>Answer model</span>
           <input id="answer-model" value="${escapeAttr(settings.answer_model || "")}">
-          <small class="model-hint" data-model-hint="answer">${escapeHtml(testedModelHint(settings.answer_model || presetFor(settings.preset).answer_model))}</small>
+          <small class="model-hint" data-model-hint="answer">${escapeHtml(testedModelHint(settings.answer_model || preset.answer_model))}</small>
         </label>
         <label class="field" for="author-model">
           <span>Author model</span>
           <input id="author-model" value="${escapeAttr(settings.author_model || "")}">
-          <small class="model-hint" data-model-hint="author">${escapeHtml(testedModelHint(settings.author_model || presetFor(settings.preset).author_model))}</small>
+          <small class="model-hint" data-model-hint="author">${escapeHtml(testedModelHint(settings.author_model || preset.author_model))}</small>
         </label>
         <label class="field wide-field" for="fetch-proxy-url">
           <span>Fetch proxy URL</span>
@@ -567,64 +954,70 @@ function initSettingsPanel() {
       </div>
     </details>
     <div class="settings-actions">
-      <a class="key-walkthrough" href="${OPENROUTER_WALKTHROUGH_URL}" target="_blank" rel="noreferrer">30-second OpenRouter key walkthrough</a>
+      <div></div>
       <button id="save-settings" class="web-primary" type="button">Save settings</button>
     </div>
   </div>`;
 
+  const keyInput = panel.querySelector("#api-key");
+  const status = panel.querySelector("#api-key-status");
+  let validateTimer = 0;
   panel.querySelector("#provider-preset").addEventListener("change", (event) => {
     const next = settingsForPreset(event.target.value, readSettingsForm());
     panel.dataset.preset = next.preset;
     panel.querySelector("#provider-base").value = next.base_url;
     panel.querySelector("#answer-model").value = next.answer_model;
     panel.querySelector("#author-model").value = next.author_model;
-    panel.querySelector("#api-key").placeholder = apiKeyPlaceholder(next.preset);
+    keyInput.placeholder = apiKeyPlaceholder(next.preset);
+    setKeyStatus(status, providerKeyHint(keyInput.value, next.preset), "hint");
     updateModelHints(panel);
   });
+  keyInput.addEventListener("input", () => {
+    window.clearTimeout(validateTimer);
+    const hint = providerKeyHint(keyInput.value, panel.querySelector("#provider-preset").value);
+    setKeyStatus(status, hint, hint ? "hint" : "");
+    validateTimer = window.setTimeout(() => validateKeyFromSettings(false), 350);
+  });
+  keyInput.addEventListener("blur", () => validateKeyFromSettings(false));
+  keyInput.addEventListener("paste", () => window.setTimeout(() => validateKeyFromSettings(false), 0));
   panel.querySelector("#answer-model").addEventListener("input", () => updateModelHints(panel));
   panel.querySelector("#author-model").addEventListener("input", () => updateModelHints(panel));
-  panel.querySelector("#api-key-toggle").addEventListener("click", () => {
-    const input = panel.querySelector("#api-key");
-    const showing = input.type === "text";
-    input.type = showing ? "password" : "text";
-    const button = panel.querySelector("#api-key-toggle");
-    button.textContent = showing ? "Show" : "Hide";
-    button.setAttribute("aria-label", showing ? "Show API key" : "Hide API key");
-    button.setAttribute("aria-pressed", showing ? "false" : "true");
-  });
-  panel.querySelector("#save-settings").addEventListener("click", () => {
+  panel.querySelector("#api-key-toggle").addEventListener("click", () => toggleSecretInput(panel));
+  panel.querySelector("#save-settings").addEventListener("click", async () => {
+    if (keyInput.value.trim() && !(await validateKeyFromSettings(true))) return;
     const next = readSettingsForm();
     saveSettings(next);
+    refreshCurrentBrain(next);
     showToast({ message: "Settings saved." });
-    panel.classList.toggle("needs-key", presetFor(next.preset).requires_key && !getApiKey(next));
-    if (currentHost) {
-      const key = getApiKey(next);
-      currentHost.brain = key || !presetFor(next.preset).requires_key ? createBrain(next, key) : null;
-    }
   });
   updateModelHints(panel);
 }
 
-function updateModelHints(panel = document.getElementById("settings-panel")) {
-  if (!panel) return;
-  const answer = panel.querySelector("#answer-model")?.value || "";
-  const author = panel.querySelector("#author-model")?.value || "";
-  const answerHint = panel.querySelector("[data-model-hint='answer']");
-  const authorHint = panel.querySelector("[data-model-hint='author']");
-  if (answerHint) answerHint.textContent = testedModelHint(answer);
-  if (authorHint) authorHint.textContent = testedModelHint(author);
+async function validateKeyFromSettings(required) {
+  const panel = document.getElementById("settings-panel");
+  const settings = readSettingsForm();
+  const input = panel.querySelector("#api-key");
+  const status = panel.querySelector("#api-key-status");
+  return validateKeyForPreset({
+    key: input.value,
+    presetId: settings.preset,
+    statusEl: status,
+    required,
+    onShake: () => input.classList.add("shake-once"),
+  });
 }
 
-function readSettingsForm() {
-  const sessionOnly = document.getElementById("session-only")?.checked !== false;
+function readSettingsForm(root = document) {
+  const remember = root.getElementById?.("session-only")?.checked === true ||
+    root.querySelector?.("#session-only")?.checked === true;
   return {
-    preset: document.getElementById("provider-preset")?.value || "openrouter",
-    base_url: document.getElementById("provider-base")?.value.trim() || "",
-    author_model: document.getElementById("author-model")?.value.trim() || "",
-    answer_model: document.getElementById("answer-model")?.value.trim() || "",
-    fetch_proxy_url: document.getElementById("fetch-proxy-url")?.value.trim() || "",
-    session_only: sessionOnly,
-    api_key: document.getElementById("api-key")?.value || "",
+    preset: root.getElementById?.("provider-preset")?.value || root.querySelector?.("#provider-preset")?.value || "openrouter",
+    base_url: root.getElementById?.("provider-base")?.value.trim() || root.querySelector?.("#provider-base")?.value.trim() || "",
+    author_model: root.getElementById?.("author-model")?.value.trim() || root.querySelector?.("#author-model")?.value.trim() || "",
+    answer_model: root.getElementById?.("answer-model")?.value.trim() || root.querySelector?.("#answer-model")?.value.trim() || "",
+    fetch_proxy_url: root.getElementById?.("fetch-proxy-url")?.value.trim() || root.querySelector?.("#fetch-proxy-url")?.value.trim() || "",
+    session_only: !remember,
+    api_key: root.getElementById?.("api-key")?.value || root.querySelector?.("#api-key")?.value || "",
   };
 }
 
@@ -658,6 +1051,238 @@ function getApiKey(settings) {
     try { return localStorage.getItem(KEY_KEY) || ""; } catch { return ""; }
   }
   return memoryKey;
+}
+
+function refreshCurrentBrain(settings = loadSettings()) {
+  if (!currentHost) return;
+  const key = getApiKey(settings);
+  currentHost.brain = key || !presetFor(settings.preset).requires_key ? createBrain(settings, key) : null;
+}
+
+function handleBranchAuthRequired({ node, error, retry }) {
+  pendingBranchRetry = retry;
+  openSettingsModal({ focusKey: true });
+  const slot = document.getElementById("settings-inline-key");
+  slot.hidden = false;
+  renderInlineKeyPanel(slot, {
+    idPrefix: "branch",
+    message: error?.message || "Update your key to retry this ask.",
+    afterValidated: async () => {
+      slot.hidden = true;
+      pendingBranchRetry = null;
+      refreshCurrentBrain();
+      retry?.();
+      showToast({ message: `Retrying "${node?.title || "ask"}".` });
+    },
+  });
+}
+
+function renderInlineKeyPanel(container, { idPrefix, message = "", afterValidated = null } = {}) {
+  const settings = loadSettings();
+  const remember = settings.session_only === false;
+  container.innerHTML = `<section class="inline-key-panel">
+    <div class="inline-key-head">
+      <div>
+        <h3>Add your OpenRouter key</h3>
+        <p>${escapeHtml(message || "Rabbithole uses your key directly from this browser.")}</p>
+      </div>
+      <a href="${OPENROUTER_KEYS_URL}" target="_blank" rel="noreferrer">Get a key in 30 seconds →</a>
+    </div>
+    <label class="field key-field" for="${idPrefix}-key">
+      <span>API key</span>
+      <input id="${idPrefix}-key" type="password" autocomplete="off" placeholder="sk-or-v1-..." value="">
+    </label>
+    <label class="switch-field remember-field" for="${idPrefix}-remember">
+      <input id="${idPrefix}-remember" type="checkbox" role="switch" ${remember ? "checked" : ""}>
+      <span class="switch-track" aria-hidden="true"></span>
+      <span class="switch-copy"><strong>Remember on this device</strong><small>Off keeps the key only in this tab.</small></span>
+    </label>
+    <div id="${idPrefix}-key-status" class="key-status" aria-live="polite"></div>
+    <div class="inline-key-actions">
+      <button class="web-primary" type="button" id="${idPrefix}-connect">Connect</button>
+    </div>
+  </section>`;
+  const input = container.querySelector(`#${idPrefix}-key`);
+  const status = container.querySelector(`#${idPrefix}-key-status`);
+  let timer = 0;
+  let continued = false;
+  const continueOnce = async () => {
+    if (continued) return;
+    continued = true;
+    const current = loadSettings();
+    saveSettings({
+      ...current,
+      preset: current.preset || "openrouter",
+      api_key: input.value,
+      session_only: !container.querySelector(`#${idPrefix}-remember`).checked,
+    });
+    initSettingsPanel();
+    refreshCurrentBrain();
+    await afterValidated?.();
+  };
+  const validate = async (required = false) => {
+    const presetId = loadSettings().preset || "openrouter";
+    const switched = await maybeSwitchProviderFromKey(input.value, container, continueOnce);
+    if (switched) return true;
+    const ok = await validateKeyForPreset({
+      key: input.value,
+      presetId,
+      statusEl: status,
+      required,
+      onShake: () => input.classList.add("shake-once"),
+    });
+    if (ok && input.value.trim()) await continueOnce();
+    return ok;
+  };
+  input.addEventListener("input", () => {
+    window.clearTimeout(timer);
+    const hint = providerKeyHint(input.value, loadSettings().preset || "openrouter");
+    setKeyStatus(status, hint, hint ? "hint" : "");
+    timer = window.setTimeout(() => validate(false), 350);
+  });
+  input.addEventListener("paste", () => window.setTimeout(() => validate(false), 0));
+  input.addEventListener("blur", () => validate(false));
+  container.querySelector(`#${idPrefix}-connect`).addEventListener("click", () => validate(true));
+  input.focus({ preventScroll: true });
+}
+
+async function maybeSwitchProviderFromKey(key, container, continueOnce) {
+  const value = String(key || "").trim();
+  const status = container.querySelector(".key-status");
+  let target = "";
+  if (value.startsWith("sk-ant-")) target = "anthropic";
+  else if (value.startsWith("sk-") && !value.startsWith("sk-or-")) target = "openai";
+  if (!target) return false;
+  const label = presetFor(target).label;
+  status.innerHTML = `That looks like an ${escapeHtml(label)} key. <button type="button" class="key-switch">Switch provider</button>`;
+  status.className = "key-status hint visible";
+  status.querySelector("button").addEventListener("click", async () => {
+    const current = loadSettings();
+    const next = settingsForPreset(target, current);
+    saveSettings({
+      ...next,
+      api_key: value,
+      session_only: !container.querySelector("input[role='switch']").checked,
+    });
+    initSettingsPanel();
+    refreshCurrentBrain();
+    await continueOnce?.();
+  }, { once: true });
+  return true;
+}
+
+async function validateKeyForPreset({ key, presetId, statusEl, required = false, onShake = null } = {}) {
+  const value = String(key || "").trim();
+  const preset = presetFor(presetId);
+  if (!preset.requires_key) {
+    setKeyStatus(statusEl, "No key required for this provider.", "valid");
+    return true;
+  }
+  const hint = providerKeyHint(value, preset.id);
+  if (!value) {
+    if (required) {
+      setKeyStatus(statusEl, "Enter a key first.", "invalid");
+      shake(onShake);
+      return false;
+    }
+    setKeyStatus(statusEl, "", "");
+    return false;
+  }
+  if (hint) {
+    setKeyStatus(statusEl, hint, "hint");
+    if (required && /truncated|looks like/i.test(hint)) shake(onShake);
+    if (preset.id !== "openrouter") return true;
+    if (!isPlausibleOpenRouterKey(value)) return false;
+  }
+  if (preset.id !== "openrouter") {
+    setKeyStatus(statusEl, "Key saved for this provider.", "valid");
+    return true;
+  }
+  if (!isPlausibleOpenRouterKey(value)) {
+    setKeyStatus(statusEl, "That OpenRouter key looks too short.", "invalid");
+    if (required) shake(onShake);
+    return false;
+  }
+  setKeyStatus(statusEl, "Validating...", "busy");
+  try {
+    const result = await validateOpenRouterKey(value);
+    setKeyStatus(statusEl, openRouterValidMessage(result), "valid");
+    return true;
+  } catch (err) {
+    setKeyStatus(statusEl, err?.message || "OpenRouter rejected that key.", "invalid");
+    shake(onShake);
+    return false;
+  }
+}
+
+async function validateOpenRouterKey(key) {
+  const response = await fetch(OPENROUTER_KEY_CHECK_URL, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${key}` },
+  });
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) throw new Error("That key was rejected by OpenRouter.");
+    throw new Error(`OpenRouter returned HTTP ${response.status}.`);
+  }
+  let json = {};
+  try { json = await response.json(); } catch {}
+  return json;
+}
+
+function providerKeyHint(key, presetId) {
+  const value = String(key || "").trim();
+  if (!value) return "";
+  if (value.startsWith("sk-ant-") && presetId !== "anthropic") return "That looks like an Anthropic key — switch provider?";
+  if (value.startsWith("sk-") && !value.startsWith("sk-or-") && !value.startsWith("sk-ant-") && presetId !== "openai") {
+    return "That looks like an OpenAI key — switch provider?";
+  }
+  if (presetId === "openrouter" && value.startsWith("sk-or-v1-") && value.length < 30) {
+    return "That OpenRouter key looks truncated.";
+  }
+  return "";
+}
+
+function isPlausibleOpenRouterKey(value) {
+  return /^sk-or-v1-[A-Za-z0-9_-]{24,}$/.test(String(value || "").trim());
+}
+
+function openRouterValidMessage(result) {
+  const data = result?.data || result || {};
+  const label = data.label || data.name || data.key_name || "";
+  const limit = data.limit || data.usage_limit || data.limit_remaining || "";
+  const detail = [label, limit ? `limit ${limit}` : ""].filter(Boolean).join(" · ");
+  return detail ? `Connected · ${detail}` : "Connected";
+}
+
+function setKeyStatus(el, message, tone = "") {
+  if (!el) return;
+  el.textContent = message || "";
+  el.className = `key-status${message ? " visible" : ""}${tone ? ` ${tone}` : ""}`;
+}
+
+function shake(onShake) {
+  onShake?.();
+  window.setTimeout(() => document.querySelectorAll(".shake-once").forEach((el) => el.classList.remove("shake-once")), 260);
+}
+
+function toggleSecretInput(root) {
+  const input = root.querySelector("#api-key");
+  const showing = input.type === "text";
+  input.type = showing ? "password" : "text";
+  const button = root.querySelector("#api-key-toggle");
+  button.textContent = showing ? "Show" : "Hide";
+  button.setAttribute("aria-label", showing ? "Show API key" : "Hide API key");
+  button.setAttribute("aria-pressed", showing ? "false" : "true");
+}
+
+function updateModelHints(panel = document.getElementById("settings-panel")) {
+  if (!panel) return;
+  const answer = panel.querySelector("#answer-model")?.value || "";
+  const author = panel.querySelector("#author-model")?.value || "";
+  const answerHint = panel.querySelector("[data-model-hint='answer']");
+  const authorHint = panel.querySelector("[data-model-hint='author']");
+  if (answerHint) answerHint.textContent = testedModelHint(answer);
+  if (authorHint) authorHint.textContent = testedModelHint(author);
 }
 
 async function buildLiveAssetData(holeId) {
@@ -699,6 +1324,62 @@ function setIngestStatus(message, tone = "") {
   el.setAttribute("aria-live", tone === "error" ? "assertive" : "polite");
 }
 
+function constellationSvg(hole) {
+  const nodes = Array.isArray(hole?.nodes) ? hole.nodes : [];
+  if (!nodes.length) return `<svg viewBox="0 0 44 32" role="img" aria-label=""></svg>`;
+  const points = nodes.map((node) => {
+    const size = node.size || {};
+    const pos = node.position || {};
+    return {
+      id: node.id,
+      parent: node.parent_id,
+      root: node.id === hole.root_id,
+      x: Number(pos.x || 0) + Number(size.w || 0) / 2,
+      y: Number(pos.y || 0) + Number(size.h || 0) / 2,
+    };
+  });
+  const minX = Math.min(...points.map((p) => p.x));
+  const maxX = Math.max(...points.map((p) => p.x));
+  const minY = Math.min(...points.map((p) => p.y));
+  const maxY = Math.max(...points.map((p) => p.y));
+  const width = maxX - minX;
+  const height = maxY - minY;
+  const fit = (p) => ({
+    x: width ? 4 + ((p.x - minX) / width) * 36 : 22,
+    y: height ? 4 + ((p.y - minY) / height) * 24 : 16,
+  });
+  const byId = new Map(points.map((p) => [p.id, p]));
+  const lines = points.filter((p) => p.parent && byId.has(p.parent)).map((p) => {
+    const a = fit(byId.get(p.parent));
+    const b = fit(p);
+    return `<line x1="${round(a.x)}" y1="${round(a.y)}" x2="${round(b.x)}" y2="${round(b.y)}"></line>`;
+  }).join("");
+  const dots = points.map((p) => {
+    const f = fit(p);
+    return `<circle class="${p.root ? "root-dot" : ""}" cx="${round(f.x)}" cy="${round(f.y)}" r="${p.root ? "2.3" : "1.55"}"></circle>`;
+  }).join("");
+  return `<svg viewBox="0 0 44 32" role="img" aria-label="">${lines}${dots}</svg>`;
+}
+
+function round(value) {
+  return Math.round(value * 10) / 10;
+}
+
+function setBlankZoom(value) {
+  blankZoom = Math.min(2.5, Math.max(0.15, Number(value) || 1));
+  const world = document.getElementById("world");
+  if (world && !currentHoleId) world.style.transform = `translate(0px,0px) scale(${blankZoom})`;
+  const label = document.getElementById("zoom-label");
+  if (label && !currentHoleId) label.textContent = `${Math.round(blankZoom * 100)}%`;
+}
+
+function toggleBlankTheme() {
+  const current = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+  const next = current === "dark" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  try { localStorage.setItem("rh-theme", next); } catch {}
+}
+
 function isPdfFile(file) {
   return /(\.pdf$|application\/pdf)/i.test(`${file?.name || ""} ${file?.type || ""}`);
 }
@@ -708,7 +1389,27 @@ function isRabbitholeFile(file) {
 }
 
 function isMarkdownFile(file) {
-  return /(\.md$|\.markdown$|markdown|text\/plain)/i.test(`${file?.name || ""} ${file?.type || ""}`);
+  return /(\.md$|\.markdown$|markdown|text\/plain|application\/json)/i.test(`${file?.name || ""} ${file?.type || ""}`);
+}
+
+function isSingleHttpUrl(value) {
+  const text = String(value || "").trim();
+  if (!text || /\s/.test(text)) return false;
+  try {
+    const url = new URL(text);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function looksLikeDocument(value) {
+  const text = String(value || "").trim();
+  if (text.length > 400) return true;
+  if (/^#{1,6}\s+\S/m.test(text)) return true;
+  if (/```/.test(text)) return true;
+  const paragraphs = text.split(/\n\s*\n/).filter((part) => part.trim().length > 24);
+  return paragraphs.length >= 2;
 }
 
 function holeIdFromHash() {
@@ -716,9 +1417,9 @@ function holeIdFromHash() {
   return match ? decodeURIComponent(match[1]) : "";
 }
 
-function formatRelativeDate(value) {
+function formatRelativeDate(value, { compact = false } = {}) {
   const date = value ? new Date(value) : null;
-  if (!date || Number.isNaN(date.getTime())) return "Updated at an unknown time";
+  if (!date || Number.isNaN(date.getTime())) return compact ? "unknown" : "Updated at an unknown time";
   const deltaSeconds = Math.round((date.getTime() - Date.now()) / 1000);
   const abs = Math.abs(deltaSeconds);
   const ranges = [
@@ -732,9 +1433,10 @@ function formatRelativeDate(value) {
   try {
     const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
     const [, unit, divisor] = ranges.find(([limit]) => abs < limit);
-    return `Updated ${formatter.format(Math.round(deltaSeconds / divisor), unit)}`;
+    const formatted = formatter.format(Math.round(deltaSeconds / divisor), unit);
+    return compact ? formatted : `Updated ${formatted}`;
   } catch {
-    return `Updated ${date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
+    return date.toLocaleString(undefined, { month: "short", day: "numeric" });
   }
 }
 
@@ -746,6 +1448,32 @@ function blobToDataUrl(blob) {
     reader.onerror = () => resolve("data:,");
     reader.readAsDataURL(blob);
   });
+}
+
+function apiKeyPlaceholder(presetId) {
+  switch (presetFor(presetId).id) {
+    case "openrouter": return "sk-or-v1-...";
+    case "anthropic": return "sk-ant-...";
+    case "openai": return "sk-...";
+    default: return "optional";
+  }
+}
+
+function isAuthLikeError(err) {
+  return err?.status === 401 ||
+    err?.status === 403 ||
+    err?.code === "missing_key" ||
+    /api key|401|403|unauthorized|forbidden/i.test(err?.message || String(err));
+}
+
+function autoGrowTextarea(textarea, maxHeight) {
+  textarea.style.height = "auto";
+  textarea.style.height = `${Math.min(maxHeight, textarea.scrollHeight)}px`;
+  textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
+}
+
+function isEditableTarget(target) {
+  return !!target?.closest?.("input, textarea, select, [contenteditable='true']");
 }
 
 function escapeHtml(value) {
@@ -790,13 +1518,12 @@ function fallbackCopyText(text) {
   area.remove();
 }
 
-function apiKeyPlaceholder(presetId) {
-  switch (presetFor(presetId).id) {
-    case "openrouter": return "sk-or-v1-...";
-    case "anthropic": return "sk-ant-...";
-    case "openai": return "sk-...";
-    default: return "optional";
-  }
+function safeLocalStorageGet(key) {
+  try { return localStorage.getItem(key) || ""; } catch { return ""; }
+}
+
+function safeLocalStorageSet(key, value) {
+  try { localStorage.setItem(key, value); } catch {}
 }
 
 function bunnyMarkSvg() {
@@ -807,4 +1534,21 @@ function bunnyMarkSvg() {
     <ellipse cx="36" cy="45" rx="17" ry="13.5"></ellipse>
     <circle cx="52.5" cy="49" r="5"></circle>
   </svg>`;
+}
+
+function exposeTestApi() {
+  window.__rhWebApp = {
+    store,
+    importRabbitholeForTest: (text) => importRabbitholeFile(store, text),
+    exportRabbitholeForTest: async (id = currentHoleId) => {
+      await currentHost?.flushSave();
+      return downloadRabbitholeExport(store, id);
+    },
+    exportSnapshotForTest: async () => buildSnapshotHtml(await buildSnapshotHydration()),
+    currentHoleId: () => currentHoleId,
+    readRawHole: (id = currentHoleId) => id ? store.readRawHoleForTest(id) : null,
+    renderRailForTest: renderRail,
+    deleteHoleForTest: deleteHoleFromRail,
+    exportHoleFromRailForTest: exportHoleFromRail,
+  };
 }

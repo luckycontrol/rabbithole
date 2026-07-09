@@ -1,4 +1,4 @@
-import { buildAnswerMessages, buildAuthorMessages } from "../../core/prompts/index.js";
+import { buildAnswerMessages, buildAuthorMessages, buildExplainerMessages } from "../../core/prompts/index.js";
 import { ProviderError, normalizeProviderError } from "./errors.js";
 import { OpenAICompatibleBrain } from "./openai-compatible.js";
 
@@ -27,6 +27,16 @@ export class AnthropicDirectBrain {
     }
   }
 
+  async *authorExplainer(input, signal) {
+    try {
+      yield* this.compat.authorExplainer(input, signal);
+    } catch (err) {
+      const normalized = normalizeProviderError(err);
+      if (normalized.status && normalized.status !== 404) throw normalized;
+      yield* this.authorExplainerMessagesApi(input, signal);
+    }
+  }
+
   async *answerBranch(context, signal) {
     try {
       yield* this.compat.answerBranch(context, signal);
@@ -44,6 +54,11 @@ export class AnthropicDirectBrain {
 
   async *authorDocumentMessagesApi(source, signal) {
     const messages = buildAuthorMessages(source);
+    yield* this.streamMessagesApi({ messages, model: this.authorModel, signal });
+  }
+
+  async *authorExplainerMessagesApi(input, signal) {
+    const messages = buildExplainerMessages(input);
     yield* this.streamMessagesApi({ messages, model: this.authorModel, signal });
   }
 

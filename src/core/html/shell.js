@@ -32,6 +32,9 @@ export const CANVAS_SHELL = `
 
 <div id="viewport"><div id="world"><svg id="edges"></svg></div></div>
 <div id="toolbar">
+  <button class="tool-btn tool-icon" id="t-rail" title="Toggle rabbitholes · S" aria-label="Toggle rabbitholes" aria-expanded="false" aria-controls="web-rail"><svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><rect x="2.5" y="2.75" width="11" height="10.5" rx="1.6"/><path d="M6.25 2.75v10.5"/></svg></button>
+  <button class="tool-btn tool-icon" id="t-new" title="New Rabbithole · N" aria-label="New Rabbithole"><svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M8 3.25v9.5"/><path d="M3.25 8h9.5"/></svg></button>
+  <span class="sep" id="app-sep"></span>
   <button class="tool-btn" id="t-reader" title="Back to reading"><svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M3.75 3.25h4.5c1 0 1.8.8 1.8 1.8v7.7H5.15c-.77 0-1.4-.63-1.4-1.4z"/><path d="M5.15 12.75c-.77 0-1.4-.63-1.4-1.4s.63-1.4 1.4-1.4h4.9"/></svg>Reader</button>
   <span class="sep"></span>
   <button class="tool-btn tool-icon" id="t-zout" title="Zoom out" aria-label="Zoom out">−</button>
@@ -43,6 +46,7 @@ export const CANVAS_SHELL = `
   <span class="sep"></span>
   <button class="tool-btn tool-icon" id="t-share" title="Share, export, synthesize" aria-label="Share, export, synthesize">↗</button>
   <button class="tool-btn tool-icon" id="t-theme" title="Toggle theme" aria-label="Toggle theme">◑</button>
+  <button class="tool-btn tool-icon" id="t-settings" title="Provider settings" aria-label="Provider settings" aria-controls="web-settings-modal" aria-expanded="false"><svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M6.75 2.25h2.5l.38 1.55c.38.13.74.28 1.07.47l1.35-.82 1.25 2.16-1.18 1.03c.04.22.06.45.06.68s-.02.46-.06.68l1.18 1.03-1.25 2.16-1.35-.82c-.33.19-.69.34-1.07.47l-.38 1.55h-2.5l-.38-1.55a5.1 5.1 0 0 1-1.07-.47l-1.35.82-1.25-2.16 1.18-1.03a3.9 3.9 0 0 1 0-1.36L2.75 5.61 4 3.45l1.35.82c.33-.19.69-.34 1.07-.47z"/><circle cx="8" cy="8" r="1.9"/></svg></button>
   <span class="sep" id="act-sep" style="display:none"></span>
   <button class="activity" id="act-canvas" title="Jump to it" aria-label="Jump to active answer"></button>
 </div>

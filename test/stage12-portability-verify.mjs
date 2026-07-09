@@ -8,8 +8,9 @@ import { chromium } from "playwright";
 
 const ROOT = path.resolve(new URL("..", import.meta.url).pathname);
 const WEB_DIST = path.join(ROOT, "web/dist");
-const MOCK_KEY = "rh_mock_key_DO_NOT_LEAK";
+const MOCK_KEY = `sk-or-v1-${"x".repeat(64)}`;
 const PROVIDER_URL = "https://openrouter.ai/api/v1/chat/completions";
+const KEY_URL = "https://openrouter.ai/api/v1/key";
 
 try {
   await fs.access(path.join(WEB_DIST, "index.html"));
@@ -30,6 +31,17 @@ try {
   const context = await browser.newContext({ acceptDownloads: true });
   const page = await context.newPage();
   let authorCalls = 0;
+  await page.route(KEY_URL, async (route) => {
+    if (route.request().method() === "OPTIONS") {
+      await route.fulfill({ status: 204, headers: corsHeaders(), body: "" });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      headers: { ...corsHeaders(), "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ data: { label: "test key" } }),
+    });
+  });
   await page.route(PROVIDER_URL, async (route) => {
     if (route.request().method() === "OPTIONS") {
       await route.fulfill({ status: 204, headers: corsHeaders(), body: "" });
@@ -54,29 +66,28 @@ try {
   });
 
   await page.goto(baseUrl, { waitUntil: "networkidle" });
-  await assertHomePolish(page);
-  await page.selectOption("#provider-preset", "openrouter");
+  await assertShellPolish(page);
+  await page.click("#t-settings");
   await page.fill("#api-key", MOCK_KEY);
-  await page.check("#session-only");
   await page.click("#save-settings");
+  await page.waitForSelector("text=Settings saved.");
+  await page.click("#web-settings-close");
 
-  await page.check("#improve-structure");
-  await page.fill("#new-title", "Author Check");
-  await page.fill("#paste-md", "raw notes about a streamed authoring pass");
-  await page.click("#create-hole");
-  await page.waitForSelector("text=This document was streamed through the author model");
+  await page.click("#t-new");
+  await page.fill("#composer-input", "# Author Check\n\nraw notes about a streamed authoring pass");
+  await page.check("#composer-improve");
+  await page.click("#composer-primary");
+  await waitForCanvasText(page, "This document was streamed through the author model");
   assert.equal(authorCalls, 1, "Improve structure should call authorDocument once");
 
-  await page.click("#web-home");
-  await page.waitForSelector("#file-md");
-  await page.uncheck("#improve-structure");
+  await page.click("#t-new");
 
   const pdfBytes = buildTinyPdf(["Portable asset page: import should render this PNG asset."]);
   await dropPdf(page, pdfBytes);
-  await page.waitForSelector(".doc-content[data-node-id] img");
-  await page.waitForSelector("text=Portable asset page");
+  await page.waitForSelector(".node .doc-content[data-node-id] img");
+  await waitForCanvasText(page, "Portable asset page");
   await page.waitForFunction(() => {
-    const img = document.querySelector(".doc-content[data-node-id] img");
+    const img = document.querySelector(".node .doc-content[data-node-id] img");
     return !!img && img.complete && img.naturalWidth > 0;
   });
 
@@ -92,7 +103,7 @@ try {
   assert(original.sizes["page-001.png"] > 100, "PDF page asset should be non-empty");
 
   const shareDownloadPromise = page.waitForEvent("download");
-  await page.click("#r-share");
+  await page.click("#t-share");
   await page.click("#sm-portable");
   const shareDownload = await shareDownloadPromise;
   const shareExportPath = path.join(tmp, shareDownload.suggestedFilename());
@@ -107,10 +118,10 @@ try {
   assert.equal(exported.hole.schema_version, 1);
   assert.equal(typeof exported.assets["page-001.png"], "string");
 
-  await page.click("#web-home");
-  await page.waitForSelector("#hole-list");
+  await ensureRailOpen(page);
+  assert.equal(await page.locator(".rail-row", { hasText: "pdf document" }).first().locator(".rail-export").count(), 1);
   const homeDownloadPromise = page.waitForEvent("download");
-  await page.locator(".hole-row", { hasText: "pdf document" }).first().locator(".hole-export").click();
+  await page.evaluate((id) => window.__rhWebApp.exportHoleFromRailForTest(id), original.holeId);
   const homeDownload = await homeDownloadPromise;
   assert.match(homeDownload.suggestedFilename(), /^pdf-document\.rabbithole$/);
 
@@ -118,10 +129,10 @@ try {
   const importPage = await fresh.newPage();
   await importPage.goto(baseUrl, { waitUntil: "networkidle" });
   await importPage.setInputFiles("#file-md", shareExportPath);
-  await importPage.waitForSelector(".doc-content[data-node-id] img");
-  await importPage.waitForSelector("text=Portable asset page");
+  await importPage.waitForSelector(".node .doc-content[data-node-id] img");
+  await waitForCanvasText(importPage, "Portable asset page");
   await importPage.waitForFunction(() => {
-    const img = document.querySelector(".doc-content[data-node-id] img");
+    const img = document.querySelector(".node .doc-content[data-node-id] img");
     return !!img && img.complete && img.naturalWidth > 0;
   });
 
@@ -139,6 +150,7 @@ try {
 
   await fresh.close();
   await context.close();
+  await verifyPublishOutput();
   console.log("stage12 portability verification passed");
 } finally {
   await browser.close();
@@ -146,18 +158,33 @@ try {
   await fs.rm(tmp, { recursive: true, force: true });
 }
 
-async function assertHomePolish(page) {
-  await page.waitForSelector("#settings-panel");
-  const walkthroughCount = await page.locator("text=30-second OpenRouter key walkthrough").count();
-  assert.equal(walkthroughCount, 1, "OpenRouter walkthrough link should appear exactly once");
-  const emptyInList = await page.locator("#hole-list", { hasText: "No saved holes yet." }).count();
-  assert.equal(emptyInList, 1, "saved-holes empty state should stay in the list area");
+async function assertShellPolish(page) {
+  await page.waitForSelector("#composer-modal:not([hidden])");
+  assert.equal(await page.locator("#toolbar #t-rail").count(), 1, "rail toggle should live in the toolbar");
+  assert.equal(await page.locator("#toolbar #t-new").count(), 1, "new Rabbithole button should live in the toolbar");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector("#composer-modal[hidden]", { state: "attached" });
+  await page.click("#t-settings");
+  const keyLinkCount = await page.locator(`a[href="${"https://openrouter.ai/keys"}"]`).count();
+  assert.equal(keyLinkCount, 1, "OpenRouter key link should appear exactly once in settings");
   const selectState = await page.$eval("#provider-preset", (select) => ({
     label: select.options[select.selectedIndex]?.textContent || "",
     width: select.getBoundingClientRect().width,
   }));
   assert.equal(selectState.label, "OpenRouter (recommended)");
-  assert(selectState.width >= 220, `provider select should be wide enough, got ${selectState.width}`);
+  assert(selectState.width >= 190, `provider select should be wide enough, got ${selectState.width}`);
+  await page.click("#web-settings-close");
+}
+
+async function waitForCanvasText(page, text) {
+  await page.locator(".node", { hasText: text }).first().waitFor();
+}
+
+async function ensureRailOpen(page) {
+  if (await page.getAttribute("#t-rail", "aria-expanded") !== "true") {
+    await page.click("#t-rail");
+  }
+  await page.waitForSelector("#web-rail.open");
 }
 
 function projectHole(hole) {
@@ -190,7 +217,7 @@ function sse(chunks) {
 function corsHeaders() {
   return {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "authorization, content-type, accept, http-referer, x-title",
   };
 }
@@ -238,10 +265,29 @@ async function dropPdf(page, bytes) {
     const file = new File([new Uint8Array(pdfBytes)], "pdf-document.pdf", { type: "application/pdf" });
     const data = new DataTransfer();
     data.items.add(file);
-    const target = document.querySelector(".new-hole");
+    const target = document.querySelector("#composer-card");
     target.dispatchEvent(new DragEvent("dragenter", { bubbles: true, cancelable: true, dataTransfer: data }));
     target.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data }));
   }, bytes);
+}
+
+async function verifyPublishOutput() {
+  const publish = spawnSync(process.execPath, ["scripts/build-publish.mjs"], { cwd: ROOT, encoding: "utf8" });
+  if (publish.status !== 0) {
+    process.stderr.write(publish.stderr || publish.stdout || "build:publish failed\n");
+    process.exit(publish.status || 1);
+  }
+  const publishDir = path.join(ROOT, "publish");
+  for (const file of ["index.html", "app.js", "styles.css", "og.jpg", "robots.txt", "llms.txt", "favicon.svg", "_redirects"]) {
+    await fs.access(path.join(publishDir, file));
+  }
+  const redirects = await fs.readFile(path.join(publishDir, "_redirects"), "utf8");
+  assert(redirects.includes("/app / 301"));
+  assert(redirects.includes("/app/* /:splat 301"));
+  const html = await fs.readFile(path.join(publishDir, "index.html"), "utf8");
+  assert(html.includes("Rabbithole — an infinite canvas for learning"));
+  const llms = await fs.readFile(path.join(publishDir, "llms.txt"), "utf8");
+  assert(!llms.includes("rabbithole.ing/app"));
 }
 
 async function serveStatic(rootDir) {

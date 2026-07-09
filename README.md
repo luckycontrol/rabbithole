@@ -14,7 +14,7 @@ locally: no account, no API keys, nothing leaves your machine.
 
 ## Use it on the web
 
-Open **[rabbithole.ing/app](https://rabbithole.ing/app)** for the browser app:
+Open **[rabbithole.ing](https://rabbithole.ing)** for the browser app:
 bring your own key, choose OpenRouter (recommended), Anthropic, OpenAI, or a
 local OpenAI-compatible endpoint, and start from pasted markdown, PDFs, URLs,
 or `.rabbithole` files. Provider keys stay in your browser and are sent only to
@@ -195,7 +195,7 @@ assets base64-encoded into the single JSON file for portability.
 
 - `bin/mcp-server.js` — entry point (stdio MCP server)
 - `src/` — server, canvas UI (self-contained HTML), storage
-- `website/` — [rabbithole.ing](https://rabbithole.ing), a Next.js single-page site
+- `website/` — retired Next.js marketing site sources, kept for reference
 
 ## Development
 

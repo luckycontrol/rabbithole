@@ -13,6 +13,7 @@ import {
   rootId,
   setCanvasFramed,
   setCurrentNodeId,
+  setViewAdjusted,
   unreadNodes,
   updateSince,
   view
@@ -62,6 +63,7 @@ export function hydrateInitialState({ connectSse = null, post = null, refreshSta
     view.x = vs.view.x; view.y = vs.view.y;
     view.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, vs.view.scale || 1));
     setCanvasFramed(true); // the saved framing wins; don't re-frame on first entry
+    setViewAdjusted(true); // keep an existing user view in later state saves
   }
   openNode(currentNodeId); // READER is the default; canvas DOM is built lazily
   if (vs && vs.mode === "canvas") setMode("canvas");

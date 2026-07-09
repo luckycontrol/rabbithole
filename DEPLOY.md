@@ -1,8 +1,9 @@
 # Deploy Rabbithole
 
-These steps prepare the Cloudflare Pages site at `/` and the static app at
-`/app`. They assume Wrangler is authenticated, but the repo does not need
-Cloudflare credentials until the deploy commands.
+These steps prepare the Cloudflare Pages app at the root of
+`rabbithole.ing`. The retired `website/` sources stay in the repo, but
+`npm run build:publish` publishes the static web app directly from `web/dist`.
+Old `/app` URLs are handled by `_redirects`.
 
 ## First Pages Deploy
 

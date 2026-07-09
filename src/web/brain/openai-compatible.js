@@ -1,4 +1,4 @@
-import { buildAnswerMessages, buildAuthorMessages } from "../../core/prompts/index.js";
+import { buildAnswerMessages, buildAuthorMessages, buildExplainerMessages } from "../../core/prompts/index.js";
 import { ProviderError, normalizeProviderError } from "./errors.js";
 
 export class OpenAICompatibleBrain {
@@ -17,6 +17,23 @@ export class OpenAICompatibleBrain {
       messages: buildAuthorMessages(source),
       stream: true,
       temperature: 0.2,
+    };
+    yield* streamOpenAICompatible({
+      url: chatCompletionsUrl(this.baseUrl),
+      apiKey: this.apiKey,
+      body,
+      signal,
+      extraHeaders: this.extraHeaders,
+      title: this.title,
+    });
+  }
+
+  async *authorExplainer({ question } = {}, signal) {
+    const body = {
+      model: this.authorModel,
+      messages: buildExplainerMessages({ question }),
+      stream: true,
+      temperature: 0.35,
     };
     yield* streamOpenAICompatible({
       url: chatCompletionsUrl(this.baseUrl),

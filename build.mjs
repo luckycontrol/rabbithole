@@ -114,6 +114,7 @@ async function buildWebApp(assetDir) {
 
   await fs.writeFile(path.join(webDist, "styles.css"), `${CANVAS_STYLES}\n${katexCss}\n${webCss}`, "utf8");
   await fs.writeFile(path.join(webDist, "dompurify.js"), dompurify, "utf8");
+  await fs.writeFile(path.join(webDist, "favicon.svg"), buildFaviconSvg(), "utf8");
   await copyPdfAssets(webDist);
   await fs.writeFile(
     path.join(webDist, "frozen-source.js"),
@@ -175,7 +176,19 @@ function buildWebIndexHtml({ proxyOrigin = "" } = {}) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
-<title>Rabbithole</title>
+<title>Rabbithole — an infinite canvas for learning</title>
+<meta name="description" content="Rabbithole is an infinite canvas for learning. Open a document, ask from selections, and branch your understanding.">
+<link rel="canonical" href="https://rabbithole.ing/">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://rabbithole.ing/">
+<meta property="og:title" content="Rabbithole — an infinite canvas for learning">
+<meta property="og:description" content="Open a document, ask from selections, and branch your understanding on an infinite canvas.">
+<meta property="og:image" content="https://rabbithole.ing/og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Rabbithole — an infinite canvas for learning">
+<meta name="twitter:description" content="Open a document, ask from selections, and branch your understanding on an infinite canvas.">
+<meta name="twitter:image" content="https://rabbithole.ing/og.jpg">
+<link rel="icon" href="./favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
@@ -184,6 +197,19 @@ function buildWebIndexHtml({ proxyOrigin = "" } = {}) {
 <script type="module" src="./app.js"></script>
 </body>
 </html>`;
+}
+
+function buildFaviconSvg() {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#1a1918"/>
+  <g fill="#efece5">
+    <ellipse cx="30" cy="17" rx="4.6" ry="12.5" transform="rotate(20 30 17)"/>
+    <ellipse cx="21.5" cy="15.5" rx="4.6" ry="13" transform="rotate(3 21.5 15.5)"/>
+    <circle cx="21" cy="33" r="9.5"/>
+    <ellipse cx="36" cy="45" rx="17" ry="13.5"/>
+    <circle cx="52.5" cy="49" r="5"/>
+  </g>
+</svg>`;
 }
 
 function safeJsString(value) {

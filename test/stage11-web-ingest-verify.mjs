@@ -45,11 +45,11 @@ try {
     "Browser PDF page two: Integral int_0^1 x dx = 1/2",
   ]);
   await dropPdf(page, pdfBytes);
-  await page.waitForSelector(".doc-content[data-node-id] img");
-  await page.waitForSelector("text=Euler math");
-  await page.waitForSelector("text=Integral int_0^1");
+  await page.waitForSelector(".node .doc-content[data-node-id] img");
+  await waitForCanvasText(page, "Euler math");
+  await waitForCanvasText(page, "Integral int_0^1");
   await page.waitForFunction(() => {
-    const img = document.querySelector(".doc-content[data-node-id] img");
+    const img = document.querySelector(".node .doc-content[data-node-id] img");
     return !!img && img.complete && img.naturalWidth > 0;
   });
 
@@ -71,12 +71,15 @@ try {
   assert(pdfState.raw.includes("Integral int_0^1"));
 
   await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.click("#t-settings");
   await openAdvancedSettings(page);
   await page.fill("#fetch-proxy-url", `${baseUrl}/proxy`);
   await page.click("#save-settings");
-  await page.fill("#open-url-input", "https://arxiv.org/abs/1234.5678");
-  await page.click("#open-url");
-  await page.waitForSelector("text=Proxy fallback article");
+  await page.click("#web-settings-close");
+  await page.click("#t-new");
+  await page.fill("#composer-input", "https://arxiv.org/abs/1234.5678");
+  await page.click("#composer-primary");
+  await waitForCanvasText(page, "Proxy fallback article");
   assert(directArticleCalls >= 1, "direct ar5iv fetch should be attempted before proxy fallback");
   assert(proxyCalls >= 1, "proxy fallback should be used after direct fetch is blocked");
   const urlHole = await page.evaluate(async () => {
@@ -87,11 +90,14 @@ try {
   assert(urlHole.includes("https://arxiv.org/abs/1234.5678") || urlHole.includes("ar5iv.labs.arxiv.org"));
 
   await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.click("#t-settings");
   await openAdvancedSettings(page);
   await page.fill("#fetch-proxy-url", `${baseUrl}/dead-proxy`);
   await page.click("#save-settings");
-  await page.fill("#open-url-input", "https://arxiv.org/abs/9999.0000");
-  await page.click("#open-url");
+  await page.click("#web-settings-close");
+  await page.click("#t-new");
+  await page.fill("#composer-input", "https://arxiv.org/abs/9999.0000");
+  await page.click("#composer-primary");
   await page.waitForSelector("#ingest-status.error");
   const deadError = await page.textContent("#ingest-status");
   assert.match(deadError, /Paste the content manually or drop a PDF/i);
@@ -145,7 +151,7 @@ async function dropPdf(page, bytes) {
     const file = new File([new Uint8Array(pdfBytes)], "math-fixture.pdf", { type: "application/pdf" });
     const data = new DataTransfer();
     data.items.add(file);
-    const target = document.querySelector(".new-hole");
+    const target = document.querySelector("#composer-card");
     target.dispatchEvent(new DragEvent("dragenter", { bubbles: true, cancelable: true, dataTransfer: data }));
     target.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data }));
   }, bytes);
@@ -153,6 +159,10 @@ async function dropPdf(page, bytes) {
 
 async function openAdvancedSettings(page) {
   await page.locator(".settings-advanced summary").click();
+}
+
+async function waitForCanvasText(page, text) {
+  await page.locator(".node", { hasText: text }).first().waitFor();
 }
 
 function articleHtml(title) {

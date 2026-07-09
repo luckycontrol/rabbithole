@@ -1798,6 +1798,7 @@ var RabbitholeClient = (() => {
   var sseFails = 0;
   var canvasBuilt = false;
   var canvasFramed = false;
+  var viewAdjusted = false;
   var orderCounter = 0;
   var readerMain = null;
   var sideEl = null;
@@ -1863,6 +1864,7 @@ var RabbitholeClient = (() => {
     sseFails = 0;
     canvasBuilt = false;
     canvasFramed = false;
+    viewAdjusted = false;
     orderCounter = 0;
     hintTimer = 0;
     sinceDismissed = false;
@@ -1939,6 +1941,9 @@ var RabbitholeClient = (() => {
   }
   function setCanvasFramed(value) {
     canvasFramed = !!value;
+  }
+  function setViewAdjusted(value) {
+    viewAdjusted = !!value;
   }
   function nextOrder() {
     return orderCounter++;
@@ -2920,6 +2925,7 @@ var RabbitholeClient = (() => {
         },
         setView: function(x, y, scale) {
           viewAnimId++;
+          setViewAdjusted(true);
           view.x = Number(x);
           view.y = Number(y);
           view.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Number(scale)));
@@ -2941,6 +2947,7 @@ var RabbitholeClient = (() => {
     viewAnimId++;
     next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, next));
     if (next === view.scale) return;
+    setViewAdjusted(true);
     var w = screenToWorld(sx, sy);
     view.scale = next;
     view.x = sx - w.x * view.scale;
@@ -3541,6 +3548,7 @@ var RabbitholeClient = (() => {
         return true;
       },
       function(ev) {
+        setViewAdjusted(true);
         view.x = ox + (ev.clientX - sx);
         view.y = oy + (ev.clientY - sy);
         applyTransform();
@@ -3577,6 +3585,7 @@ var RabbitholeClient = (() => {
     if (wheelKind === "pan") {
       e.preventDefault();
       viewAnimId++;
+      setViewAdjusted(true);
       view.x -= e.deltaX;
       view.y -= e.deltaY;
       applyTransform();
@@ -3616,9 +3625,14 @@ var RabbitholeClient = (() => {
       maxX = Math.max(maxX, n.x + n.w);
       maxY = Math.max(maxY, n.y + (n.collapsed ? 40 : n.h));
     });
-    var vw = viewport.clientWidth || window.innerWidth, vh = viewport.clientHeight || window.innerHeight, pad2 = 100;
+    var fullW = viewport.clientWidth || window.innerWidth, fullH = viewport.clientHeight || window.innerHeight, pad2 = 100;
+    var rail = document.getElementById("web-rail"), toolbar = document.getElementById("toolbar");
+    var insetX = rail && rail.classList.contains("open") ? rail.getBoundingClientRect().width : 0;
+    var insetY = toolbar ? toolbar.getBoundingClientRect().height : 0;
+    var vw = fullW - insetX, vh = fullH - insetY;
     var ts = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min((vw - pad2) / (maxX - minX), (vh - pad2) / (maxY - minY), 1.2)));
-    var tx = vw / 2 - (minX + (maxX - minX) / 2) * ts, ty = vh / 2 - (minY + (maxY - minY) / 2) * ts;
+    var tx = insetX + vw / 2 - (minX + (maxX - minX) / 2) * ts, ty = insetY + vh / 2 - (minY + (maxY - minY) / 2) * ts;
+    if (source2) setViewAdjusted(true);
     if (animate) {
       animateView(tx, ty, ts, { source: source2, duration: 270, ease: "inOut" });
       return;
@@ -4645,6 +4659,9 @@ var RabbitholeClient = (() => {
 
 <div id="viewport"><div id="world"><svg id="edges"></svg></div></div>
 <div id="toolbar">
+  <button class="tool-btn tool-icon" id="t-rail" title="Toggle rabbitholes \xB7 S" aria-label="Toggle rabbitholes" aria-expanded="false" aria-controls="web-rail"><svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><rect x="2.5" y="2.75" width="11" height="10.5" rx="1.6"/><path d="M6.25 2.75v10.5"/></svg></button>
+  <button class="tool-btn tool-icon" id="t-new" title="New Rabbithole \xB7 N" aria-label="New Rabbithole"><svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M8 3.25v9.5"/><path d="M3.25 8h9.5"/></svg></button>
+  <span class="sep" id="app-sep"></span>
   <button class="tool-btn" id="t-reader" title="Back to reading"><svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M3.75 3.25h4.5c1 0 1.8.8 1.8 1.8v7.7H5.15c-.77 0-1.4-.63-1.4-1.4z"/><path d="M5.15 12.75c-.77 0-1.4-.63-1.4-1.4s.63-1.4 1.4-1.4h4.9"/></svg>Reader</button>
   <span class="sep"></span>
   <button class="tool-btn tool-icon" id="t-zout" title="Zoom out" aria-label="Zoom out">\u2212</button>
@@ -4656,6 +4673,7 @@ var RabbitholeClient = (() => {
   <span class="sep"></span>
   <button class="tool-btn tool-icon" id="t-share" title="Share, export, synthesize" aria-label="Share, export, synthesize">\u2197</button>
   <button class="tool-btn tool-icon" id="t-theme" title="Toggle theme" aria-label="Toggle theme">\u25D1</button>
+  <button class="tool-btn tool-icon" id="t-settings" title="Provider settings" aria-label="Provider settings" aria-controls="web-settings-modal" aria-expanded="false"><svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M6.75 2.25h2.5l.38 1.55c.38.13.74.28 1.07.47l1.35-.82 1.25 2.16-1.18 1.03c.04.22.06.45.06.68s-.02.46-.06.68l1.18 1.03-1.25 2.16-1.35-.82c-.33.19-.69.34-1.07.47l-.38 1.55h-2.5l-.38-1.55a5.1 5.1 0 0 1-1.07-.47l-1.35.82-1.25-2.16 1.18-1.03a3.9 3.9 0 0 1 0-1.36L2.75 5.61 4 3.45l1.35.82c.33-.19.69-.34 1.07-.47z"/><circle cx="8" cy="8" r="1.9"/></svg></button>
   <span class="sep" id="act-sep" style="display:none"></span>
   <button class="activity" id="act-canvas" title="Jump to it" aria-label="Jump to active answer"></button>
 </div>
@@ -31561,7 +31579,9 @@ ${text2}</tr>
       if (closed) return;
       var cur = nodes[currentNodeId];
       var scroll = mode === "reader" ? readerMain.scrollTop : cur && cur._scrollTop || 0;
-      post({ type: "view_state", state: { mode, node_id: currentNodeId, scroll, view: { x: view.x, y: view.y, scale: view.scale } } });
+      var state = { mode, node_id: currentNodeId, scroll };
+      if (viewAdjusted) state.view = { x: view.x, y: view.y, scale: view.scale };
+      post({ type: "view_state", state });
     }, 600);
   }
   var saveTimers = {};
@@ -31929,6 +31949,7 @@ ${text2}</tr>
       view.y = vs.view.y;
       view.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, vs.view.scale || 1));
       setCanvasFramed(true);
+      setViewAdjusted(true);
     }
     openNode(currentNodeId);
     if (vs && vs.mode === "canvas") setMode("canvas");

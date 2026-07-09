@@ -39,6 +39,7 @@ export var connLost = false;
 export var sseFails = 0;
 export var canvasBuilt = false;   // canvas DOM is built lazily on first entry
 export var canvasFramed = false;  // frame-all runs once; afterwards the view is preserved
+export var viewAdjusted = false;  // only user-adjusted camera state is persisted
 var orderCounter = 0;
 
 // refs
@@ -102,6 +103,7 @@ export function initCore(inputHydration) {
   sseFails = 0;
   canvasBuilt = false;
   canvasFramed = false;
+  viewAdjusted = false;
   orderCounter = 0;
   hintTimer = 0;
   sinceDismissed = false;
@@ -160,6 +162,7 @@ export function resetSseFails(){ sseFails = 0; }
 export function incrementSseFails(){ sseFails += 1; return sseFails; }
 export function setCanvasBuilt(value){ canvasBuilt = !!value; }
 export function setCanvasFramed(value){ canvasFramed = !!value; }
+export function setViewAdjusted(value){ viewAdjusted = !!value; }
 export function nextOrder(){ return orderCounter++; }
 export function armSince(){ sinceArmed = true; }
 
