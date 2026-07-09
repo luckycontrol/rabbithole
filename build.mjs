@@ -10,6 +10,7 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const parsed = parseOutdir(process.argv.slice(2));
 const outdir = parsed.outdir;
 const absOutdir = path.resolve(rootDir, outdir);
+const proxyConfig = readProxyConfig(process.env.RABBITHOLE_PROXY_URL);
 
 const KATEX_FONT_SRC =
   /src:\s*url\((fonts\/[^)]+\.woff2)\)\s*format\("woff2"\),\s*url\((fonts\/[^)]+\.woff)\)\s*format\("woff"\),\s*url\((fonts\/[^)]+\.ttf)\)\s*format\("truetype"\);/g;
@@ -97,6 +98,9 @@ async function buildWebApp(assetDir) {
     chunkNames: "chunks/[name]-[hash]",
     minify: false,
     sourcemap: false,
+    define: {
+      __RABBITHOLE_DEFAULT_PROXY_URL__: JSON.stringify(proxyConfig.defaultUrl),
+    },
     legalComments: "none",
     logLevel: "silent"
   });
@@ -117,7 +121,7 @@ async function buildWebApp(assetDir) {
       `window.__RABBITHOLE_DOMPURIFY_SOURCE__=${safeJsString(dompurify)};\n`,
     "utf8"
   );
-  await fs.writeFile(path.join(webDist, "index.html"), buildWebIndexHtml(), "utf8");
+  await fs.writeFile(path.join(webDist, "index.html"), buildWebIndexHtml(proxyConfig), "utf8");
 }
 
 async function copyPdfAssets(webDist) {
@@ -136,14 +140,31 @@ async function copyPackedCMaps(sourceDir, targetDir) {
   }
 }
 
-function buildWebIndexHtml() {
+function buildWebIndexHtml({ proxyOrigin = "" } = {}) {
+  const connectSrc = [
+    "'self'",
+    "https://openrouter.ai",
+    "https://api.openai.com",
+    "https://api.anthropic.com",
+    "https://arxiv.org",
+    "https://www.arxiv.org",
+    "https://ar5iv.labs.arxiv.org",
+    "https://ar5iv.org",
+    "https://openreview.net",
+    "https://*.workers.dev",
+    "http://localhost:*",
+    "http://127.0.0.1:*",
+  ];
+  if (proxyOrigin && !connectSrc.includes(proxyOrigin)) {
+    connectSrc.push(proxyOrigin);
+  }
   const csp = [
     "default-src 'self'",
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self' data:",
     "img-src 'self' blob: data: https:",
-    "connect-src 'self' https://openrouter.ai https://api.openai.com https://api.anthropic.com https://arxiv.org https://www.arxiv.org https://ar5iv.labs.arxiv.org https://ar5iv.org https://openreview.net https://*.workers.dev http://localhost:* http://127.0.0.1:*",
+    `connect-src ${connectSrc.join(" ")}`,
     "worker-src 'self'",
     "base-uri 'none'",
     "form-action 'none'",
@@ -172,6 +193,21 @@ function safeJsString(value) {
     .replace(/&/g, "\\u0026")
     .replace(/\u2028/g, "\\u2028")
     .replace(/\u2029/g, "\\u2029");
+}
+
+function readProxyConfig(raw) {
+  const defaultUrl = String(raw || "").trim();
+  if (!defaultUrl) return { defaultUrl: "", proxyOrigin: "" };
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(defaultUrl);
+  } catch {
+    throw new Error("RABBITHOLE_PROXY_URL must be an absolute http(s) URL.");
+  }
+  if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+    throw new Error("RABBITHOLE_PROXY_URL must use http: or https:.");
+  }
+  return { defaultUrl, proxyOrigin: parsedUrl.origin };
 }
 
 function parseOutdir(args) {

@@ -4,11 +4,27 @@
 question — and the answer opens as a fully-rendered child document. Recurse as
 deep as you like. Every hole is saved and revisitable.
 
-Rabbithole is an MCP server. Your terminal agent (Claude Code, Codex, or any
-MCP client) does the answering; Rabbithole gives it a canvas in your browser.
-Everything runs locally — no account, no API keys, nothing leaves your machine.
+Rabbithole has two ways in: a local MCP server for terminal agents, and a
+static browser app for humans who want to bring their own model key. In the MCP
+path, your agent (Claude Code, Codex, or any MCP client) does the answering and
+Rabbithole gives it a canvas in your browser. Everything in that path runs
+locally: no account, no API keys, nothing leaves your machine.
 
 🌐 **[rabbithole.ing](https://rabbithole.ing)**
+
+## Use it on the web
+
+Open **[rabbithole.ing/app](https://rabbithole.ing/app)** for the browser app:
+bring your own key, choose OpenRouter (recommended), Anthropic, OpenAI, or a
+local OpenAI-compatible endpoint, and start from pasted markdown, PDFs, URLs,
+or `.rabbithole` files. Provider keys stay in your browser and are sent only to
+the provider origin you configure. Holes persist in IndexedDB, so the app keeps
+working offline-ish after it loads, and `.rabbithole` export/import keeps your
+work portable.
+
+Self-hosting is static: `web/dist` can be served by any host. The optional
+`workers/fetch-proxy` Cloudflare Worker enables URL ingestion for sources that
+block browser CORS.
 
 ## Quick start
 

@@ -13,6 +13,8 @@ const SETTINGS_KEY = "rh-web-settings";
 const KEY_KEY = "rh-web-api-key";
 const AGENT_COMMAND = "claude mcp add rabbithole -- npx -y github:shlokkhemani/rabbithole";
 const OPENROUTER_WALKTHROUGH_URL = "https://openrouter.ai/docs/quickstart";
+const DEFAULT_FETCH_PROXY_URL =
+  typeof __RABBITHOLE_DEFAULT_PROXY_URL__ === "string" ? __RABBITHOLE_DEFAULT_PROXY_URL__ : "";
 
 const store = new IdbStore();
 let memoryKey = "";
@@ -627,11 +629,16 @@ function readSettingsForm() {
 }
 
 function loadSettings() {
+  const defaults = defaultWebSettings();
   try {
-    return { ...defaultBrainSettings(), ...(JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")) };
+    return { ...defaults, ...(JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")) };
   } catch {
-    return defaultBrainSettings();
+    return defaults;
   }
+}
+
+function defaultWebSettings() {
+  return { ...defaultBrainSettings(), fetch_proxy_url: DEFAULT_FETCH_PROXY_URL || "" };
 }
 
 function saveSettings(settings) {

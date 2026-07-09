@@ -90,6 +90,9 @@ export default function Page() {
           <a className="btn btn-primary" href="#install">
             install in 60 seconds
           </a>
+          <a className="btn btn-ghost" href="/app">
+            or open the app in your browser &rarr;
+          </a>
           <a className="btn btn-ghost" href={REPO}>
             star on GitHub
           </a>

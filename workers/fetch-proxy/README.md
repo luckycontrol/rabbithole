@@ -5,14 +5,29 @@ Stateless GET-only proxy for the static web app's URL-open flow.
 Deploy with Wrangler:
 
 ```bash
+cd workers/fetch-proxy && wrangler deploy
+```
+
+From the repo root, the original one-liner also works:
+
+```bash
 wrangler deploy workers/fetch-proxy/index.js --name rabbithole-fetch-proxy
 ```
 
-Then paste the deployed Worker URL into Rabbithole web Settings as the fetch proxy URL. The app sends requests as:
+Then paste the deployed Worker URL into Rabbithole Settings as the fetch proxy URL. The app sends requests as:
 
 ```text
 https://your-worker.example/?url=https%3A%2F%2Farxiv.org%2Fabs%2F1706.03762
 ```
+
+For a hosted static build, set the Worker URL at build time so the app's CSP
+allows that origin and the Settings field starts with the deployed proxy URL:
+
+```bash
+RABBITHOLE_PROXY_URL=https://rabbithole-fetch-proxy.example.workers.dev npm run build:publish
+```
+
+Users can still edit and save the fetch proxy URL in Settings.
 
 ## Allowlist Rationale
 
