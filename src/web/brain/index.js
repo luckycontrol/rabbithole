@@ -4,6 +4,7 @@ import { AnthropicDirectBrain } from "./anthropic-messages.js";
 
 export * from "./errors.js";
 export * from "./presets.js";
+export * from "./tested-models.js";
 export * from "./title-sentinel.js";
 export * from "./openai-compatible.js";
 export * from "./anthropic-messages.js";

@@ -124,7 +124,16 @@ async function copyPdfAssets(webDist) {
   const packageRoot = path.dirname(require.resolve("pdfjs-dist/package.json"));
   await fs.copyFile(path.join(packageRoot, "build/pdf.worker.mjs"), path.join(webDist, "pdf.worker.mjs"));
   await fs.cp(path.join(packageRoot, "standard_fonts"), path.join(webDist, "standard_fonts"), { recursive: true });
-  await fs.cp(path.join(packageRoot, "cmaps"), path.join(webDist, "cmaps"), { recursive: true });
+  await copyPackedCMaps(path.join(packageRoot, "cmaps"), path.join(webDist, "cmaps"));
+}
+
+async function copyPackedCMaps(sourceDir, targetDir) {
+  await fs.mkdir(targetDir, { recursive: true });
+  const entries = await fs.readdir(sourceDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".bcmap")) continue;
+    await fs.copyFile(path.join(sourceDir, entry.name), path.join(targetDir, entry.name));
+  }
 }
 
 function buildWebIndexHtml() {

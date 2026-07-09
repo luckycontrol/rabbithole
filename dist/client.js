@@ -3093,6 +3093,7 @@ var RabbitholeClient = (() => {
     var send = document.createElement("button");
     send.className = "send-btn";
     send.title = "Send (\u21B5)";
+    send.setAttribute("aria-label", "Send follow-up");
     send.innerHTML = SEND_ICON;
     var handle = document.createElement("button");
     handle.type = "button";
@@ -4619,22 +4620,22 @@ var RabbitholeClient = (() => {
 <div id="reader">
   <div id="reader-top">
     <div id="breadcrumb"></div>
-    <button class="activity" id="act-reader" title="Jump to it"></button>
+    <button class="activity" id="act-reader" title="Jump to it" aria-label="Jump to active answer"></button>
     <button class="tool-btn" id="r-textdown" title="Smaller text">A\u2212</button>
     <button class="tool-btn" id="r-textup" title="Larger text">A+</button>
     <button class="tool-btn" id="r-canvas" title="Open the spatial canvas">\u2922 Canvas</button>
     <button class="tool-btn" id="r-share" title="Share, export, synthesize">\u2197 Share</button>
-    <button class="tool-btn" id="r-theme" title="Toggle theme">\u25D1</button>
+    <button class="tool-btn" id="r-theme" title="Toggle theme" aria-label="Toggle theme">\u25D1</button>
     <button class="tool-btn" id="r-done" title="End the session (the hole stays saved)">Done</button>
   </div>
-  <div id="since"><span class="since-dot"></span><span class="since-msg" id="since-msg"></span><button class="tool-btn" id="since-show">Show me</button><button id="since-x" title="Dismiss">\xD7</button></div>
+  <div id="since"><span class="since-dot"></span><span class="since-msg" id="since-msg"></span><button class="tool-btn" id="since-show">Show me</button><button id="since-x" title="Dismiss" aria-label="Dismiss activity notice">\xD7</button></div>
   <div id="reader-cols">
     <div id="reader-center">
       <div id="reader-main"></div>
       <div id="composer">
         <div class="composer-inner" id="composer-inner">
           <textarea id="composer-text" rows="1" placeholder="Ask a follow-up about this document\u2026"></textarea>
-          <button id="composer-send" class="send-btn" title="Send (\u21B5)" disabled><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button id="composer-send" class="send-btn" title="Send (\u21B5)" aria-label="Send follow-up" disabled><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         </div>
       </div>
     </div>
@@ -4656,13 +4657,13 @@ var RabbitholeClient = (() => {
   <button class="tool-btn tool-icon" id="t-share" title="Share, export, synthesize" aria-label="Share, export, synthesize">\u2197</button>
   <button class="tool-btn tool-icon" id="t-theme" title="Toggle theme" aria-label="Toggle theme">\u25D1</button>
   <span class="sep" id="act-sep" style="display:none"></span>
-  <button class="activity" id="act-canvas" title="Jump to it"></button>
+  <button class="activity" id="act-canvas" title="Jump to it" aria-label="Jump to active answer"></button>
 </div>
 
 <div id="ask">
   <div class="ask-input">
     <textarea id="ask-text" rows="1" placeholder="Ask about this\u2026 \u21B5 = Explain"></textarea>
-    <button class="send-btn" id="ask-go" title="Ask (\u21B5)"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <button class="send-btn" id="ask-go" title="Ask (\u21B5)" aria-label="Ask"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   </div>
   <div class="ask-lenses" id="ask-lenses">
     <button class="lens" data-lens="explain">Explain <kbd>1</kbd></button>
@@ -4688,6 +4689,7 @@ var RabbitholeClient = (() => {
   <button class="sm-item" id="sm-doc"><span class="sm-ic">\u29C9</span>Copy document as Markdown</button>
   <div class="sm-sep"></div>
   <button class="sm-item" id="sm-export"><span class="sm-ic">\u21E9</span>Download snapshot (.html)</button>
+  <button class="sm-item" id="sm-portable"><span class="sm-ic">\u21E3</span>Export Rabbithole (.rabbithole)</button>
   <div class="sm-sep" id="sm-sep2"></div>
   <button class="sm-item" id="sm-synth"><span class="sm-ic">\u2726</span>Synthesize this journey</button>
 </div>
@@ -4697,7 +4699,7 @@ var RabbitholeClient = (() => {
   <div class="cf-row"><button id="cf-keep">Keep</button><button class="cf-remove" id="cf-remove">Remove</button></div>
 </div>
 
-<div id="banner"><div class="banner-body"><span class="banner-title" id="banner-title"></span><span id="banner-msg"></span></div><button id="banner-x" title="Dismiss">\xD7</button></div>
+<div id="banner"><div class="banner-body"><span class="banner-title" id="banner-title"></span><span id="banner-msg"></span></div><button id="banner-x" title="Dismiss" aria-label="Dismiss banner">\xD7</button></div>
 <div id="hint"></div>
 `;
 
@@ -4851,7 +4853,8 @@ var RabbitholeClient = (() => {
   var branchHooks = {
     post: function() {
       return Promise.resolve({ ok: true });
-    }
+    },
+    exportPortable: null
   };
   function registerBranchHooks(hooks) {
     Object.assign(branchHooks, hooks || {});
@@ -4880,6 +4883,7 @@ var RabbitholeClient = (() => {
     document.getElementById("sm-doc").addEventListener("click", onCopyDoc);
     document.getElementById("sm-trail").addEventListener("click", onCopyTrail);
     document.getElementById("sm-export").addEventListener("click", onExportSnapshot);
+    document.getElementById("sm-portable").addEventListener("click", onExportPortable);
     document.getElementById("sm-synth").addEventListener("click", function(e) {
       closeShare();
       synthesize(motionSourceFromEvent(e));
@@ -4948,6 +4952,7 @@ var RabbitholeClient = (() => {
     }
     var noAgent = frozen || closed;
     document.getElementById("sm-export").style.display = frozen ? "none" : "";
+    document.getElementById("sm-portable").style.display = !frozen && typeof branchHooks.exportPortable === "function" ? "" : "none";
     document.getElementById("sm-sep2").style.display = noAgent ? "none" : "";
     document.getElementById("sm-synth").style.display = noAgent ? "none" : "";
     var r2 = anchor.getBoundingClientRect();
@@ -5033,6 +5038,22 @@ var RabbitholeClient = (() => {
       flashHint("Snapshot downloading \u2014 a single file that opens anywhere.");
     }, function() {
       flashHint("Couldn't prepare the snapshot.");
+    });
+  }
+  function onExportPortable() {
+    closeShare();
+    if (typeof branchHooks.exportPortable !== "function") {
+      flashHint("Rabbithole export is only available in the web app.");
+      return;
+    }
+    flashHint("Preparing Rabbithole export...");
+    Promise.resolve().then(function() {
+      return branchHooks.exportPortable();
+    }).then(function(result) {
+      var name = result && result.filename ? " " + result.filename : "";
+      flashHint("Rabbithole export downloading." + name);
+    }, function() {
+      flashHint("Couldn't prepare the Rabbithole export.");
     });
   }
   function synthesize(source2) {
@@ -32025,7 +32046,10 @@ ${text2}</tr>
       closeShare,
       hideConfirm
     });
-    registerBranchHooks({ post });
+    registerBranchHooks({
+      post,
+      exportPortable: options2 && options2.exportPortable
+    });
     initReader();
     initCanvasView();
     initAskFollowups();

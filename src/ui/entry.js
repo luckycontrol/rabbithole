@@ -89,7 +89,10 @@ export function startRabbithole(hydration, options) {
     closeShare: closeShare,
     hideConfirm: hideConfirm
   });
-  registerBranchHooks({ post: post });
+  registerBranchHooks({
+    post: post,
+    exportPortable: options && options.exportPortable
+  });
 
   initReader();
   initCanvasView();

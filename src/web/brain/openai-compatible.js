@@ -1,4 +1,4 @@
-import { buildAnswerMessages } from "../../core/prompts/index.js";
+import { buildAnswerMessages, buildAuthorMessages } from "../../core/prompts/index.js";
 import { ProviderError, normalizeProviderError } from "./errors.js";
 
 export class OpenAICompatibleBrain {
@@ -12,8 +12,20 @@ export class OpenAICompatibleBrain {
   }
 
   async *authorDocument(source, signal) {
-    if (signal?.aborted) throw normalizeProviderError(new DOMException("Aborted", "AbortError"));
-    yield String(source?.markdown ?? source?.content ?? source?.text ?? "");
+    const body = {
+      model: this.authorModel,
+      messages: buildAuthorMessages(source),
+      stream: true,
+      temperature: 0.2,
+    };
+    yield* streamOpenAICompatible({
+      url: chatCompletionsUrl(this.baseUrl),
+      apiKey: this.apiKey,
+      body,
+      signal,
+      extraHeaders: this.extraHeaders,
+      title: this.title,
+    });
   }
 
   async *answerBranch(context, signal) {

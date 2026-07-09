@@ -98,10 +98,10 @@ export class IdbStore {
     return migrated.hole;
   }
 
-  async saveHole(hole) {
+  async saveHole(hole, options = {}) {
     assertSafeHoleId(hole?.hole_id);
     await this.requestPersistenceOnce();
-    const persisted = toPersistedHole(hole);
+    const persisted = toPersistedHole(hole, options);
     const db = await this.open();
     const tx = db.transaction(HOLES, "readwrite");
     tx.objectStore(HOLES).put(cloneJson(persisted));

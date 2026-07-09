@@ -7,22 +7,22 @@ export const CANVAS_SHELL = `
 <div id="reader">
   <div id="reader-top">
     <div id="breadcrumb"></div>
-    <button class="activity" id="act-reader" title="Jump to it"></button>
+    <button class="activity" id="act-reader" title="Jump to it" aria-label="Jump to active answer"></button>
     <button class="tool-btn" id="r-textdown" title="Smaller text">A−</button>
     <button class="tool-btn" id="r-textup" title="Larger text">A+</button>
     <button class="tool-btn" id="r-canvas" title="Open the spatial canvas">⤢ Canvas</button>
     <button class="tool-btn" id="r-share" title="Share, export, synthesize">↗ Share</button>
-    <button class="tool-btn" id="r-theme" title="Toggle theme">◑</button>
+    <button class="tool-btn" id="r-theme" title="Toggle theme" aria-label="Toggle theme">◑</button>
     <button class="tool-btn" id="r-done" title="End the session (the hole stays saved)">Done</button>
   </div>
-  <div id="since"><span class="since-dot"></span><span class="since-msg" id="since-msg"></span><button class="tool-btn" id="since-show">Show me</button><button id="since-x" title="Dismiss">×</button></div>
+  <div id="since"><span class="since-dot"></span><span class="since-msg" id="since-msg"></span><button class="tool-btn" id="since-show">Show me</button><button id="since-x" title="Dismiss" aria-label="Dismiss activity notice">×</button></div>
   <div id="reader-cols">
     <div id="reader-center">
       <div id="reader-main"></div>
       <div id="composer">
         <div class="composer-inner" id="composer-inner">
           <textarea id="composer-text" rows="1" placeholder="Ask a follow-up about this document…"></textarea>
-          <button id="composer-send" class="send-btn" title="Send (↵)" disabled><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button id="composer-send" class="send-btn" title="Send (↵)" aria-label="Send follow-up" disabled><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         </div>
       </div>
     </div>
@@ -44,13 +44,13 @@ export const CANVAS_SHELL = `
   <button class="tool-btn tool-icon" id="t-share" title="Share, export, synthesize" aria-label="Share, export, synthesize">↗</button>
   <button class="tool-btn tool-icon" id="t-theme" title="Toggle theme" aria-label="Toggle theme">◑</button>
   <span class="sep" id="act-sep" style="display:none"></span>
-  <button class="activity" id="act-canvas" title="Jump to it"></button>
+  <button class="activity" id="act-canvas" title="Jump to it" aria-label="Jump to active answer"></button>
 </div>
 
 <div id="ask">
   <div class="ask-input">
     <textarea id="ask-text" rows="1" placeholder="Ask about this… ↵ = Explain"></textarea>
-    <button class="send-btn" id="ask-go" title="Ask (↵)"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <button class="send-btn" id="ask-go" title="Ask (↵)" aria-label="Ask"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   </div>
   <div class="ask-lenses" id="ask-lenses">
     <button class="lens" data-lens="explain">Explain <kbd>1</kbd></button>
@@ -76,6 +76,7 @@ export const CANVAS_SHELL = `
   <button class="sm-item" id="sm-doc"><span class="sm-ic">⧉</span>Copy document as Markdown</button>
   <div class="sm-sep"></div>
   <button class="sm-item" id="sm-export"><span class="sm-ic">⇩</span>Download snapshot (.html)</button>
+  <button class="sm-item" id="sm-portable"><span class="sm-ic">⇣</span>Export Rabbithole (.rabbithole)</button>
   <div class="sm-sep" id="sm-sep2"></div>
   <button class="sm-item" id="sm-synth"><span class="sm-ic">✦</span>Synthesize this journey</button>
 </div>
@@ -85,6 +86,6 @@ export const CANVAS_SHELL = `
   <div class="cf-row"><button id="cf-keep">Keep</button><button class="cf-remove" id="cf-remove">Remove</button></div>
 </div>
 
-<div id="banner"><div class="banner-body"><span class="banner-title" id="banner-title"></span><span id="banner-msg"></span></div><button id="banner-x" title="Dismiss">×</button></div>
+<div id="banner"><div class="banner-body"><span class="banner-title" id="banner-title"></span><span id="banner-msg"></span></div><button id="banner-x" title="Dismiss" aria-label="Dismiss banner">×</button></div>
 <div id="hint"></div>
 `;

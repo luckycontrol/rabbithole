@@ -228,7 +228,7 @@ export function autoGrowEl(ta, max){
     var clip = document.createElement("div"); clip.className = "nc-clip";
     var inner = document.createElement("div"); inner.className = "nc-inner";
     var ta = document.createElement("textarea"); ta.rows = 1;
-    var send = document.createElement("button"); send.className = "send-btn"; send.title = "Send (↵)"; send.innerHTML = SEND_ICON;
+    var send = document.createElement("button"); send.className = "send-btn"; send.title = "Send (↵)"; send.setAttribute("aria-label", "Send follow-up"); send.innerHTML = SEND_ICON;
     var handle = document.createElement("button"); handle.type = "button"; handle.className = "nc-handle"; handle.title = "Ask a follow-up about this document";
     var plus = document.createElement("span"); plus.className = "nc-plus"; plus.textContent = "+";
     handle.appendChild(plus); handle.appendChild(document.createTextNode(" Follow-up"));

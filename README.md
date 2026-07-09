@@ -161,6 +161,12 @@ and opening that content with `base_url` instead of ingesting the PDF.
 - **Persistence:** holes auto-save as JSON under `~/.rabbithole/`; resuming
   restores the doc, scroll position, mode, and canvas framing.
 
+The MCP host stores each hole as a JSON file directly under `~/.rabbithole/`
+(`RABBITHOLE_DIR` overrides the base directory) and assets under the matching
+asset directory. The web `.rabbithole` file is the same persisted hole JSON
+wrapped as `{ format: "rabbithole", format_version: 1, hole, assets }`, with
+assets base64-encoded into the single JSON file for portability.
+
 ## Configuration
 
 | Env var | Effect |

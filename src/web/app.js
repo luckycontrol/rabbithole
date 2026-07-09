@@ -3,8 +3,11 @@ import { createBrain, defaultBrainSettings, presetFor, settingsForPreset, BRAIN_
 import { IdbStore } from "./store/idb-store.js";
 import { DirectRabbitholeHost, createHoleFromMarkdown } from "./transport/direct-host.js";
 import { startRabbithole } from "../ui/entry.js";
+import { activateFocusTrap } from "../ui/focus-trap.js";
 import { setSnapshotHooks, buildSnapshotHydration, buildSnapshotHtml } from "../ui/snapshot.js";
 import { openUrlToStoredHole } from "./ingest/url.js";
+import { downloadRabbitholeExport, importRabbitholeFile, rabbitholeFilename } from "./portable.js";
+import { testedModelHint } from "./brain/tested-models.js";
 
 const SETTINGS_KEY = "rh-web-settings";
 const KEY_KEY = "rh-web-api-key";
@@ -59,7 +62,7 @@ async function renderHome() {
       <p class="home-lede">Open a document, select what makes you curious, ask, and the answer opens beside it.</p>
     </header>
 
-    <section class="hole-list-wrap" id="saved-section" hidden>
+    <section class="hole-list-wrap" id="saved-section">
       <div class="hole-list-head">
         <h2>Saved holes</h2>
         <button id="refresh-list" class="web-secondary" type="button">Refresh</button>
@@ -75,7 +78,7 @@ async function renderHome() {
             <p>Paste markdown, drop a PDF, or open a URL.</p>
           </div>
           <label class="drop-md" id="drop-md">
-            <input id="file-md" type="file" accept=".md,.pdf,text/markdown,text/plain,application/pdf">
+            <input id="file-md" type="file" accept=".md,.markdown,.pdf,.rabbithole,text/markdown,text/plain,application/pdf,application/json">
             <span>Choose file</span>
           </label>
         </div>
@@ -87,8 +90,13 @@ async function renderHome() {
           <span>Markdown or notes</span>
           <textarea id="paste-md" class="paste-md" placeholder="Paste markdown, notes, or source text here."></textarea>
         </label>
+        <label class="switch-field author-toggle" for="improve-structure">
+          <input id="improve-structure" type="checkbox" role="switch">
+          <span class="switch-track" aria-hidden="true"></span>
+          <span class="switch-copy"><strong>Improve structure</strong><small>Use the author model before opening.</small></span>
+        </label>
         <div class="composer-footer">
-          <p class="drop-hint">Drop .md or .pdf anywhere here.</p>
+          <p class="drop-hint">Drop .md, .pdf, or .rabbithole anywhere here.</p>
           <button id="create-hole" class="web-primary" type="button">Open on the canvas</button>
         </div>
         <div class="url-open-row">
@@ -98,15 +106,13 @@ async function renderHome() {
           </label>
           <button id="open-url" class="web-secondary" type="button">Open URL</button>
         </div>
-        <div id="ingest-status" class="ingest-status" aria-live="polite"></div>
+        <div id="ingest-status" class="ingest-status" aria-live="polite" aria-atomic="true"></div>
       </div>
     </section>
 
     <section class="settings-panel home-settings" id="settings-panel" aria-label="AI provider settings"></section>
 
     <section class="home-footnotes" aria-label="Setup notes">
-      <span id="empty-note" class="empty-note" hidden>No saved holes yet.</span>
-      <a href="${OPENROUTER_WALKTHROUGH_URL}" target="_blank" rel="noreferrer">30-second OpenRouter key walkthrough</a>
       <span class="agent-path">Using a coding agent? <code>${escapeHtml(AGENT_COMMAND)}</code> <button class="copy-command" type="button" data-copy-agent>Copy</button></span>
     </section>
   </main><div id="web-toast" class="web-toast" aria-live="polite"></div>`;
@@ -139,29 +145,33 @@ async function renderHome() {
     button.addEventListener("click", () => copyText(AGENT_COMMAND, "Command copied."));
   });
   initDrop();
+  window.__rhWebApp = {
+    store,
+    importRabbitholeForTest: (text) => importRabbitholeFile(store, text),
+    exportRabbitholeForTest: (id) => downloadRabbitholeExport(store, id),
+    currentHoleId: () => currentHoleId,
+    readRawHole: (id = currentHoleId) => id ? store.readRawHoleForTest(id) : null,
+  };
   await renderHoleList();
 }
 
 async function renderHoleList() {
   const listEl = document.getElementById("hole-list");
   if (!listEl) return;
-  const savedSection = document.getElementById("saved-section");
-  const emptyNote = document.getElementById("empty-note");
   const holes = await store.listHoles();
   if (!holes.length) {
-    listEl.innerHTML = "";
-    if (savedSection) savedSection.hidden = true;
-    if (emptyNote) emptyNote.hidden = false;
+    listEl.innerHTML = `<div class="hole-empty">No saved holes yet.</div>`;
     return;
   }
-  if (savedSection) savedSection.hidden = false;
-  if (emptyNote) emptyNote.hidden = true;
   listEl.innerHTML = holes.map((hole) => `<article class="hole-row" data-hole="${escapeAttr(hole.hole_id)}">
     <button class="hole-open" type="button">
       <span class="hole-title">${escapeHtml(hole.title || "Untitled")}</span>
       <span class="hole-meta"><span>${escapeHtml(formatRelativeDate(hole.updated_at))}</span><span>${hole.node_count} ${hole.node_count === 1 ? "node" : "nodes"}</span></span>
     </button>
-    <button class="hole-delete" type="button" aria-label="Delete ${escapeAttr(hole.title || "Untitled")}">Delete</button>
+    <div class="hole-actions">
+      <button class="hole-export" type="button" aria-label="Export ${escapeAttr(hole.title || "Untitled")}">Export</button>
+      <button class="hole-delete" type="button" aria-label="Delete ${escapeAttr(hole.title || "Untitled")}">Delete</button>
+    </div>
   </article>`).join("");
   listEl.querySelectorAll(".hole-open").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -173,6 +183,9 @@ async function renderHoleList() {
   listEl.querySelectorAll(".hole-delete").forEach((button) => {
     button.addEventListener("click", () => deleteHoleFromHome(button.closest(".hole-row").dataset.hole));
   });
+  listEl.querySelectorAll(".hole-export").forEach((button) => {
+    button.addEventListener("click", () => exportHoleFromHome(button.closest(".hole-row").dataset.hole));
+  });
 }
 
 async function createFromPaste() {
@@ -182,9 +195,20 @@ async function createFromPaste() {
     showToast({ message: "Paste markdown first." });
     return;
   }
-  const hole = createHoleFromMarkdown({ title, markdown });
-  await store.saveHole(hole);
-  await startHole(await store.loadHole(hole.hole_id) || hole);
+  try {
+    const authored = await maybeAuthorMarkdown({
+      title,
+      markdown,
+      sourceName: "pasted text",
+      kind: "paste",
+    });
+    const hole = createHoleFromMarkdown({ title, markdown: authored });
+    await store.saveHole(hole);
+    setIngestStatus("");
+    await startHole(await store.loadHole(hole.hole_id) || hole);
+  } catch (err) {
+    setIngestStatus(`Authoring failed. ${err?.message || String(err)}`, "error");
+  }
 }
 
 function initDrop() {
@@ -217,24 +241,47 @@ function initDrop() {
 }
 
 async function createFromFile(file) {
+  if (isRabbitholeFile(file)) {
+    await createFromRabbitholeFile(file);
+    return;
+  }
   if (isPdfFile(file)) {
     await createFromPdfFile(file);
     return;
   }
   if (!isMarkdownFile(file)) {
-    setIngestStatus("Choose a markdown or PDF file.", "error");
+    setIngestStatus("Choose a markdown, PDF, or .rabbithole file.", "error");
     return;
   }
   try {
     setIngestStatus("Reading markdown file...", "busy");
     const markdown = await file.text();
     const title = document.getElementById("new-title").value.trim() || file.name.replace(/\.[^.]+$/, "");
-    const hole = createHoleFromMarkdown({ title, markdown });
+    const authored = await maybeAuthorMarkdown({
+      title,
+      markdown,
+      sourceName: file.name,
+      kind: "file",
+    });
+    const hole = createHoleFromMarkdown({ title, markdown: authored });
     await store.saveHole(hole);
     setIngestStatus("");
     await startHole(await store.loadHole(hole.hole_id) || hole);
   } catch (err) {
     setIngestStatus(`Markdown import failed. ${err?.message || String(err)}`, "error");
+  }
+}
+
+async function createFromRabbitholeFile(file) {
+  try {
+    setIngestStatus("Importing Rabbithole file...", "busy");
+    const imported = await importRabbitholeFile(store, file);
+    setIngestStatus("");
+    const hole = await store.loadHole(imported.hole_id);
+    if (!hole) throw new Error("Imported file could not be loaded.");
+    await startHole(hole);
+  } catch (err) {
+    setIngestStatus(err?.message || String(err), "error");
   }
 }
 
@@ -273,6 +320,15 @@ async function createFromUrl() {
       store,
       title,
       proxyBaseUrl: settings.fetch_proxy_url || "",
+      transformMarkdown: shouldImproveStructure()
+        ? ({ markdown, title: sourceTitle, baseUrl }) => maybeAuthorMarkdown({
+            title: sourceTitle,
+            markdown,
+            baseUrl,
+            sourceName: rawUrl,
+            kind: "url",
+          })
+        : null,
       onProgress: (progress) => {
         if (progress.phase === "fetch") setIngestStatus(`Fetching URL via ${progress.via}...`, "busy");
         else if (progress.phase === "page") setIngestStatus(`Importing PDF page ${progress.index}/${progress.total}...`, "busy");
@@ -306,6 +362,43 @@ async function deleteHoleFromHome(holeId) {
       await renderHoleList();
     },
   });
+}
+
+async function exportHoleFromHome(holeId) {
+  try {
+    const payload = await downloadRabbitholeExport(store, holeId);
+    showToast({ message: `Exported ${rabbitholeFilename(payload.hole?.title)}.` });
+  } catch (err) {
+    showToast({ message: err?.message || String(err) });
+  }
+}
+
+async function maybeAuthorMarkdown({ title = "", markdown = "", sourceName = "", kind = "source", baseUrl = "" } = {}) {
+  if (!shouldImproveStructure()) return markdown;
+  const settings = loadSettings();
+  const key = getApiKey(settings);
+  if (presetFor(settings.preset).requires_key && !key) {
+    throw new Error("Add a provider key in Settings before using Improve structure.");
+  }
+  setIngestStatus("Improving structure with the author model...", "busy");
+  const brain = createBrain(settings, key);
+  const controller = new AbortController();
+  let out = "";
+  for await (const chunk of brain.authorDocument({
+    title,
+    markdown,
+    source_name: sourceName,
+    kind,
+    base_url: baseUrl,
+  }, controller.signal)) {
+    out += chunk;
+    if (out.length) setIngestStatus(`Improving structure... ${out.length.toLocaleString()} characters`, "busy");
+  }
+  return out.trim() || markdown;
+}
+
+function shouldImproveStructure() {
+  return document.getElementById("improve-structure")?.checked === true;
 }
 
 async function startHole(hole, { replace = false } = {}) {
@@ -353,7 +446,10 @@ async function startHole(hole, { replace = false } = {}) {
 
   const hydration = currentHost.hydration();
   hydration.asset_data = await buildLiveAssetData(hole.hole_id);
-  startRabbithole(hydration, { transport: currentHost.adapter() });
+  startRabbithole(hydration, {
+    transport: currentHost.adapter(),
+    exportPortable: exportCurrentRabbithole,
+  });
 
   document.getElementById("web-home").addEventListener("click", async () => {
     await currentHost?.flushSave();
@@ -364,26 +460,50 @@ async function startHole(hole, { replace = false } = {}) {
   window.__rhWebApp = {
     store,
     exportSnapshotForTest: async () => buildSnapshotHtml(await buildSnapshotHydration()),
+    exportRabbitholeForTest: async (id = currentHoleId) => {
+      await currentHost?.flushSave();
+      return downloadRabbitholeExport(store, id);
+    },
+    importRabbitholeForTest: (text) => importRabbitholeFile(store, text),
     currentHoleId: () => currentHoleId,
     readRawHole: (id = currentHoleId) => store.readRawHoleForTest(id),
   };
+}
+
+async function exportCurrentRabbithole() {
+  await currentHost?.flushSave();
+  if (!currentHoleId) throw new Error("No open Rabbithole to export.");
+  const payload = await downloadRabbitholeExport(store, currentHoleId);
+  return { filename: rabbitholeFilename(payload.hole?.title), payload };
 }
 
 function initCanvasSettings() {
   const modal = document.getElementById("web-settings-modal");
   const open = document.getElementById("web-settings");
   const close = document.getElementById("web-settings-close");
+  let releaseTrap = null;
   initSettingsPanel();
+  const closeModal = () => {
+    modal.hidden = true;
+    if (releaseTrap) {
+      releaseTrap();
+      releaseTrap = null;
+    }
+  };
   open.addEventListener("click", () => {
     modal.hidden = false;
-    modal.querySelector("input, select, button")?.focus();
+    if (releaseTrap) releaseTrap();
+    releaseTrap = activateFocusTrap(modal, {
+      initialFocus: modal.querySelector("select, input, button"),
+      onEscape: closeModal,
+    });
   });
-  close.addEventListener("click", () => { modal.hidden = true; });
+  close.addEventListener("click", closeModal);
   modal.addEventListener("click", (event) => {
-    if (event.target === modal) modal.hidden = true;
+    if (event.target === modal) closeModal();
   });
   modal.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") modal.hidden = true;
+    if (event.key === "Escape") closeModal();
   });
 }
 
@@ -430,10 +550,12 @@ function initSettingsPanel() {
         <label class="field" for="answer-model">
           <span>Answer model</span>
           <input id="answer-model" value="${escapeAttr(settings.answer_model || "")}">
+          <small class="model-hint" data-model-hint="answer">${escapeHtml(testedModelHint(settings.answer_model || presetFor(settings.preset).answer_model))}</small>
         </label>
         <label class="field" for="author-model">
           <span>Author model</span>
           <input id="author-model" value="${escapeAttr(settings.author_model || "")}">
+          <small class="model-hint" data-model-hint="author">${escapeHtml(testedModelHint(settings.author_model || presetFor(settings.preset).author_model))}</small>
         </label>
         <label class="field wide-field" for="fetch-proxy-url">
           <span>Fetch proxy URL</span>
@@ -455,7 +577,10 @@ function initSettingsPanel() {
     panel.querySelector("#answer-model").value = next.answer_model;
     panel.querySelector("#author-model").value = next.author_model;
     panel.querySelector("#api-key").placeholder = apiKeyPlaceholder(next.preset);
+    updateModelHints(panel);
   });
+  panel.querySelector("#answer-model").addEventListener("input", () => updateModelHints(panel));
+  panel.querySelector("#author-model").addEventListener("input", () => updateModelHints(panel));
   panel.querySelector("#api-key-toggle").addEventListener("click", () => {
     const input = panel.querySelector("#api-key");
     const showing = input.type === "text";
@@ -475,6 +600,17 @@ function initSettingsPanel() {
       currentHost.brain = key || !presetFor(next.preset).requires_key ? createBrain(next, key) : null;
     }
   });
+  updateModelHints(panel);
+}
+
+function updateModelHints(panel = document.getElementById("settings-panel")) {
+  if (!panel) return;
+  const answer = panel.querySelector("#answer-model")?.value || "";
+  const author = panel.querySelector("#author-model")?.value || "";
+  const answerHint = panel.querySelector("[data-model-hint='answer']");
+  const authorHint = panel.querySelector("[data-model-hint='author']");
+  if (answerHint) answerHint.textContent = testedModelHint(answer);
+  if (authorHint) authorHint.textContent = testedModelHint(author);
 }
 
 function readSettingsForm() {
@@ -553,10 +689,15 @@ function setIngestStatus(message, tone = "") {
   if (!el) return;
   el.textContent = message || "";
   el.className = `ingest-status${message ? " visible" : ""}${tone ? ` ${tone}` : ""}`;
+  el.setAttribute("aria-live", tone === "error" ? "assertive" : "polite");
 }
 
 function isPdfFile(file) {
   return /(\.pdf$|application\/pdf)/i.test(`${file?.name || ""} ${file?.type || ""}`);
+}
+
+function isRabbitholeFile(file) {
+  return /\.rabbithole$/i.test(file?.name || "");
 }
 
 function isMarkdownFile(file) {

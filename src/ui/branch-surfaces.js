@@ -44,7 +44,8 @@ import { downloadSnapshot } from "./snapshot.js";
 import { activateFocusTrap } from "./focus-trap.js";
 
 var branchHooks = {
-  post: function(){ return Promise.resolve({ ok: true }); }
+  post: function(){ return Promise.resolve({ ok: true }); },
+  exportPortable: null
 };
 
 export function registerBranchHooks(hooks) {
@@ -69,6 +70,7 @@ export function initBranchSurfaces(){
   document.getElementById("sm-doc").addEventListener("click", onCopyDoc);
   document.getElementById("sm-trail").addEventListener("click", onCopyTrail);
   document.getElementById("sm-export").addEventListener("click", onExportSnapshot);
+  document.getElementById("sm-portable").addEventListener("click", onExportPortable);
   document.getElementById("sm-synth").addEventListener("click", function(e){
     closeShare();
     synthesize(motionSourceFromEvent(e));
@@ -134,6 +136,7 @@ export function toggleShare(anchor){
     // A frozen snapshot can't export (it IS the export) or reach an agent.
     var noAgent = frozen || closed;
     document.getElementById("sm-export").style.display = frozen ? "none" : "";
+    document.getElementById("sm-portable").style.display = (!frozen && typeof branchHooks.exportPortable === "function") ? "" : "none";
     document.getElementById("sm-sep2").style.display = noAgent ? "none" : "";
     document.getElementById("sm-synth").style.display = noAgent ? "none" : "";
     var r = anchor.getBoundingClientRect();
@@ -208,6 +211,22 @@ export function closeShare(){
 	      flashHint("Couldn't prepare the snapshot.");
 	    });
 	  }
+  function onExportPortable(){
+    closeShare();
+    if (typeof branchHooks.exportPortable !== "function"){
+      flashHint("Rabbithole export is only available in the web app.");
+      return;
+    }
+    flashHint("Preparing Rabbithole export...");
+    Promise.resolve()
+      .then(function(){ return branchHooks.exportPortable(); })
+      .then(function(result){
+        var name = result && result.filename ? " " + result.filename : "";
+        flashHint("Rabbithole export downloading." + name);
+      }, function(){
+        flashHint("Couldn't prepare the Rabbithole export.");
+      });
+  }
 export function synthesize(source){
     if (closed){ flashHint("Session ended — reopen this Rabbithole from your terminal first."); return; }
     var root = nodes[rootId];

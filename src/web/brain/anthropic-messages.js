@@ -1,4 +1,4 @@
-import { buildAnswerMessages } from "../../core/prompts/index.js";
+import { buildAnswerMessages, buildAuthorMessages } from "../../core/prompts/index.js";
 import { ProviderError, normalizeProviderError } from "./errors.js";
 import { OpenAICompatibleBrain } from "./openai-compatible.js";
 
@@ -18,7 +18,13 @@ export class AnthropicDirectBrain {
   }
 
   async *authorDocument(source, signal) {
-    yield* this.compat.authorDocument(source, signal);
+    try {
+      yield* this.compat.authorDocument(source, signal);
+    } catch (err) {
+      const normalized = normalizeProviderError(err);
+      if (normalized.status && normalized.status !== 404) throw normalized;
+      yield* this.authorDocumentMessagesApi(source, signal);
+    }
   }
 
   async *answerBranch(context, signal) {
@@ -33,6 +39,15 @@ export class AnthropicDirectBrain {
 
   async *answerBranchMessagesApi(context, signal) {
     const messages = buildAnswerMessages(context);
+    yield* this.streamMessagesApi({ messages, model: this.answerModel, signal });
+  }
+
+  async *authorDocumentMessagesApi(source, signal) {
+    const messages = buildAuthorMessages(source);
+    yield* this.streamMessagesApi({ messages, model: this.authorModel, signal });
+  }
+
+  async *streamMessagesApi({ messages, model, signal }) {
     const system = messages.find((m) => m.role === "system")?.content || "";
     const user = messages.filter((m) => m.role !== "system").map((m) => m.content).join("\n\n");
     let response;
@@ -47,7 +62,7 @@ export class AnthropicDirectBrain {
           "anthropic-dangerous-direct-browser-access": "true",
         },
         body: JSON.stringify({
-          model: this.answerModel,
+          model,
           max_tokens: 4096,
           stream: true,
           system,

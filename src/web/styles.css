@@ -178,7 +178,13 @@ button {
   font: 12.5px/1.35 var(--font-ui);
 }
 
-.hole-delete {
+.hole-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.hole-delete,
+.hole-export {
   opacity: 0;
   border-color: transparent;
   background: transparent;
@@ -187,9 +193,19 @@ button {
 }
 
 .hole-row:hover .hole-delete,
+.hole-row:hover .hole-export,
 .hole-row:focus-within .hole-delete,
-.hole-delete:focus-visible {
+.hole-row:focus-within .hole-export,
+.hole-delete:focus-visible,
+.hole-export:focus-visible {
   opacity: 1;
+}
+
+.hole-empty {
+  border-top: 1px solid var(--border);
+  padding: 14px 0;
+  color: var(--fg-dim);
+  font: 13px/1.45 var(--font-ui);
 }
 
 .new-hole,
@@ -322,6 +338,7 @@ button {
 .web-primary,
 .web-secondary,
 .hole-delete,
+.hole-export,
 .drop-md,
 .copy-command,
 .web-close,
@@ -354,6 +371,7 @@ button {
 
 .web-secondary,
 .hole-delete,
+.hole-export,
 .drop-md,
 .copy-command,
 .web-close,
@@ -365,6 +383,7 @@ button {
 
 .web-secondary:hover,
 .hole-delete:hover,
+.hole-export:hover,
 .drop-md:hover,
 .copy-command:hover,
 .web-close:hover,
@@ -427,13 +446,13 @@ button {
 
 .settings-basic {
   display: grid;
-  grid-template-columns: minmax(150px, 0.8fr) minmax(230px, 1.2fr) minmax(190px, 0.9fr);
+  grid-template-columns: minmax(230px, 1fr) minmax(230px, 1fr) minmax(190px, 0.85fr);
   gap: 12px;
   align-items: end;
 }
 
 .settings-panel[data-preset="custom"] .settings-basic {
-  grid-template-columns: minmax(140px, 0.75fr) minmax(190px, 1fr) minmax(210px, 1.1fr) minmax(185px, 0.9fr);
+  grid-template-columns: minmax(230px, 1fr) minmax(210px, 0.9fr) minmax(210px, 1fr) minmax(185px, 0.85fr);
 }
 
 .custom-only {
@@ -530,6 +549,10 @@ button {
   font: 12px/1.35 var(--font-ui);
 }
 
+.author-toggle {
+  width: fit-content;
+}
+
 .settings-advanced {
   border-top: 1px solid var(--border);
   padding-top: 8px;
@@ -566,6 +589,11 @@ button {
 .custom-csp-note {
   margin: 0;
   padding: 0;
+}
+
+.model-hint {
+  color: var(--fg-faint);
+  font: 12px/1.35 var(--font-ui);
 }
 
 .settings-actions {
@@ -657,8 +685,9 @@ button {
 .web-canvas-bar {
   position: fixed;
   z-index: 60;
-  top: 10px;
+  top: auto;
   right: 12px;
+  bottom: 12px;
   display: flex;
   gap: 8px;
 }
@@ -760,6 +789,7 @@ button {
 .web-primary:focus-visible,
 .web-secondary:focus-visible,
 .hole-delete:focus-visible,
+.hole-export:focus-visible,
 .hole-open:focus-visible,
 .drop-md:focus-visible,
 .drop-md:focus-within,
@@ -779,6 +809,7 @@ button {
   .web-primary,
   .web-secondary,
   .hole-delete,
+  .hole-export,
   .drop-md,
   .copy-command,
   .web-close,
@@ -836,10 +867,14 @@ button {
     grid-template-columns: 1fr;
   }
 
-  .hole-delete {
-    opacity: 1;
+  .hole-actions {
     justify-self: start;
     margin-bottom: 8px;
+  }
+
+  .hole-delete,
+  .hole-export {
+    opacity: 1;
   }
 
   .web-canvas-bar {
