@@ -87,12 +87,14 @@ async function buildWebApp(assetDir) {
   await fs.mkdir(webDist, { recursive: true });
 
   await esbuild.build({
-    entryPoints: [path.join(rootDir, "src/web/app.js")],
-    outfile: path.join(webDist, "app.js"),
+    entryPoints: { app: path.join(rootDir, "src/web/app.js") },
+    outdir: webDist,
     bundle: true,
-    format: "iife",
-    globalName: "RabbitholeWebApp",
-    target: "es2018",
+    format: "esm",
+    splitting: true,
+    target: "es2022",
+    entryNames: "[name]",
+    chunkNames: "chunks/[name]-[hash]",
     minify: false,
     sourcemap: false,
     legalComments: "none",
@@ -108,6 +110,7 @@ async function buildWebApp(assetDir) {
 
   await fs.writeFile(path.join(webDist, "styles.css"), `${CANVAS_STYLES}\n${katexCss}\n${webCss}`, "utf8");
   await fs.writeFile(path.join(webDist, "dompurify.js"), dompurify, "utf8");
+  await copyPdfAssets(webDist);
   await fs.writeFile(
     path.join(webDist, "frozen-source.js"),
     `window.__RABBITHOLE_FROZEN_CLIENT__=${safeJsString(frozenClient)};\n` +
@@ -117,6 +120,13 @@ async function buildWebApp(assetDir) {
   await fs.writeFile(path.join(webDist, "index.html"), buildWebIndexHtml(), "utf8");
 }
 
+async function copyPdfAssets(webDist) {
+  const packageRoot = path.dirname(require.resolve("pdfjs-dist/package.json"));
+  await fs.copyFile(path.join(packageRoot, "build/pdf.worker.mjs"), path.join(webDist, "pdf.worker.mjs"));
+  await fs.cp(path.join(packageRoot, "standard_fonts"), path.join(webDist, "standard_fonts"), { recursive: true });
+  await fs.cp(path.join(packageRoot, "cmaps"), path.join(webDist, "cmaps"), { recursive: true });
+}
+
 function buildWebIndexHtml() {
   const csp = [
     "default-src 'self'",
@@ -124,7 +134,8 @@ function buildWebIndexHtml() {
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self' data:",
     "img-src 'self' blob: data: https:",
-    "connect-src 'self' https://openrouter.ai https://api.openai.com https://api.anthropic.com http://localhost:* http://127.0.0.1:*",
+    "connect-src 'self' https://openrouter.ai https://api.openai.com https://api.anthropic.com https://arxiv.org https://www.arxiv.org https://ar5iv.labs.arxiv.org https://ar5iv.org https://openreview.net https://*.workers.dev http://localhost:* http://127.0.0.1:*",
+    "worker-src 'self'",
     "base-uri 'none'",
     "form-action 'none'",
   ].join("; ");
@@ -140,7 +151,7 @@ function buildWebIndexHtml() {
 <body>
 <script src="./dompurify.js"></script>
 <script src="./frozen-source.js"></script>
-<script src="./app.js"></script>
+<script type="module" src="./app.js"></script>
 </body>
 </html>`;
 }

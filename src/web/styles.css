@@ -129,6 +129,12 @@ html.web-canvas-active body.web-app {
   gap: 12px;
 }
 
+.url-open-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
 .paste-md {
   min-height: 210px;
   resize: vertical;
@@ -177,6 +183,31 @@ html.web-canvas-active body.web-app {
   inset: 0;
   opacity: 0;
   cursor: pointer;
+}
+
+.ingest-status {
+  display: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bar-bg);
+  color: var(--fg-dim);
+  padding: 10px 11px;
+  font: 13px/1.45 var(--font-ui);
+}
+
+.ingest-status.visible {
+  display: block;
+}
+
+.ingest-status.busy {
+  border-color: var(--border-focus);
+  color: var(--fg);
+}
+
+.ingest-status.error {
+  border-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+  color: var(--fg);
 }
 
 .hole-list-wrap {
@@ -360,6 +391,10 @@ html.web-canvas-active body.web-app {
   }
 
   .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .url-open-row {
     grid-template-columns: 1fr;
   }
 

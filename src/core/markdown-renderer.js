@@ -34,7 +34,7 @@ import { resolveMarkdownUrl } from "./base-url.js";
 export const MARKDOWN_RENDERER_SENTINEL = "rabbithole-shared-markdown-renderer-v1";
 
 const SAFE_URL = /^(?:https?:|mailto:|tel:|#|\/|\.\/|\.\.\/|[^:]*$)/i;
-const SAFE_IMG = /^(?:https?:\/\/|\/|\.\/|\.\.\/|asset:[a-z0-9][a-z0-9_-]*\.(?:png|jpe?g|gif|webp|svg)$|data:image\/(?:png|jpe?g|gif|webp|svg);base64,)/i;
+const SAFE_IMG = /^(?:https?:\/\/|\/|\.\/|\.\.\/|blob:|asset:[a-z0-9][a-z0-9_-]*\.(?:png|jpe?g|gif|webp|svg)$|data:image\/(?:png|jpe?g|gif|webp|svg);base64,)/i;
 // Whitespace/control chars used to obfuscate a scheme (e.g. "java\tscript:").
 const URL_NOISE = new RegExp("[\\u0000-\\u0020]+", "g");
 const INLINE_DOLLAR = "$";

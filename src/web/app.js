@@ -4,6 +4,7 @@ import { IdbStore } from "./store/idb-store.js";
 import { DirectRabbitholeHost, createHoleFromMarkdown } from "./transport/direct-host.js";
 import { startRabbithole } from "../ui/entry.js";
 import { setSnapshotHooks, buildSnapshotHydration, buildSnapshotHtml } from "../ui/snapshot.js";
+import { openUrlToStoredHole } from "./ingest/url.js";
 
 const SETTINGS_KEY = "rh-web-settings";
 const KEY_KEY = "rh-web-api-key";
@@ -53,14 +54,19 @@ async function renderHome() {
     <section class="new-hole">
       <div class="new-hole-main">
         <input id="new-title" class="web-input" placeholder="Title">
+        <div class="url-open-row">
+          <input id="open-url-input" class="web-input" placeholder="Open from URL">
+          <button id="open-url" class="web-secondary" type="button">Open URL</button>
+        </div>
         <textarea id="paste-md" class="paste-md" placeholder="Paste markdown here"></textarea>
         <div class="new-actions">
           <button id="create-hole" class="web-primary" type="button">New Rabbithole</button>
           <label class="drop-md" id="drop-md">
-            <input id="file-md" type="file" accept=".md,text/markdown,text/plain">
-            <span>Drop a .md file or choose one</span>
+            <input id="file-md" type="file" accept=".md,.pdf,text/markdown,text/plain,application/pdf">
+            <span>Drop a .md/.pdf file or choose one</span>
           </label>
         </div>
+        <div id="ingest-status" class="ingest-status" aria-live="polite"></div>
       </div>
     </section>
     <section class="hole-list-wrap">
@@ -74,6 +80,13 @@ async function renderHome() {
     document.getElementById("settings-panel").classList.toggle("expanded");
   });
   document.getElementById("create-hole").addEventListener("click", createFromPaste);
+  document.getElementById("open-url").addEventListener("click", createFromUrl);
+  document.getElementById("open-url-input").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      createFromUrl();
+    }
+  });
   document.getElementById("refresh-list").addEventListener("click", renderHoleList);
   initDrop();
   await renderHoleList();
@@ -123,39 +136,98 @@ async function createFromPaste() {
 
 function initDrop() {
   const drop = document.getElementById("drop-md");
+  const zone = document.querySelector(".new-hole");
   const input = document.getElementById("file-md");
   input.addEventListener("change", async () => {
     const file = input.files?.[0];
     if (file) await createFromFile(file);
+    input.value = "";
   });
   for (const type of ["dragenter", "dragover"]) {
-    drop.addEventListener(type, (event) => {
+    zone.addEventListener(type, (event) => {
       event.preventDefault();
       drop.classList.add("dragging");
     });
   }
   for (const type of ["dragleave", "drop"]) {
-    drop.addEventListener(type, (event) => {
+    zone.addEventListener(type, (event) => {
       event.preventDefault();
       drop.classList.remove("dragging");
     });
   }
-  drop.addEventListener("drop", async (event) => {
+  zone.addEventListener("drop", async (event) => {
     const file = event.dataTransfer?.files?.[0];
     if (file) await createFromFile(file);
   });
 }
 
 async function createFromFile(file) {
-  if (!/(\.md$|markdown|text\/plain)/i.test(file.name + " " + file.type)) {
-    showToast({ message: "Choose a markdown file." });
+  if (isPdfFile(file)) {
+    await createFromPdfFile(file);
     return;
   }
-  const markdown = await file.text();
-  const title = document.getElementById("new-title").value.trim() || file.name.replace(/\.[^.]+$/, "");
-  const hole = createHoleFromMarkdown({ title, markdown });
-  await store.saveHole(hole);
-  await startHole(await store.loadHole(hole.hole_id) || hole);
+  if (!isMarkdownFile(file)) {
+    setIngestStatus("Choose a markdown or PDF file.", "error");
+    return;
+  }
+  try {
+    setIngestStatus("Reading markdown file...", "busy");
+    const markdown = await file.text();
+    const title = document.getElementById("new-title").value.trim() || file.name.replace(/\.[^.]+$/, "");
+    const hole = createHoleFromMarkdown({ title, markdown });
+    await store.saveHole(hole);
+    setIngestStatus("");
+    await startHole(await store.loadHole(hole.hole_id) || hole);
+  } catch (err) {
+    setIngestStatus(`Markdown import failed. ${err?.message || String(err)}`, "error");
+  }
+}
+
+async function createFromPdfFile(file) {
+  try {
+    const { ingestPdfToStoredHole } = await import("./ingest/pdf.js");
+    setIngestStatus("Loading PDF importer...", "busy");
+    const title = document.getElementById("new-title").value.trim();
+    const { hole } = await ingestPdfToStoredHole({
+      source: file,
+      store,
+      title,
+      onProgress: ({ page, index, total }) => {
+        if (page) setIngestStatus(`Importing PDF page ${index}/${total}...`, "busy");
+      },
+    });
+    setIngestStatus("");
+    await startHole(await store.loadHole(hole.hole_id) || hole);
+  } catch (err) {
+    setIngestStatus(`PDF import failed. ${err?.message || String(err)} Paste the text manually or drop a different PDF.`, "error");
+  }
+}
+
+async function createFromUrl() {
+  const rawUrl = document.getElementById("open-url-input").value.trim();
+  if (!rawUrl) {
+    setIngestStatus("Enter a URL first.", "error");
+    return;
+  }
+  try {
+    const settings = loadSettings();
+    const title = document.getElementById("new-title").value.trim();
+    setIngestStatus("Fetching URL...", "busy");
+    const { hole } = await openUrlToStoredHole({
+      rawUrl,
+      store,
+      title,
+      proxyBaseUrl: settings.fetch_proxy_url || "",
+      onProgress: (progress) => {
+        if (progress.phase === "fetch") setIngestStatus(`Fetching URL via ${progress.via}...`, "busy");
+        else if (progress.phase === "page") setIngestStatus(`Importing PDF page ${progress.index}/${progress.total}...`, "busy");
+      },
+    });
+    setIngestStatus("");
+    await startHole(await store.loadHole(hole.hole_id) || hole);
+  } catch (err) {
+    setIngestStatus(err?.message || String(err), "error");
+  }
 }
 
 async function deleteHoleFromHome(holeId) {
@@ -273,6 +345,7 @@ function initSettingsPanel() {
     <label>Base URL <input id="provider-base" value="${escapeAttr(settings.base_url || "")}"></label>
     <label>Answer model <input id="answer-model" value="${escapeAttr(settings.answer_model || "")}"></label>
     <label>Author model <input id="author-model" value="${escapeAttr(settings.author_model || "")}"></label>
+    <label>Fetch proxy URL <input id="fetch-proxy-url" value="${escapeAttr(settings.fetch_proxy_url || "")}" placeholder="https://your-worker.example/?url="></label>
     <label>API key <input id="api-key" type="password" autocomplete="off" placeholder="sk-..." value="${escapeAttr(getApiKey(settings))}"></label>
     <label class="check-row"><input id="session-only" type="checkbox" ${settings.session_only !== false ? "checked" : ""}> Session only</label>
   </div>
@@ -307,6 +380,7 @@ function readSettingsForm() {
     base_url: document.getElementById("provider-base")?.value.trim() || "",
     author_model: document.getElementById("author-model")?.value.trim() || "",
     answer_model: document.getElementById("answer-model")?.value.trim() || "",
+    fetch_proxy_url: document.getElementById("fetch-proxy-url")?.value.trim() || "",
     session_only: sessionOnly,
     api_key: document.getElementById("api-key")?.value || "",
   };
@@ -368,6 +442,21 @@ function showToast({ message, actionLabel = "", timeoutMs = 4000, onAction = nul
       finish();
     }, { once: true });
   }
+}
+
+function setIngestStatus(message, tone = "") {
+  const el = document.getElementById("ingest-status");
+  if (!el) return;
+  el.textContent = message || "";
+  el.className = `ingest-status${message ? " visible" : ""}${tone ? ` ${tone}` : ""}`;
+}
+
+function isPdfFile(file) {
+  return /(\.pdf$|application\/pdf)/i.test(`${file?.name || ""} ${file?.type || ""}`);
+}
+
+function isMarkdownFile(file) {
+  return /(\.md$|\.markdown$|markdown|text\/plain)/i.test(`${file?.name || ""} ${file?.type || ""}`);
 }
 
 function holeIdFromHash() {

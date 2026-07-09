@@ -49,6 +49,7 @@ export function defaultBrainSettings() {
     base_url: preset.base_url,
     author_model: preset.author_model,
     answer_model: preset.answer_model,
+    fetch_proxy_url: "",
     session_only: true,
   };
 }

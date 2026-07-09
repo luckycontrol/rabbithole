@@ -2,12 +2,17 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { createStagedAssetDir, ensureAssetDir, loadHole, validateAssetName } from "./fs-store.js";
+import {
+  MAX_PDF_BYTES,
+  PDF_RENDER_SCALE,
+  extractPdfPageText,
+  normalizePdfTitle,
+  pdfPageAssetName,
+  resolvePagesToProcess,
+} from "../core/pdf-shared.js";
 
 const require = createRequire(import.meta.url);
 
-const MAX_PDF_BYTES = 100 * 1024 * 1024;
-const DEFAULT_PAGE_CAP = 40;
-const RENDER_SCALE = 2;
 const IMAGE_TIMEOUT_MS = 7000;
 let activeCanvasModule = null;
 
@@ -121,53 +126,6 @@ async function validatePdfFile(filePath) {
   return absolute;
 }
 
-function parsePagesRange(pages) {
-  if (pages == null || pages === "") return null;
-  const value = String(pages).trim();
-  const match = /^(\d+)(?:\s*-\s*(\d+))?$/.exec(value);
-  if (!match) throw new Error(`pages must be a single page or range like "3" or "1-20"; got ${JSON.stringify(pages)}`);
-  const start = Number.parseInt(match[1], 10);
-  const end = match[2] ? Number.parseInt(match[2], 10) : start;
-  if (start < 1 || end < 1 || end < start) {
-    throw new Error(`pages must be a positive ascending range; got ${JSON.stringify(pages)}`);
-  }
-  return { start, end, explicit: value };
-}
-
-function resolvePagesToProcess(pageCount, pages, notes) {
-  const range = parsePagesRange(pages);
-  if (range) {
-    if (range.start > pageCount) {
-      throw new Error(`pages starts at ${range.start}, but the PDF has only ${pageCount} pages`);
-    }
-    const end = Math.min(range.end, pageCount);
-    if (range.end > pageCount) {
-      notes.push(`Requested pages ${range.explicit}, but the PDF has only ${pageCount} pages; processed through page ${pageCount}.`);
-    }
-    return rangeToArray(range.start, end);
-  }
-
-  const end = Math.min(pageCount, DEFAULT_PAGE_CAP);
-  if (pageCount > DEFAULT_PAGE_CAP) {
-    notes.push(
-      `Processed the first ${DEFAULT_PAGE_CAP} of ${pageCount} pages by default; pass pages: "1-${pageCount}" to ingest all pages.`
-    );
-  }
-  return rangeToArray(1, end);
-}
-
-function rangeToArray(start, end) {
-  const out = [];
-  for (let page = start; page <= end; page += 1) out.push(page);
-  return out;
-}
-
-function normalizeTitle(metadata) {
-  const raw = metadata?.info?.Title || metadata?.metadata?.get?.("dc:title") || "";
-  const title = String(raw || "").replace(/\s+/g, " ").trim();
-  return title || null;
-}
-
 async function prepareDestination(holeId) {
   if (holeId) {
     try {
@@ -178,118 +136,6 @@ async function prepareDestination(holeId) {
     }
   }
   return createStagedAssetDir();
-}
-
-function getTextItemGeometry(item) {
-  const [a, b, c, d, e, f] = item.transform;
-  const height = Math.hypot(c, d) || item.height || Math.hypot(a, b) || 1;
-  return {
-    str: item.str,
-    x: e,
-    y: f,
-    width: item.width || 0,
-    height,
-  };
-}
-
-function clusterTextLines(items) {
-  const textItems = items
-    .filter((item) => typeof item.str === "string" && item.str.length > 0 && item.transform)
-    .map(getTextItemGeometry)
-    .filter((item) => item.str.trim().length > 0);
-
-  textItems.sort((a, b) => {
-    const yDelta = b.y - a.y;
-    if (Math.abs(yDelta) > 1.5) return yDelta;
-    return a.x - b.x;
-  });
-
-  const lines = [];
-  for (const item of textItems) {
-    const threshold = Math.max(1.8, item.height * 0.45);
-    let line = lines.find((candidate) => Math.abs(candidate.y - item.y) <= threshold);
-    if (!line) {
-      line = { y: item.y, items: [] };
-      lines.push(line);
-    }
-    line.items.push(item);
-    line.y = (line.y * (line.items.length - 1) + item.y) / line.items.length;
-  }
-
-  return lines
-    .map((line) => {
-      line.items.sort((a, b) => a.x - b.x);
-      let text = "";
-      let lastRight = null;
-      let minX = Infinity;
-      let maxX = -Infinity;
-      for (const item of line.items) {
-        minX = Math.min(minX, item.x);
-        maxX = Math.max(maxX, item.x + item.width);
-        const normalized = item.str.replace(/\s+/g, " ");
-        if (text.length === 0) {
-          text = normalized.trimStart();
-        } else {
-          const charWidth = item.width / Math.max(item.str.length, 1);
-          const gap = item.x - lastRight;
-          if (gap > Math.max(1.5, charWidth * 0.45) && !text.endsWith(" ")) text += " ";
-          text += normalized;
-        }
-        lastRight = Math.max(lastRight ?? -Infinity, item.x + item.width);
-      }
-      return {
-        y: line.y,
-        minX,
-        maxX,
-        text: text.trimEnd(),
-      };
-    })
-    .filter((line) => line.text.trim().length > 0)
-    .sort((a, b) => b.y - a.y || a.minX - b.minX);
-}
-
-function orderLinesForReading(lines, pageWidth) {
-  const mid = pageWidth / 2;
-  const gutter = Math.max(12, pageWidth * 0.035);
-  const classified = lines.map((line) => {
-    let column = "full";
-    if (line.maxX < mid + gutter) column = "left";
-    else if (line.minX > mid - gutter) column = "right";
-    return { ...line, column };
-  });
-  const leftCount = classified.filter((line) => line.column === "left").length;
-  const rightCount = classified.filter((line) => line.column === "right").length;
-  if (leftCount < 8 || rightCount < 8) return classified.map((line) => line.text);
-
-  const ordered = [];
-  let run = [];
-  const flushRun = () => {
-    if (run.length === 0) return;
-    const left = run.filter((line) => line.column === "left").sort((a, b) => b.y - a.y);
-    const right = run.filter((line) => line.column === "right").sort((a, b) => b.y - a.y);
-    const other = run.filter((line) => line.column === "full").sort((a, b) => b.y - a.y || a.minX - b.minX);
-    if (left.length >= 3 && right.length >= 3) ordered.push(...left, ...right, ...other);
-    else ordered.push(...run.sort((a, b) => b.y - a.y || a.minX - b.minX));
-    run = [];
-  };
-
-  for (const line of classified) {
-    if (line.column === "full") {
-      flushRun();
-      ordered.push(line);
-    } else {
-      run.push(line);
-    }
-  }
-  flushRun();
-  return ordered.map((line) => line.text);
-}
-
-async function extractPageText(page) {
-  const content = await page.getTextContent({ includeMarkedContent: false });
-  const viewport = page.getViewport({ scale: 1 });
-  const lines = orderLinesForReading(clusterTextLines(content.items), viewport.width);
-  return lines.join("\n");
 }
 
 function imageKindName(pdfjs, kind) {
@@ -456,7 +302,7 @@ async function extractEmbeddedImages({ pdfjs, canvasModule, page, pageNumber, de
 }
 
 async function renderPage({ canvasModule, canvasFactory, page, pageNumber, destDir }) {
-  const viewport = page.getViewport({ scale: RENDER_SCALE });
+  const viewport = page.getViewport({ scale: PDF_RENDER_SCALE });
   const width = Math.ceil(viewport.width);
   const height = Math.ceil(viewport.height);
   const canvas = canvasModule.createCanvas(width, height);
@@ -470,7 +316,7 @@ async function renderPage({ canvasModule, canvasFactory, page, pageNumber, destD
   });
   await renderTask.promise;
   const buffer = canvas.toBuffer("image/png");
-  const name = `page-${String(pageNumber).padStart(3, "0")}.png`;
+  const name = pdfPageAssetName(pageNumber);
   await fs.writeFile(path.join(destDir, validateAssetName(name)), buffer);
   canvas.width = 0;
   canvas.height = 0;
@@ -531,7 +377,7 @@ export async function ingestPdf({ filePath, holeId, pages, includeText = true } 
     destination = await prepareDestination(holeId);
     const result = {
       ...(destination.hole_id ? { hole_id: destination.hole_id } : { ingest_id: destination.ingest_id }),
-      title: normalizeTitle(metadata),
+      title: normalizePdfTitle(metadata),
       page_count: doc.numPages,
       processed_pages: processedPages,
       assets: {
@@ -548,7 +394,7 @@ export async function ingestPdf({ filePath, holeId, pages, includeText = true } 
       try {
         page = await doc.getPage(pageNumber);
         if (includeText !== false) {
-          result.text.push({ page: pageNumber, text: await extractPageText(page) });
+          result.text.push({ page: pageNumber, text: await extractPdfPageText(page) });
         }
         if (canvasModule) {
           result.assets.embedded_images.push(
