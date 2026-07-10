@@ -191,11 +191,13 @@ async function verifyPreferenceFixtures() {
     await page.click("#t-settings");
     await page.waitForSelector("#provider-select");
     await assertPreferenceState(page, fixture);
+    await settleKeyCommit(page);
     const once = await storageState(page);
     await page.reload({ waitUntil: "networkidle" });
     await page.keyboard.press("Escape");
     await page.click("#t-settings");
     await assertPreferenceState(page, fixture);
+    await settleKeyCommit(page);
     assert.deepEqual(await storageState(page), once, `${fixture.name}: migration/load must be idempotent`);
     const artifact = await page.evaluate(async () => {
       await window.__rhWebApp.createDocumentForTest("# Credential-free export");
@@ -204,6 +206,21 @@ async function verifyPreferenceFixtures() {
     assert(!artifact.includes(SECRET), `${fixture.name}: credentials must never enter exported HTML`);
     await context.close();
   }
+}
+
+async function settleKeyCommit(page) {
+  // Opening settings asynchronously commits the prefilled key
+  // (commitSettingsKey): storage writes land immediately before the status
+  // line is set in the same continuation, so a settled, non-busy status means
+  // localStorage is final. Providers without a key section render no status
+  // element and never commit. Without this wait, the idempotence comparison
+  // can capture one load mid-commit and flake under CPU contention.
+  await page.waitForFunction(() => {
+    const status = document.querySelector("#api-key-status");
+    if (!status) return true;
+    const text = (status.textContent || "").trim();
+    return text.length > 0 && !status.classList.contains("busy");
+  });
 }
 
 async function assertPreferenceState(page, fixture) {
