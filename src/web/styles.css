@@ -2,9 +2,9 @@
 
 body.web-app {
   min-height: 100vh;
-  background: var(--bg);
-  color: var(--fg);
-  font: 14px/1.55 var(--font-ui);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: var(--text-base)/var(--leading-body) var(--font-ui);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -54,8 +54,8 @@ body.web-blank-canvas #app-sep {
 }
 
 #toolbar > .tool-icon {
-  width: 24px;
-  height: 24px;
+  width: var(--control-h-xs);
+  height: var(--control-h-xs);
   margin: 0;
   padding: 0;
   align-self: center;
@@ -63,7 +63,7 @@ body.web-blank-canvas #app-sep {
 
 #t-rail .rail-fill {
   opacity: 0;
-  transition: opacity 120ms ease;
+  transition: opacity var(--duration-fast) var(--ease-standard);
 }
 
 #t-rail.rail-on .rail-fill {
@@ -96,7 +96,7 @@ body.web-blank-canvas #app-sep {
   gap: 12px;
   justify-items: center;
   pointer-events: none;
-  transition: left 170ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: left var(--duration-enter) var(--ease-out);
 }
 
 body.rail-open .blank-start {
@@ -107,18 +107,18 @@ body.rail-open .blank-start {
   pointer-events: auto;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--bar-bg) 88%, transparent);
+  gap: var(--space-4);
+  border: var(--border-default);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--color-chrome) 88%, transparent);
   -webkit-backdrop-filter: blur(16px) saturate(1.3);
   backdrop-filter: blur(16px) saturate(1.3);
-  color: var(--fg);
-  padding: 10px 15px;
-  font: 550 13px/1 var(--font-ui);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.06), 0 10px 30px -18px rgba(0,0,0,0.35);
+  color: var(--color-text);
+  padding: var(--space-5) var(--space-8);
+  font: var(--weight-semibold) var(--text-body)/1 var(--font-ui);
+  box-shadow: var(--shadow-card);
   cursor: pointer;
-  transition: color 120ms ease, border-color 120ms ease, background-color 120ms ease, transform 120ms ease;
+  transition: var(--transition-color);
 }
 
 .blank-start-new:hover {
@@ -127,13 +127,9 @@ body.rail-open .blank-start {
   background: var(--bar-bg);
 }
 
-.blank-start-new:active {
-  transform: translateY(1px);
-}
-
 .blank-start-new svg {
   color: var(--fg-dim);
-  transition: color 120ms ease;
+  transition: color var(--duration-fast) var(--ease-standard);
 }
 
 .blank-start-new:hover svg {
@@ -143,9 +139,9 @@ body.rail-open .blank-start {
 .blank-start-new kbd {
   color: var(--fg-faint);
   background: color-mix(in srgb, var(--fg) 8%, transparent);
-  border-radius: 4px;
+  border-radius: var(--radius-inline);
   padding: 2px 5px;
-  font: 500 9.5px/1.4 var(--font-ui);
+  font: var(--weight-medium) var(--text-xs)/var(--leading-ui) var(--font-ui);
 }
 
 .blank-start-sub {
@@ -170,19 +166,19 @@ body.blank-dragging #viewport::after {
   top: var(--rail-top, 68px);
   bottom: 14px;
   left: 14px;
-  width: min(226px, calc(100vw - 28px));
+  width: min(var(--rail-width), calc(100vw - 28px));
   visibility: hidden;
   transform: translateX(calc(-100% - 18px));
   opacity: 0.45;
   pointer-events: none;
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  border: var(--border-default);
+  border-radius: var(--radius-popover);
   overflow: hidden;
-  background: color-mix(in srgb, var(--bar-bg) 88%, transparent);
+  background: var(--surface-popover-bg);
   -webkit-backdrop-filter: blur(16px) saturate(1.3);
   backdrop-filter: blur(16px) saturate(1.3);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 16px 40px -16px rgba(0,0,0,0.4);
-  transition: opacity 95ms ease-out, transform 110ms cubic-bezier(0.23, 1, 0.32, 1), visibility 0s linear 110ms;
+  box-shadow: var(--surface-popover-shadow);
+  transition: opacity var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out), visibility 0s linear var(--duration-fast);
 }
 
 .web-rail.open {
@@ -191,6 +187,13 @@ body.blank-dragging #viewport::after {
   opacity: 1;
   pointer-events: auto;
   transition-delay: 0s;
+}
+
+/* The panel takes focus on open so keys flow into its rows; container
+   emphasis must not impersonate the keyboard ring. */
+.web-rail:focus-visible {
+  outline: none;
+  border-color: var(--color-border-strong);
 }
 
 .rail-inner {
@@ -215,19 +218,19 @@ body.blank-dragging #viewport::after {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 12px 6px;
+  padding: var(--panel-padding-block) var(--panel-padding-inline);
 }
 
 .rail-row {
   position: relative;
   display: block;
-  border-radius: 8px;
-  transition: background-color 70ms ease-out;
+  border-radius: var(--radius-control-lg);
+  transition: background-color var(--duration-instant) var(--ease-out);
 }
 
 .rail-row:hover,
 .rail-row:focus-within {
-  background: var(--hl);
+  background: var(--color-hover);
 }
 
 .rail-row.current {
@@ -241,7 +244,7 @@ body.blank-dragging #viewport::after {
   border: 0;
   background: transparent;
   color: var(--fg);
-  padding: 7px 54px 8px 8px;
+  padding: var(--row-padding-block) 54px var(--row-padding-block) var(--space-4);
   text-align: left;
   cursor: pointer;
 }
@@ -273,7 +276,7 @@ body.blank-dragging #viewport::after {
   background: transparent;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 65ms ease-out;
+  transition: opacity var(--duration-instant) var(--ease-out);
 }
 
 .rail-row:hover .rail-actions,
@@ -284,7 +287,7 @@ body.blank-dragging #viewport::after {
 
 .rail-icon {
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--fg-faint);
   cursor: pointer;
@@ -344,13 +347,13 @@ body.blank-dragging #viewport::after {
   max-height: min(82vh, 760px);
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--border-focus) 58%, var(--border));
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--node-bg) 94%, var(--bg));
-  box-shadow: 0 20px 70px rgba(0,0,0,0.24);
+  box-shadow: var(--shadow-modal);
   padding: 14px;
   transform: translateY(2px) scale(0.995);
   opacity: 0;
-  animation: composer-in 65ms ease-out forwards;
+  animation: composer-in var(--duration-instant) var(--ease-out) forwards;
 }
 
 @keyframes composer-in {
@@ -402,14 +405,14 @@ body.blank-dragging #viewport::after {
 .composer-entry-head h2 {
   margin: 0;
   color: var(--fg-bold);
-  font: 650 17px/1.25 var(--font-ui);
+  font: var(--weight-bold) var(--text-title)/1.25 var(--font-ui);
   letter-spacing: -0.01em;
 }
 
 .composer-entry-head p {
   margin: 3px 0 0;
   color: var(--fg-dim);
-  font: 12.5px/1.4 var(--font-ui);
+  font: var(--text-body)/var(--leading-ui) var(--font-ui);
 }
 
 .composer-paths {
@@ -424,13 +427,13 @@ body.blank-dragging #viewport::after {
   gap: 10px;
   width: 100%;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--bar-bg) 70%, transparent);
   color: var(--fg);
   padding: 10px 11px;
   text-align: left;
   cursor: pointer;
-  transition: border-color 55ms ease-out, background-color 55ms ease-out;
+  transition: border-color var(--duration-instant) var(--ease-out), background-color var(--duration-instant) var(--ease-out);
 }
 
 .composer-path:hover {
@@ -444,7 +447,7 @@ body.blank-dragging #viewport::after {
   height: 32px;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: var(--radius-control-lg);
   background: color-mix(in srgb, var(--accent) 9%, transparent);
   color: var(--accent);
 }
@@ -457,18 +460,18 @@ body.blank-dragging #viewport::after {
 
 .composer-path-copy strong {
   color: var(--fg-bold);
-  font: 650 13px/1.25 var(--font-ui);
+  font: var(--weight-bold) var(--text-body)/1.25 var(--font-ui);
 }
 
 .composer-path-copy small {
   color: var(--fg-dim);
-  font: 11.5px/1.35 var(--font-ui);
+  font: var(--text-ui)/1.35 var(--font-ui);
 }
 
 .composer-path-arrow {
   color: var(--fg-faint);
-  font: 15px/1 var(--font-ui);
-  transition: color 55ms ease-out;
+  font: var(--text-base)/1 var(--font-ui);
+  transition: color var(--duration-instant) var(--ease-out);
 }
 
 .composer-path:hover .composer-path-arrow {
@@ -481,11 +484,11 @@ body.blank-dragging #viewport::after {
   align-items: center;
   gap: 5px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--fg-dim);
   padding: 4px 6px 4px 3px;
-  font: 600 11.5px/1 var(--font-ui);
+  font: var(--weight-semibold) var(--text-ui)/1 var(--font-ui);
   cursor: pointer;
 }
 
@@ -500,14 +503,14 @@ body.blank-dragging #viewport::after {
   max-height: 240px;
   resize: vertical;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--radius-card);
   outline: none;
   background: color-mix(in srgb, var(--bar-bg) 72%, transparent);
   color: var(--fg-bold);
   padding: 12px 13px;
   font: 17px/1.45 var(--font-doc);
   letter-spacing: 0;
-  transition: border-color 55ms ease-out, box-shadow 55ms ease-out, background-color 55ms ease-out;
+  transition: border-color var(--duration-instant) var(--ease-out), box-shadow var(--duration-instant) var(--ease-out), background-color var(--duration-instant) var(--ease-out);
 }
 
 #composer-input::placeholder {
@@ -517,13 +520,13 @@ body.blank-dragging #viewport::after {
 #composer-input:focus {
   border-color: var(--border-focus);
   background: var(--node-bg);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: var(--focus-field-shadow);
 }
 
 .composer-card[data-path="url"] #composer-input {
   min-height: 44px;
   resize: none;
-  font: 13.5px/1.4 var(--font-ui);
+  font: var(--text-base)/var(--leading-ui) var(--font-ui);
 }
 
 .composer-entry-actions {
@@ -541,10 +544,10 @@ body.blank-dragging .composer-card {
 .provider-retry,
 .web-toast button {
   border: 1px solid var(--border);
-  border-radius: 7px;
-  font: 650 13px/1 var(--font-ui);
+  border-radius: var(--radius-control);
+  font: var(--weight-bold) var(--text-body)/1 var(--font-ui);
   cursor: pointer;
-  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms ease;
+  transition: var(--transition-color);
 }
 
 .web-primary {
@@ -556,11 +559,6 @@ body.blank-dragging .composer-card {
 
 .web-primary:hover {
   filter: brightness(1.05);
-}
-
-.web-primary:active,
-.provider-retry:active {
-  transform: translateY(1px);
 }
 
 .provider-retry {
@@ -580,7 +578,7 @@ body.blank-dragging .composer-card {
   position: relative;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   background: var(--sk-base);
   color: var(--fg-dim);
   padding: 10px 11px;
@@ -631,14 +629,14 @@ body.blank-dragging .composer-card {
   max-height: calc(100vh - var(--settings-top, 68px) - var(--settings-edge, 14px));
   overflow: auto;
   outline: none;
-  border: var(--popover-border);
-  border-radius: var(--popover-radius);
-  background: var(--popover-bg);
-  -webkit-backdrop-filter: var(--popover-blur);
-  backdrop-filter: var(--popover-blur);
-  box-shadow: var(--popover-shadow);
+  border: var(--surface-popover-border);
+  border-radius: var(--surface-popover-radius);
+  background: var(--surface-popover-bg);
+  -webkit-backdrop-filter: var(--surface-popover-blur);
+  backdrop-filter: var(--surface-popover-blur);
+  box-shadow: var(--surface-popover-shadow);
   transform-origin: top right;
-  animation: settings-in var(--popover-speed) var(--popover-ease) both;
+  animation: settings-in var(--duration-fast) var(--ease-out) both;
 }
 
 @keyframes settings-in {
@@ -654,7 +652,7 @@ body.blank-dragging .composer-card {
 }
 
 .settings-section {
-  padding: 12px 14px;
+  padding: var(--panel-padding-block) var(--panel-padding-inline);
 }
 
 .settings-section + .settings-section {
@@ -681,14 +679,14 @@ body.blank-dragging .composer-card {
   max-width: 215px;
   min-width: 0;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--fg-bold);
   padding: 5px 8px;
   margin-right: -8px;
-  font: 550 12.5px/1.2 var(--font-ui);
+  font: var(--weight-semibold) var(--text-body)/1.2 var(--font-ui);
   cursor: pointer;
-  transition: background-color 120ms ease;
+  transition: background-color var(--duration-fast) var(--ease-standard);
 }
 
 .settings-select:hover,
@@ -699,7 +697,7 @@ body.blank-dragging .composer-card {
 .settings-select svg {
   flex: 0 0 auto;
   color: var(--fg-faint);
-  transition: transform 140ms ease;
+  transition: transform var(--duration-fast) var(--ease-standard);
 }
 
 .settings-select[aria-expanded="true"] svg {
@@ -716,7 +714,7 @@ body.blank-dragging .composer-card {
   margin-top: 10px;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--bg) 42%, transparent);
 }
 
@@ -725,9 +723,9 @@ body.blank-dragging .composer-card {
   display: inline-flex;
   min-width: 0;
   align-items: center;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   margin-right: -5px;
-  transition: background-color 120ms ease;
+  transition: background-color var(--duration-fast) var(--ease-standard);
 }
 
 .native-select-wrap:hover,
@@ -745,7 +743,7 @@ body.blank-dragging .composer-card {
   background: transparent;
   color: var(--fg-bold);
   padding: 5px 26px 5px 8px;
-  font: 550 12.5px/1.2 var(--font-ui);
+  font: var(--weight-semibold) var(--text-body)/1.2 var(--font-ui);
   cursor: pointer;
 }
 
@@ -786,7 +784,7 @@ html[data-theme="light"] .native-select-wrap select {
   background: transparent;
   color: var(--fg);
   padding: 0;
-  font: 12.5px/1.4 var(--font-ui);
+  font: var(--text-body)/var(--leading-ui) var(--font-ui);
 }
 
 .model-search-wrap input::placeholder {
@@ -796,9 +794,9 @@ html[data-theme="light"] .native-select-wrap select {
 .model-search-wrap kbd {
   color: var(--fg-faint);
   background: color-mix(in srgb, var(--fg) 8%, transparent);
-  border-radius: 4px;
+  border-radius: var(--radius-inline);
   padding: 1px 4.5px;
-  font: 500 9px/1.6 var(--font-ui);
+  font: var(--weight-medium) var(--text-xs)/1.6 var(--font-ui);
 }
 
 .model-list {
@@ -811,7 +809,7 @@ html[data-theme="light"] .native-select-wrap select {
 .model-group-label {
   padding: 8px 8px 4px;
   color: var(--fg-faint);
-  font: 600 9.5px/1 var(--font-ui);
+  font: var(--weight-semibold) var(--text-xs)/1 var(--font-ui);
   letter-spacing: 0.07em;
   text-transform: uppercase;
 }
@@ -822,7 +820,7 @@ html[data-theme="light"] .native-select-wrap select {
   gap: 7px;
   width: 100%;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--fg);
   padding: 6px 8px 6px 5px;
@@ -848,23 +846,23 @@ html[data-theme="light"] .native-select-wrap select {
   min-width: 0;
   overflow: hidden;
   color: var(--fg);
-  font: 500 12.5px/1.3 var(--font-ui);
+  font: var(--weight-medium) var(--text-body)/1.3 var(--font-ui);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .model-option.selected .model-option-name {
   color: var(--fg-bold);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .model-chip {
   flex: 0 0 auto;
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 2px 7px;
-  font: 600 10px/1.4 var(--font-ui);
+  font: var(--weight-semibold) var(--text-xs)/var(--leading-ui) var(--font-ui);
   white-space: nowrap;
 }
 
@@ -883,7 +881,7 @@ html[data-theme="light"] .native-select-wrap select {
 
 .key-get {
   color: var(--fg-dim);
-  font: 550 11.5px/1.2 var(--font-ui);
+  font: var(--weight-semibold) var(--text-ui)/1.2 var(--font-ui);
   text-decoration: none;
   white-space: nowrap;
 }
@@ -901,12 +899,12 @@ html[data-theme="light"] .native-select-wrap select {
   width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-control-lg);
   background: color-mix(in srgb, var(--bg) 55%, transparent);
   color: var(--fg);
   padding: 8px 36px 8px 10px;
   font: 12px/1.5 var(--font-mono);
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  transition: border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard);
 }
 
 .key-input-wrap input::placeholder {
@@ -916,7 +914,7 @@ html[data-theme="light"] .native-select-wrap select {
 .key-input-wrap input:focus {
   outline: none;
   border-color: var(--border-focus);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: var(--focus-field-shadow);
 }
 
 .key-input-wrap button {
@@ -930,12 +928,12 @@ html[data-theme="light"] .native-select-wrap select {
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--fg-faint);
   padding: 0;
   cursor: pointer;
-  transition: color 120ms ease, background-color 120ms ease;
+  transition: color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard);
 }
 
 .key-input-wrap button:hover {
@@ -969,9 +967,9 @@ html[data-theme="light"] .native-select-wrap select {
   position: relative;
   width: 30px;
   height: 18px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--fg) 16%, transparent);
-  transition: background-color 140ms ease;
+  transition: background-color var(--duration-fast) var(--ease-standard);
 }
 
 .switch-track::after {
@@ -984,7 +982,7 @@ html[data-theme="light"] .native-select-wrap select {
   border-radius: 50%;
   background: #fff;
   box-shadow: 0 1px 2px rgba(0,0,0,0.28);
-  transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: transform var(--duration-fast) var(--ease-out);
 }
 
 .switch input:checked + .switch-track {
@@ -1003,7 +1001,7 @@ html[data-theme="light"] .native-select-wrap select {
 
 .switch-copy strong {
   color: var(--fg);
-  font: 550 12.5px/1.3 var(--font-ui);
+  font: var(--weight-semibold) var(--text-body)/1.3 var(--font-ui);
 }
 
 .switch-copy small {
@@ -1020,7 +1018,7 @@ html[data-theme="light"] .native-select-wrap select {
 .field > span,
 .field > label {
   color: var(--fg-dim);
-  font: 650 12px/1.2 var(--font-ui);
+  font: var(--weight-bold) var(--text-ui)/1.2 var(--font-ui);
 }
 
 .endpoint-section input,
@@ -1030,12 +1028,12 @@ html[data-theme="light"] .native-select-wrap select {
   width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   background: color-mix(in srgb, var(--bg) 55%, transparent);
   color: var(--fg);
   padding: 8px 9px;
-  font-size: 12.5px;
-  transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
+  font-size: var(--text-body);
+  transition: border-color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard);
 }
 
 .settings-advanced-grid select {
@@ -1063,7 +1061,7 @@ html[data-theme="light"] .native-select-wrap select {
 .settings-advanced-grid select:focus {
   outline: none;
   border-color: var(--border-focus);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: var(--focus-field-shadow);
 }
 
 .settings-advanced {
@@ -1079,7 +1077,7 @@ html[data-theme="light"] .native-select-wrap select {
   font: 600 11.5px/1.2 var(--font-ui);
   cursor: pointer;
   list-style: none;
-  transition: color 120ms ease;
+  transition: color var(--duration-fast) var(--ease-standard);
 }
 
 .settings-advanced summary::-webkit-details-marker {
@@ -1093,7 +1091,7 @@ html[data-theme="light"] .native-select-wrap select {
   border-right: 1.5px solid currentColor;
   border-bottom: 1.5px solid currentColor;
   transform: rotate(-45deg);
-  transition: transform 140ms ease;
+  transition: transform var(--duration-fast) var(--ease-standard);
 }
 
 .settings-advanced[open] summary::after {
@@ -1127,7 +1125,7 @@ html[data-theme="light"] .native-select-wrap select {
   margin-top: 7px;
   min-height: 16px;
   color: var(--fg-dim);
-  font: 11.5px/1.4 var(--font-ui);
+  font: var(--text-ui)/var(--leading-ui) var(--font-ui);
 }
 
 .key-status.idle {
@@ -1159,7 +1157,7 @@ html[data-theme="light"] .native-select-wrap select {
 
 .key-status .key-switch {
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-control);
   background: var(--hl);
   color: var(--fg-bold);
   padding: 4px 6px;
@@ -1170,7 +1168,7 @@ html[data-theme="light"] .native-select-wrap select {
   display: grid;
   gap: 11px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--bar-bg) 92%, var(--node-bg));
   padding: 13px 14px;
   box-shadow: 0 10px 30px -18px rgba(0,0,0,0.35);
@@ -1179,7 +1177,7 @@ html[data-theme="light"] .native-select-wrap select {
 .inline-key-copy h3 {
   margin: 0;
   color: var(--fg-bold);
-  font: 650 13.5px/1.25 var(--font-ui);
+  font: var(--weight-bold) var(--text-base)/1.25 var(--font-ui);
 }
 
 .inline-key-copy p {
@@ -1217,7 +1215,7 @@ html[data-theme="light"] .native-select-wrap select {
 }
 
 .shake-once {
-  animation: key-shake 190ms ease;
+  animation: key-shake var(--duration-enter) var(--ease-standard);
 }
 
 @keyframes key-shake {
@@ -1238,12 +1236,12 @@ html[data-theme="light"] .native-select-wrap select {
   gap: 12px;
   max-width: min(620px, calc(100vw - 24px));
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-control-lg);
   background: var(--fg-bold);
   color: var(--node-bg);
   padding: 11px 13px;
   font: 13px/1.3 var(--font-ui);
-  transition: opacity 0.16s ease, transform 0.16s ease;
+  transition: opacity var(--duration-enter) var(--ease-standard), transform var(--duration-enter) var(--ease-standard);
 }
 
 .web-toast.visible {
@@ -1261,7 +1259,7 @@ html[data-theme="light"] .native-select-wrap select {
 
 .provider-error {
   border: 1px solid var(--warn);
-  border-radius: 8px;
+  border-radius: var(--radius-control-lg);
   background: color-mix(in srgb, var(--warn) 10%, transparent);
   padding: 12px;
 }
@@ -1300,8 +1298,8 @@ html[data-theme="light"] .native-select-wrap select {
 .key-input-wrap button:focus-visible,
 .settings-advanced summary:focus-visible,
 .switch input:focus-visible + .switch-track {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
 }
 
 @media (prefers-reduced-motion: reduce) {

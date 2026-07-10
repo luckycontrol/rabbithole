@@ -206,8 +206,8 @@ async function verifyAskKeyUxAndRail() {
     };
   });
   assert(Math.abs(railDetailGeometry.toolbarGap - railDetailGeometry.bottomGap) <= 1, "sidebar should use one outer gap above and below");
-  assert.equal(railDetailGeometry.paddingTop, "7px");
-  assert.equal(railDetailGeometry.paddingBottom, "8px", "row should include one pixel of optical bottom compensation");
+  assert.equal(railDetailGeometry.paddingTop, "8px");
+  assert.equal(railDetailGeometry.paddingBottom, "8px", "row should consume the shared row-padding token symmetrically");
   assert(Math.abs(railDetailGeometry.textTopGap - railDetailGeometry.textBottomGap) <= 1, "row label should sit optically centered");
   assert.equal(railDetailGeometry.actionBackground, "none", "row actions should not sit on a dark backing plate");
   assert.equal(railDetailGeometry.iconBackground, "rgba(0, 0, 0, 0)", "row icons should remain unboxed");
@@ -222,6 +222,21 @@ async function verifyAskKeyUxAndRail() {
   assert(railGeometry.height > 300, `open rail should read as a full-height sidebar, got ${railGeometry.height}px`);
   assert.equal(Math.round(railGeometry.bottomGap), 14, "sidebar should stay anchored to the bottom canvas edge");
   assert(railGeometry.width <= 226, `sidebar should remain compact, got ${railGeometry.width}px`);
+  await page.keyboard.press("s");
+  await page.waitForSelector("#web-rail.open");
+  const railFocusTreatment = await page.evaluate(() => {
+    const rail = document.getElementById("web-rail");
+    return { focused: document.activeElement === rail, outline: getComputedStyle(rail).outlineStyle };
+  });
+  assert.equal(railFocusTreatment.focused, true, "keyboard-opened rail should hold focus so keys flow into its rows");
+  assert.equal(railFocusTreatment.outline, "none", "keyboard-opened rail must use container emphasis, not a focus ring around the panel");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector("#web-rail:not(.open)", { state: "attached" });
+  assert.equal(
+    await page.evaluate(() => document.body.classList.contains("mode-canvas")),
+    true,
+    "Escape with the rail focused must close only the rail, not fall through to the canvas client's open-the-reader shortcut"
+  );
   assert.equal(await page.evaluate(() => localStorage.getItem("rh-web-api-key")), MOCK_KEY, "remembered key should stay local to this browser");
   const snapshotHtml = await page.evaluate(() => window.__rhWebApp.exportSnapshotForTest());
   assert(!snapshotHtml.includes(MOCK_KEY), "snapshot export must not contain provider key");
@@ -440,7 +455,7 @@ async function verifyCanvasBranching() {
   assert(shareStandard.rightAlignment < 1, `Share should anchor to its trigger, off by ${shareStandard.rightAlignment.toFixed(2)}px`);
   assert(Math.abs(shareStandard.toolbarGap - 14) < 1, `Share should use the 14px toolbar rhythm, got ${shareStandard.toolbarGap.toFixed(2)}px`);
   assert.equal(shareStandard.shellPadding, "6px");
-  assert.equal(shareStandard.itemPaddingTop, "7px");
+  assert.equal(shareStandard.itemPaddingTop, "8px");
   assert.equal(shareStandard.itemPaddingBottom, "8px");
   assert.equal(shareStandard.expanded, "true");
   assert.equal(shareStandard.menuItems, 5);

@@ -120,15 +120,16 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | blank-state centering and composer initial focus | C2 | Protects visible placement and initial keyboard focus. | Chrome: keyboard-only completion (small opening/closing subset) |
 | warm re-entry, hash precedence, rail delete fallback | C2 | Protects saved-hole navigation and recovery. | — |
 | first ask key validation and streamed root creation | C2 | Protects BYOK first-run streaming behavior. | Generation: 401/403 (pre-stream validation only); title never arrives (non-sentinel root title path only) |
-| rail content/geometry exact values | C4 | Pins per-screen magic CSS values Phase 2 intends to replace with tokens. | — |
+| rail content/geometry exact values | C4 | Pins the Phase 2 semantic rail width, panel padding, and symmetric row-padding geometry. | — |
+| keyboard-opened rail holds focus without a container ring; Escape closes only the rail | C2 | Focus policy: the panel takes focus so keys flow into rows, container emphasis must not impersonate the keyboard ring (was a UA `outline: auto` around the whole panel), and Escape must not fall through to the canvas client's open-the-reader shortcut (it did — the rail handler leaked propagation). | Chrome: keyboard-only completion (rail subset) |
 | credentials stay isolated from holes/snapshots | C1 | Protects the no-export credential contract. | Data: preference/credential storage (isolation only, not migrations) |
 | web snapshot export ships an empty style block | C4 | Records that web-exported frozen HTML is unstyled (`snapshot.js` serializes the page's inline `<style>`, which the web build does not emit; the styled export path lives in the canvas host). Phase 7's snapshot boundary fixes this and retires the tripwire. | Data: snapshot export styling |
 | settings native provider select width/arrow/theme | C4 | Explicitly fossilizes the native select Phase 3 replaces. | — |
 | provider switch, local model field, OpenRouter picker | C4 | Pins bespoke controls and provider id `custom` that Phase 3 replaces/migrates. | Chrome: Combobox catalogs (successful catalog only); settings during active stream (no active stream) |
 | session-only key opt-out | C2 | Protects credential persistence choice. | Data: preference/credential storage (current behavior only) |
-| settings trigger/panel exact alignment and 14px surface geometry | C4 | Pins per-surface positioning and magic values targeted by Phases 2–4. | Chrome: anchored surfaces at viewport edges (one toolbar position only) |
+| settings trigger/panel exact alignment and 14px surface geometry | C4 | Pins the shared popover surface standard and positioning geometry targeted by Phases 3–4. | Chrome: anchored surfaces at viewport edges (one toolbar position only) |
 | live math/code/show document rendering | C2 | Protects core authoring rendering. | — |
-| share popover exact surface/padding/anchor geometry | C4 | Pins bespoke surface CSS and positioning targeted by Phases 2–4. | Chrome: anchored surfaces at viewport edges (one toolbar position only) |
+| share popover exact surface/padding/anchor geometry | C4 | Pins the shared popover surface and Phase 2 semantic share-item padding, plus positioning targeted by Phases 3–4. | Chrome: anchored surfaces at viewport edges (one toolbar position only) |
 | selection branch streams and titles | C2 | Protects selection-to-branch generation. | Generation: title never arrives (sentinel success only) |
 | reader whole-document follow-up | C2 | Protects document chat branching. | — |
 | streamed branches persist across reload; external request allowlist | C2 | Protects save/re-entry and network scope. | Generation: tab close mid-stream (post-completion reload only) |
@@ -254,11 +255,11 @@ Counts treat each row above as one case; the shared Stage 9 contract counts once
 | Category | Count |
 |---|---:|
 | C1 compatibility contract | 38 |
-| C2 behavioral product contract | 78 |
+| C2 behavioral product contract | 79 |
 | C3 implementation snapshot | 10 |
 | C4 known defect | 11 |
 | C5 design target | 0 |
-| **Total** | **137** |
+| **Total** | **138** |
 
 ## Known-defect fossils
 

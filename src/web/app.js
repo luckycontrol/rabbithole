@@ -647,7 +647,12 @@ async function renderRail() {
     </div>
   </div>`;
   rail.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") setRailOpen(false);
+    if (event.key === "Escape") {
+      // Contain Escape to the rail: the canvas client's document-level
+      // handler treats a loose Escape as "open the reader".
+      event.stopPropagation();
+      setRailOpen(false);
+    }
   });
   applyRailState();
 }
