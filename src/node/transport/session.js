@@ -690,7 +690,7 @@ export class RabbitHoleSession {
   // reconnect can't resurrect a deleted node via node_answered self-healing.
   async handleDeleteNode(payload) {
     const targetId = String(payload.node_id || "");
-    if (!targetId || targetId === this.rootId) throw buildJsonError("Cannot delete the root document", 400);
+    if (!targetId || targetId === this.rootId) throw buildJsonError("The starting document can't be removed", 400);
     if (!this.nodes.has(targetId)) return { ok: true, deleted: [] };
 
     const effects = this.dispatchHoleEvent({ type: "delete_node", node_id: targetId });

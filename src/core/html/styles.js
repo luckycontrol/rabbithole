@@ -32,6 +32,13 @@ html[data-theme="light"] {
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-doc: Charter, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --popover-bg: color-mix(in srgb, var(--bar-bg) 88%, transparent);
+  --popover-border: 1px solid var(--border);
+  --popover-radius: 12px;
+  --popover-blur: blur(16px) saturate(1.3);
+  --popover-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 16px 40px -16px rgba(0,0,0,0.4);
+  --popover-speed: 110ms;
+  --popover-ease: cubic-bezier(0.23, 1, 0.32, 1);
 }
 html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
 body {
@@ -438,19 +445,18 @@ body.mode-canvas #toolbar { display: flex; }
 .peek-hint { margin-top: 4px; font-family: var(--font-ui); font-size: 10.5px; color: var(--fg-faint); }
 
 /* ---------- share menu ---------- */
-#sharemenu { position: fixed; z-index: 110; min-width: 236px; visibility: hidden; opacity: 0; pointer-events: none; background: color-mix(in srgb, var(--bar-bg) 94%, transparent);
-  -webkit-backdrop-filter: blur(16px) saturate(1.3); backdrop-filter: blur(16px) saturate(1.3);
-  border: 1px solid var(--border); border-radius: 12px; padding: 5px; overflow: hidden;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 16px 40px -16px rgba(0,0,0,0.4);
-  transform: scale(0.97) translateY(-4px); transform-origin: top center;
-  transition: opacity 140ms cubic-bezier(0.23, 1, 0.32, 1), transform 140ms cubic-bezier(0.23, 1, 0.32, 1), visibility 0s linear 140ms; }
-#sharemenu.visible { visibility: visible; opacity: 1; pointer-events: auto; transform: scale(1) translateY(0); transition-delay: 0s; }
+#sharemenu { position: fixed; z-index: 110; min-width: 236px; visibility: hidden; opacity: 0; pointer-events: none; background: var(--popover-bg);
+  -webkit-backdrop-filter: var(--popover-blur); backdrop-filter: var(--popover-blur);
+  border: var(--popover-border); border-radius: var(--popover-radius); padding: 6px; overflow: hidden;
+  box-shadow: var(--popover-shadow); transform: translateY(-4px); transform-origin: top right;
+  transition: opacity var(--popover-speed) var(--popover-ease), transform var(--popover-speed) var(--popover-ease), visibility 0s linear var(--popover-speed); }
+#sharemenu.visible { visibility: visible; opacity: 1; pointer-events: auto; transform: translateY(0); transition-delay: 0s; }
 .sm-item { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; background: none; border: none; cursor: pointer;
-  font-family: var(--font-ui); font-size: 12.5px; color: var(--fg); border-radius: 8px; padding: 8px 10px; }
+  font-family: var(--font-ui); font-size: 12.5px; color: var(--fg); border-radius: 8px; padding: 7px 9px 8px; }
 .sm-item:hover { background: var(--hl); color: var(--fg-bold); }
 .sm-item .sm-ic { width: 16px; text-align: center; color: var(--fg-dim); flex-shrink: 0; }
 .sm-item:hover .sm-ic { color: var(--fg-bold); }
-.sm-sep { height: 1px; background: var(--border); margin: 5px 6px; }
+.sm-sep { height: 1px; background: var(--border); margin: 5px 8px; }
 
 /* ---------- delete confirm popover ---------- */
 #confirm { position: fixed; z-index: 110; visibility: hidden; opacity: 0; pointer-events: none; background: var(--bar-bg); border: 1px solid var(--border); border-radius: 10px;

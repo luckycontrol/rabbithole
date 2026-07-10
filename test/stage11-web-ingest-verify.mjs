@@ -35,9 +35,20 @@ await page.route(/https:\/\/ar5iv\.labs\.arxiv\.org\/html\/.+/, async (route) =>
   await route.abort("failed");
 });
 
+// Opening settings warms the OpenRouter model catalog; keep this test offline.
+await page.route("https://openrouter.ai/api/v1/models", async (route) => {
+  await route.fulfill({
+    status: 200,
+    headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify({ data: [
+      { id: "anthropic/claude-sonnet-5", name: "Anthropic: Claude Sonnet 5", context_length: 1000000, pricing: { prompt: "0.000003", completion: "0.000015" } },
+    ] }),
+  });
+});
+
 try {
   await page.goto(baseUrl, { waitUntil: "networkidle" });
-  await page.waitForSelector("#file-md");
+  await page.waitForSelector("#composer-path-file");
 
   requests.length = 0;
   const pdfBytes = buildTinyPdf([
@@ -74,9 +85,10 @@ try {
   await page.click("#t-settings");
   await openAdvancedSettings(page);
   await page.fill("#fetch-proxy-url", `${baseUrl}/proxy`);
-  await page.click("#save-settings");
-  await page.click("#web-settings-close");
+  await page.press("#fetch-proxy-url", "Tab");
+  await page.keyboard.press("Escape");
   await page.click("#t-new");
+  await page.click("#composer-path-url");
   await page.fill("#composer-input", "https://arxiv.org/abs/1234.5678");
   await page.click("#composer-primary");
   await waitForCanvasText(page, "Proxy fallback article");
@@ -93,14 +105,30 @@ try {
   await page.click("#t-settings");
   await openAdvancedSettings(page);
   await page.fill("#fetch-proxy-url", `${baseUrl}/dead-proxy`);
-  await page.click("#save-settings");
-  await page.click("#web-settings-close");
+  await page.press("#fetch-proxy-url", "Tab");
+  await page.keyboard.press("Escape");
   await page.click("#t-new");
+  await page.click("#composer-path-url");
   await page.fill("#composer-input", "https://arxiv.org/abs/9999.0000");
   await page.click("#composer-primary");
   await page.waitForSelector("#ingest-status.error");
   const deadError = await page.textContent("#ingest-status");
-  assert.match(deadError, /Paste the content manually or drop a PDF/i);
+  assert.match(deadError, /Try another link or open a PDF/i);
+
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.click("#t-settings");
+  await openAdvancedSettings(page);
+  await page.fill("#fetch-proxy-url", `${baseUrl}/reject-proxy`);
+  await page.press("#fetch-proxy-url", "Tab");
+  await page.keyboard.press("Escape");
+  await page.click("#t-new");
+  await page.click("#composer-path-url");
+  await page.fill("#composer-input", "https://arxiv.org/abs/7777.7777");
+  await page.click("#composer-primary");
+  await page.waitForSelector("#ingest-status.error");
+  const rejectError = await page.textContent("#ingest-status");
+  assert.match(rejectError, /isn't supported by the link relay yet/i);
+  assert.match(rejectError, /arXiv links work best/);
 
   console.log("stage11 web ingestion verification passed");
 } finally {
@@ -192,6 +220,11 @@ async function serveStatic(rootDir) {
     if (url.pathname === "/dead-proxy") {
       res.writeHead(503, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
       res.end("proxy unavailable");
+      return;
+    }
+    if (url.pathname === "/reject-proxy") {
+      res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+      res.end("Host is not allowlisted: arxiv.org");
       return;
     }
 

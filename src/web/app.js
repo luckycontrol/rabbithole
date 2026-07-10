@@ -1,39 +1,33 @@
 import { CANVAS_SHELL } from "../core/html/shell.js";
 import { createBrain, defaultBrainSettings, presetFor, settingsForPreset, BRAIN_PRESETS } from "./brain/index.js";
 import { IdbStore } from "./store/idb-store.js";
-import { DirectRabbitholeHost, createHoleFromMarkdown, titleFromMarkdown } from "./transport/direct-host.js";
+import { DirectRabbitholeHost, createHoleFromMarkdown, createPendingHoleFromQuestion } from "./transport/direct-host.js";
 import { startRabbithole } from "../ui/entry.js";
 import { activateFocusTrap } from "../ui/focus-trap.js";
-import { renderMarkdownToHtml } from "../ui/renderer.js";
 import { setSnapshotHooks, buildSnapshotHydration, buildSnapshotHtml } from "../ui/snapshot.js";
 import { openUrlToStoredHole } from "./ingest/url.js";
 import { downloadRabbitholeExport, importRabbitholeFile, rabbitholeFilename } from "./portable.js";
 import { testedModelHint } from "./brain/tested-models.js";
+import {
+  loadModelCatalog,
+  searchModels,
+  formatModelPrice,
+  prettyModelId,
+  SUGGESTED_MODEL_IDS,
+  RECOMMENDED_MODEL_ID,
+} from "./brain/model-catalog.js";
 
 const SETTINGS_KEY = "rh-web-settings";
 const KEY_KEY = "rh-web-api-key";
+const KEYS_KEY = "rh-web-api-keys";
 const LAST_HOLE_KEY = "rh-last-hole";
-const RAIL_KEY = "rh-rail-open";
-const AGENT_COMMAND = "claude mcp add rabbithole -- npx -y github:shlokkhemani/rabbithole";
 const OPENROUTER_KEYS_URL = "https://openrouter.ai/keys";
 const OPENROUTER_KEY_CHECK_URL = "https://openrouter.ai/api/v1/key";
 const DEFAULT_FETCH_PROXY_URL =
   typeof __RABBITHOLE_DEFAULT_PROXY_URL__ === "string" ? __RABBITHOLE_DEFAULT_PROXY_URL__ : "";
 
-const INTENTS = Object.freeze({
-  ask: { id: "ask", label: "Ask", primary: "Ask" },
-  document: { id: "document", label: "Open as document", primary: "Open document" },
-  url: { id: "url", label: "Open URL", primary: "Open URL" },
-});
-
-const EXAMPLE_QUESTIONS = [
-  "How do rockets land themselves?",
-  "Explain the attention mechanism",
-  "What actually happens in a black hole?",
-];
-
 const store = new IdbStore();
-let memoryKey = "";
+let memoryKeys = Object.create(null);
 let currentHost = null;
 let currentHoleId = null;
 let uiStarted = false;
@@ -41,12 +35,13 @@ let railOpen = false;
 let blankZoom = 1;
 let composerTrap = null;
 let settingsTrap = null;
-let composerIntentOverride = "";
-let composerAbortController = null;
-let composerStreamingHoleId = "";
+let composerPath = "";
 let pendingComposerAction = null;
 let pendingBranchRetry = null;
 let lastHoleCount = 0;
+let modelCatalogCache = null;
+let closeSettingsPickerFn = null;
+let settingsKeyToken = 0;
 
 applyInitialWebTheme();
 
@@ -79,43 +74,67 @@ function renderShell() {
   document.body.innerHTML = `<div id="canvas-root">${CANVAS_SHELL}</div>
     <aside id="web-rail" class="web-rail" aria-label="Rabbitholes" tabindex="-1"></aside>
     <div id="composer-modal" class="composer-modal" role="dialog" aria-modal="true" aria-labelledby="composer-title" hidden>
-      <div class="composer-card" id="composer-card">
-        <div class="composer-question" id="composer-question" hidden></div>
-        <textarea id="composer-input" rows="1" placeholder="What do you want to understand?" autocomplete="off" spellcheck="true"></textarea>
-        <div class="composer-subline">Paste a doc or URL — or drop a PDF anywhere</div>
-        <div class="intent-row" role="group" aria-label="Intent">
-          ${Object.values(INTENTS).map((intent) => `<button class="intent-chip" type="button" data-intent="${intent.id}" aria-pressed="false">${escapeHtml(intent.label)}</button>`).join("")}
-          <label class="intent-chip improve-chip" id="improve-chip" hidden>
-            <input id="composer-improve" type="checkbox">
-            <span>Improve structure</span>
-          </label>
-        </div>
-        <div id="composer-examples" class="composer-examples" hidden></div>
+      <div class="composer-card" id="composer-card" tabindex="-1">
+        <section id="composer-start" class="composer-start">
+          <header class="composer-start-head">
+            <span class="composer-title-mark" aria-hidden="true">${bunnyMarkSvg()}</span>
+            <h1 id="composer-title">Enter a Rabbithole</h1>
+          </header>
+          <div class="composer-paths" role="group" aria-label="Choose how to begin">
+            <button class="composer-path" id="composer-path-ask" type="button" data-path="ask">
+              <span class="composer-path-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 18 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M5.25 6.6A3.75 3.75 0 0 1 9 3a3.5 3.5 0 0 1 3.75 3.35c0 2.25-2.35 2.65-3.2 4.05-.25.4-.3.75-.3 1.1"/><path d="M9.25 14.5h.01"/></svg></span>
+              <span class="composer-path-copy"><strong>Ask a question</strong><small>Start with something you want to understand.</small></span>
+              <span class="composer-path-arrow" aria-hidden="true">→</span>
+            </button>
+            <button class="composer-path" id="composer-path-file" type="button" data-path="file">
+              <span class="composer-path-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 18 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M5 2.75h5l3 3v9.5H5z"/><path d="M10 2.75v3h3"/><path d="M7.25 9h3.5M7.25 11.75h3.5"/></svg></span>
+              <span class="composer-path-copy"><strong>Open PDF or Markdown</strong><small>Bring in a document from your device.</small></span>
+              <span class="composer-path-arrow" aria-hidden="true">→</span>
+            </button>
+            <button class="composer-path" id="composer-path-url" type="button" data-path="url">
+              <span class="composer-path-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 18 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="m7.15 10.85 3.7-3.7"/><path d="M6.05 12.95 4.9 14.1a2.85 2.85 0 0 1-4-4L3.8 7.2a2.85 2.85 0 0 1 4 0" transform="translate(2 0)"/><path d="m9.95 5.05 1.15-1.15a2.85 2.85 0 0 1 4 4l-2.9 2.9a2.85 2.85 0 0 1-4 0"/></svg></span>
+              <span class="composer-path-copy"><strong>Add a link</strong><small>Open an article or paper from the web.</small></span>
+              <span class="composer-path-arrow" aria-hidden="true">→</span>
+            </button>
+          </div>
+        </section>
+        <section id="composer-entry" class="composer-entry" hidden>
+          <button id="composer-back" class="composer-back" type="button"><span aria-hidden="true">←</span> All options</button>
+          <header class="composer-entry-head">
+            <h2 id="composer-entry-title"></h2>
+            <p id="composer-entry-copy"></p>
+          </header>
+          <textarea id="composer-input" rows="1" autocomplete="off" spellcheck="true"></textarea>
+          <div class="composer-entry-actions">
+            <button id="composer-primary" class="web-primary" type="button"></button>
+          </div>
+        </section>
+        <input id="file-md" type="file" accept=".md,.markdown,.pdf,.rabbithole,text/markdown,text/plain,application/pdf,application/json" hidden>
         <div id="composer-key-panel" class="inline-key-slot" hidden></div>
-        <div id="composer-stream" class="composer-stream" hidden>
-          <div id="composer-stream-doc" class="composer-stream-doc md" aria-live="polite"></div>
-        </div>
         <div id="ingest-status" class="ingest-status" aria-live="polite" aria-atomic="true"></div>
-        <div class="composer-actions">
-          <label class="file-pick" for="file-md">
-            <input id="file-md" type="file" accept=".md,.markdown,.pdf,.rabbithole,text/markdown,text/plain,application/pdf,application/json">
-            <span>Choose file</span>
-          </label>
-          <button id="composer-primary" class="web-primary" type="button">Ask</button>
-        </div>
       </div>
     </div>
-    <div id="blank-start-hint" class="blank-start-hint" hidden>Press N to start a new Rabbithole</div>
-    <div id="web-settings-modal" class="web-settings-modal" role="dialog" aria-modal="true" aria-label="Provider settings" hidden>
-      <div class="web-settings-dialog">
-        <button id="web-settings-close" class="web-close" type="button">Close</button>
+    <div id="blank-start" class="blank-start" hidden>
+      <button id="blank-start-new" class="blank-start-new" type="button">
+        <svg width="14" height="14" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M8 3.25v9.5"/><path d="M3.25 8h9.5"/></svg>
+        New Rabbithole
+        <kbd>N</kbd>
+      </button>
+      <p class="blank-start-sub">or drop a PDF or Markdown file anywhere</p>
+    </div>
+    <div id="web-settings-modal" class="web-settings-modal" role="dialog" aria-modal="true" aria-label="Model settings" hidden>
+      <div class="web-settings-dialog" tabindex="-1">
         <div id="settings-inline-key" class="settings-inline-key" hidden></div>
-        <section id="settings-panel" class="settings-panel expanded"></section>
+        <section id="settings-panel" class="settings-panel" aria-label="Model settings"></section>
       </div>
     </div>
     <div id="web-toast" class="web-toast" aria-live="polite"></div>`;
+  document.getElementById("toolbar")?.insertAdjacentHTML("afterbegin",
+    `<span class="toolbar-brand" title="Rabbithole" aria-label="Rabbithole">${bunnyMarkSvg()}</span><span class="sep toolbar-brand-sep"></span>`);
   railOpen = loadRailOpen();
   applyRailState();
+  syncRailPosition();
+  requestAnimationFrame(syncRailPosition);
 }
 
 async function chooseInitialHole() {
@@ -137,9 +156,12 @@ async function chooseInitialHole() {
 
 function initAppChrome() {
   const rail = document.getElementById("web-rail");
+  window.addEventListener("resize", syncRailPosition, { passive: true });
+  window.addEventListener("resize", syncSettingsPosition, { passive: true });
   document.getElementById("t-rail")?.addEventListener("click", () => toggleRail());
   document.getElementById("t-new")?.addEventListener("click", () => openComposer({ source: "button" }));
   document.getElementById("t-settings")?.addEventListener("click", () => openSettingsModal());
+  document.getElementById("blank-start-new")?.addEventListener("click", () => openComposer({ source: "button" }));
   rail?.addEventListener("click", async (event) => {
     const row = event.target?.closest?.(".rail-row");
     if (!row) return;
@@ -197,7 +219,6 @@ function initComposer() {
 
   input.addEventListener("input", () => {
     autoGrowTextarea(input, 240);
-    updateComposerIntent();
   });
   input.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -209,16 +230,14 @@ function initComposer() {
     }
   });
   primary.addEventListener("click", runComposer);
+  document.getElementById("composer-back").addEventListener("click", showComposerStart);
+  document.getElementById("composer-path-ask").addEventListener("click", () => selectComposerPath("ask"));
+  document.getElementById("composer-path-url").addEventListener("click", () => selectComposerPath("url"));
+  document.getElementById("composer-path-file").addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", async () => {
     const file = fileInput.files?.[0];
     if (file) await createFromFile(file);
     fileInput.value = "";
-  });
-  modal.querySelectorAll(".intent-chip[data-intent]").forEach((button) => {
-    button.addEventListener("click", () => {
-      composerIntentOverride = button.dataset.intent;
-      updateComposerIntent();
-    });
   });
   for (const type of ["dragenter", "dragover"]) {
     modal.addEventListener(type, (event) => {
@@ -269,43 +288,32 @@ function initGlobalDrops() {
 function openComposer({ source = "button", value = "" } = {}) {
   const modal = document.getElementById("composer-modal");
   const input = document.getElementById("composer-input");
-  const examples = document.getElementById("composer-examples");
-  const hint = document.getElementById("blank-start-hint");
+  const card = document.getElementById("composer-card");
 
   pendingComposerAction = null;
-  composerIntentOverride = "";
+  composerPath = "";
   setIngestStatus("");
   clearComposerKeyPanel();
-  resetComposerStreaming();
-  document.getElementById("composer-question").hidden = true;
-  document.getElementById("composer-stream").hidden = true;
-  document.getElementById("composer-input").hidden = false;
-  document.querySelector(".composer-subline").hidden = false;
-  document.querySelector(".intent-row").hidden = false;
-  document.querySelector(".composer-actions").hidden = false;
+  document.getElementById("composer-start").hidden = false;
+  document.getElementById("composer-entry").hidden = true;
   input.value = value;
   autoGrowTextarea(input, 240);
-  renderComposerExamples();
-  examples.hidden = lastHoleCount !== 0 || source !== "empty";
   modal.hidden = false;
-  hint.hidden = true;
-  updateComposerIntent();
+  document.getElementById("blank-start").hidden = true;
+  if (value) selectComposerPath(isSingleHttpUrl(value) ? "url" : "ask", { value });
   if (composerTrap) composerTrap();
+  // Focus rests on the card, not the first option — nothing looks preselected.
   composerTrap = activateFocusTrap(modal, {
-    initialFocus: input,
+    initialFocus: value ? input : card,
     onEscape: closeComposer,
   });
-  input.focus({ preventScroll: true });
+  (value ? input : card).focus({ preventScroll: true });
 }
 
 function closeComposer() {
-  if (composerAbortController) {
-    composerAbortController.abort();
-    cleanupStreamingHole();
-  }
   const modal = document.getElementById("composer-modal");
   modal.hidden = true;
-  modal.classList.remove("dragging", "streaming");
+  modal.classList.remove("dragging");
   pendingComposerAction = null;
   clearComposerKeyPanel();
   if (composerTrap) {
@@ -313,69 +321,62 @@ function closeComposer() {
     composerTrap = null;
   }
   if (!currentHoleId && lastHoleCount === 0) {
-    document.getElementById("blank-start-hint").hidden = false;
+    document.getElementById("blank-start").hidden = false;
   }
 }
 
-function renderComposerExamples() {
-  const examples = document.getElementById("composer-examples");
-  examples.innerHTML = EXAMPLE_QUESTIONS.map((question) =>
-    `<button type="button" class="example-chip">${escapeHtml(question)}</button>`
-  ).join("");
-  examples.querySelectorAll(".example-chip").forEach((button) => {
-    button.addEventListener("click", () => {
-      document.getElementById("composer-input").value = button.textContent.trim();
-      composerIntentOverride = "ask";
-      autoGrowTextarea(document.getElementById("composer-input"), 240);
-      updateComposerIntent();
-      document.getElementById("composer-input").focus();
-    });
-  });
-}
-
-function updateComposerIntent() {
+function selectComposerPath(path, { value = "" } = {}) {
+  if (path !== "ask" && path !== "url") return;
+  composerPath = path;
   const input = document.getElementById("composer-input");
-  const inferred = inferIntent(input.value);
-  const active = composerIntentOverride || inferred;
-  document.querySelectorAll(".intent-chip[data-intent]").forEach((button) => {
-    const isActive = button.dataset.intent === active;
-    button.classList.toggle("active", isActive);
-    button.classList.toggle("inferred", button.dataset.intent === inferred);
-    button.setAttribute("aria-pressed", isActive ? "true" : "false");
-  });
-  document.getElementById("improve-chip").hidden = active !== "document";
-  document.getElementById("composer-primary").textContent = INTENTS[active]?.primary || "Ask";
+  const isAsk = path === "ask";
+  document.getElementById("composer-start").hidden = true;
+  document.getElementById("composer-entry").hidden = false;
+  document.getElementById("composer-card").dataset.path = path;
+  document.getElementById("composer-entry-title").textContent = isAsk ? "Ask a question" : "Add a link";
+  document.getElementById("composer-entry-copy").textContent = isAsk
+    ? "What would you like to understand?"
+    : "Paste a link to a paper or article. arXiv links work best.";
+  input.placeholder = isAsk ? "Type your question…" : "https://…";
+  input.spellcheck = isAsk;
+  input.value = value;
+  document.getElementById("composer-primary").textContent = isAsk ? "Start exploring" : "Open link";
+  autoGrowTextarea(input, 240);
+  input.focus({ preventScroll: true });
 }
 
-function inferIntent(value) {
-  const text = String(value || "").trim();
-  if (isSingleHttpUrl(text)) return "url";
-  if (looksLikeDocument(text)) return "document";
-  return "ask";
+function showComposerStart() {
+  composerPath = "";
+  setIngestStatus("");
+  clearComposerKeyPanel();
+  document.getElementById("composer-card").removeAttribute("data-path");
+  document.getElementById("composer-entry").hidden = true;
+  document.getElementById("composer-start").hidden = false;
+  document.getElementById("composer-input").value = "";
+  document.getElementById("composer-card").focus({ preventScroll: true });
 }
 
 async function runComposer() {
   const input = document.getElementById("composer-input");
   const value = input.value.trim();
-  const intent = document.querySelector(".intent-chip.active")?.dataset.intent || inferIntent(value);
-  if (intent === "url") return createFromUrl(value);
-  if (intent === "document") return createFromComposerDocument(value);
-  return createFromAsk(value);
+  if (composerPath === "url") return createFromUrl(value);
+  if (composerPath === "ask") return createFromAsk(value);
 }
 
-async function createFromComposerDocument(markdown) {
+async function createFromComposerDocument(markdown, { improveStructure = false } = {}) {
   if (!markdown) {
     setIngestStatus("Paste a document first.", "error");
     return;
   }
-  const action = () => createFromComposerDocument(markdown);
-  if (shouldImproveStructure() && !(await ensureKeyForComposerAction(action))) return;
+  const action = () => createFromComposerDocument(markdown, { improveStructure });
+  if (improveStructure && !(await ensureKeyForComposerAction(action))) return;
   try {
     const authored = await maybeAuthorMarkdown({
       title: "",
       markdown,
       sourceName: "pasted text",
       kind: "paste",
+      improveStructure,
     });
     const hole = createHoleFromMarkdown({ title: "", markdown: authored });
     await store.saveHole(hole);
@@ -394,102 +395,23 @@ async function createFromAsk(question) {
   const action = () => createFromAsk(question);
   if (!(await ensureKeyForComposerAction(action))) return;
 
-  const settings = loadSettings();
-  const key = getApiKey(settings);
-  const brain = createBrain(settings, key);
-  const controller = new AbortController();
-  composerAbortController = controller;
-  composerStreamingHoleId = "";
-
-  const modal = document.getElementById("composer-modal");
-  const questionEl = document.getElementById("composer-question");
-  const stream = document.getElementById("composer-stream");
-  const streamDoc = document.getElementById("composer-stream-doc");
-  modal.classList.add("streaming");
-  questionEl.hidden = false;
-  questionEl.textContent = question;
-  stream.hidden = false;
-  streamDoc.innerHTML = "";
-  document.getElementById("composer-input").hidden = true;
-  document.querySelector(".composer-subline").hidden = true;
-  document.querySelector(".intent-row").hidden = true;
-  document.querySelector(".composer-actions").hidden = true;
-  setIngestStatus("Writing the root document...", "busy");
-
-  let markdown = "";
-  let hole = null;
   try {
-    for await (const chunk of brain.authorExplainer({ question }, controller.signal)) {
-      if (controller.signal.aborted) return;
-      markdown += chunk;
-      renderComposerStream(markdown);
-      if (!hole && markdown.trim()) {
-        hole = createHoleFromMarkdown({ title: "", markdown });
-        composerStreamingHoleId = hole.hole_id;
-        await store.saveHole(hole);
-      }
-    }
-    if (!markdown.trim()) throw new Error("The provider returned an empty document.");
-    if (!hole) {
-      hole = createHoleFromMarkdown({ title: "", markdown });
-      composerStreamingHoleId = hole.hole_id;
-    }
-    updateHoleRootMarkdown(hole, markdown);
+    const hole = createPendingHoleFromQuestion(question);
     await store.saveHole(hole);
     setIngestStatus("");
-    composerStreamingHoleId = "";
     await startHole(await store.loadHole(hole.hole_id) || hole);
   } catch (err) {
-    if (controller.signal.aborted) return;
-    await cleanupStreamingHole();
     const message = err?.message || String(err);
     if (isAuthLikeError(err)) {
       showComposerKeyPanel({
-        message,
+        title: err?.code === "missing_key" ? "" : "Update your key",
+        status: err?.code === "missing_key" ? "" : message,
         afterValidated: action,
       });
     } else {
       setIngestStatus(`Ask failed. ${message}`, "error");
     }
-  } finally {
-    if (composerAbortController === controller) composerAbortController = null;
   }
-}
-
-function renderComposerStream(markdown) {
-  const streamDoc = document.getElementById("composer-stream-doc");
-  streamDoc.innerHTML = `${renderMarkdownToHtml(markdown)}<span class="stream-caret" aria-hidden="true"></span>`;
-  const stream = document.getElementById("composer-stream");
-  stream.scrollTop = stream.scrollHeight;
-}
-
-function updateHoleRootMarkdown(hole, markdown) {
-  const title = titleFromMarkdown(markdown) || hole.title || "Untitled";
-  hole.title = title;
-  const root = hole.nodes?.find((node) => node.id === hole.root_id) || hole.nodes?.[0];
-  if (root) {
-    root.title = title;
-    root.markdown = markdown;
-    root.status = "answered";
-    root.read = true;
-  }
-}
-
-async function cleanupStreamingHole() {
-  const id = composerStreamingHoleId;
-  composerStreamingHoleId = "";
-  if (!id) return;
-  try { await store.deleteHole(id); } catch {}
-  await renderRail();
-}
-
-function resetComposerStreaming() {
-  if (composerAbortController) {
-    composerAbortController.abort();
-    composerAbortController = null;
-  }
-  composerStreamingHoleId = "";
-  document.getElementById("composer-modal")?.classList.remove("streaming");
 }
 
 async function createFromUrl(rawUrl) {
@@ -524,8 +446,6 @@ async function createFromFile(file) {
     setIngestStatus("Choose a markdown, PDF, or .rabbithole file.", "error");
     return;
   }
-  const action = () => createFromFile(file);
-  if (shouldImproveStructure() && !(await ensureKeyForComposerAction(action))) return;
   try {
     setIngestStatus("Reading markdown file...", "busy");
     const markdown = await file.text();
@@ -572,12 +492,19 @@ async function createFromPdfFile(file) {
     setIngestStatus("");
     await startHole(await store.loadHole(hole.hole_id) || hole);
   } catch (err) {
-    setIngestStatus(`PDF import failed. ${err?.message || String(err)} Paste the text manually or drop a different PDF.`, "error");
+    setIngestStatus(`PDF import failed. ${err?.message || String(err)} Try a different PDF.`, "error");
   }
 }
 
-async function maybeAuthorMarkdown({ title = "", markdown = "", sourceName = "", kind = "source", baseUrl = "" } = {}) {
-  if (!shouldImproveStructure()) return markdown;
+async function maybeAuthorMarkdown({
+  title = "",
+  markdown = "",
+  sourceName = "",
+  kind = "source",
+  baseUrl = "",
+  improveStructure = false,
+} = {}) {
+  if (!improveStructure) return markdown;
   const settings = loadSettings();
   const key = getApiKey(settings);
   setIngestStatus("Improving structure with the author model...", "busy");
@@ -597,31 +524,22 @@ async function maybeAuthorMarkdown({ title = "", markdown = "", sourceName = "",
   return out.trim() || markdown;
 }
 
-function shouldImproveStructure() {
-  return document.getElementById("composer-improve")?.checked === true &&
-    !document.getElementById("improve-chip")?.hidden;
-}
-
 async function ensureKeyForComposerAction(action) {
   const settings = loadSettings();
   const preset = presetFor(settings.preset);
   if (!preset.requires_key || getApiKey(settings)) return true;
   pendingComposerAction = action;
-  showComposerKeyPanel({
-    message: shouldImproveStructure()
-      ? "Improve structure uses your model key."
-      : "Ask uses your model key.",
-    afterValidated: action,
-  });
+  showComposerKeyPanel({ afterValidated: action });
   return false;
 }
 
-function showComposerKeyPanel({ message = "", afterValidated = null } = {}) {
+function showComposerKeyPanel({ title = "", status = "", afterValidated = null } = {}) {
   const slot = document.getElementById("composer-key-panel");
   slot.hidden = false;
   renderInlineKeyPanel(slot, {
     idPrefix: "composer",
-    message,
+    title,
+    status,
     afterValidated: async () => {
       slot.hidden = true;
       pendingComposerAction = null;
@@ -649,7 +567,7 @@ async function startHole(hole, { replace = false } = {}) {
   currentHoleId = hole.hole_id;
   currentHost = null;
   document.body.classList.remove("web-blank-canvas");
-  document.getElementById("blank-start-hint").hidden = true;
+  document.getElementById("blank-start").hidden = true;
   closeComposerSilently();
   safeLocalStorageSet(LAST_HOLE_KEY, hole.hole_id);
   if (replace) history.replaceState(null, "", `#hole=${encodeURIComponent(hole.hole_id)}`);
@@ -676,6 +594,7 @@ async function startHole(hole, { replace = false } = {}) {
     },
     onRestore: () => location.reload(),
     onAuthRequired: handleBranchAuthRequired,
+    onRootAnswered: renderRail,
   });
 
   const hydration = currentHost.hydration();
@@ -687,6 +606,7 @@ async function startHole(hole, { replace = false } = {}) {
   document.getElementById("r-canvas")?.click();
   await renderRail();
   exposeTestApi();
+  currentHost.startRootAnswer();
 }
 
 function closeComposerSilently() {
@@ -721,47 +641,24 @@ async function renderRail() {
   if (!rail) return;
   const summaries = await store.listHoles();
   lastHoleCount = summaries.length;
-  const holes = [];
-  for (const summary of summaries) {
-    const hole = await store.loadHole(summary.hole_id);
-    if (hole) holes.push({ summary, hole });
-  }
   rail.innerHTML = `<div class="rail-inner">
-    <header class="rail-head">
-      <div class="rail-wordmark"><span class="rail-mark">${bunnyMarkSvg()}</span><span>Rabbithole</span></div>
-      <span class="rail-count">${holes.length}</span>
-    </header>
     <div class="rail-list" id="rail-list">
-      ${holes.length ? holes.map(({ summary, hole }) => railRowHtml(summary, hole)).join("") : `<div class="rail-empty">No Rabbitholes yet.</div>`}
+      ${summaries.length ? summaries.map((summary) => railRowHtml(summary)).join("") : `<div class="rail-empty">No Rabbitholes yet.</div>`}
     </div>
-    <footer class="rail-footer">
-      <details>
-        <summary>Use with a coding agent</summary>
-        <div class="agent-command-row">
-          <code>${escapeHtml(AGENT_COMMAND)}</code>
-          <button class="rail-mini" type="button" data-copy-agent>Copy</button>
-        </div>
-      </details>
-      <a href="https://github.com/shlokkhemani/rabbithole" target="_blank" rel="noreferrer">GitHub</a>
-    </footer>
   </div>`;
-  rail.querySelectorAll("[data-copy-agent]").forEach((button) => {
-    button.addEventListener("click", () => copyText(AGENT_COMMAND, "Command copied."));
-  });
   rail.addEventListener("keydown", (event) => {
     if (event.key === "Escape") setRailOpen(false);
   });
   applyRailState();
 }
 
-function railRowHtml(summary, hole) {
-  const title = summary.title || hole.title || "Untitled";
+function railRowHtml(summary) {
+  const title = summary.title || "Untitled";
+  const updated = formatRelativeDate(summary.updated_at);
   return `<article class="rail-row${summary.hole_id === currentHoleId ? " current" : ""}" data-hole="${escapeAttr(summary.hole_id)}">
-    <button class="rail-open" type="button">
-      <span class="rail-thumb" aria-hidden="true">${constellationSvg(hole)}</span>
+    <button class="rail-open" type="button" aria-label="${escapeAttr(title)}" title="${escapeAttr(updated)}">
       <span class="rail-row-copy">
         <span class="rail-title">${escapeHtml(title)}</span>
-        <span class="rail-meta">${summary.node_count} ${summary.node_count === 1 ? "node" : "nodes"} · ${escapeHtml(formatRelativeDate(summary.updated_at, { compact: true }))}</span>
       </span>
     </button>
     <span class="rail-actions">
@@ -826,9 +723,35 @@ function toggleRail() {
   setRailOpen(!railOpen);
 }
 
+function syncRailPosition() {
+  const rail = document.getElementById("web-rail");
+  const toolbar = document.getElementById("toolbar");
+  if (!rail || !toolbar) return;
+  rail.style.setProperty("--rail-top", `${toolbar.getBoundingClientRect().bottom + 14}px`);
+}
+
+function syncSettingsPosition() {
+  const modal = document.getElementById("web-settings-modal");
+  const dialog = modal?.querySelector(".web-settings-dialog");
+  const button = document.getElementById("t-settings");
+  if (!modal || modal.hidden || !dialog || !button) return;
+
+  const edge = window.innerWidth <= 760 ? 8 : 14;
+  const toolbarRect = document.getElementById("toolbar")?.getBoundingClientRect();
+  const readerRect = document.getElementById("reader-top")?.getBoundingClientRect();
+  const buttonRect = button.getBoundingClientRect();
+  const dialogWidth = dialog.offsetWidth || Math.min(340, window.innerWidth - edge * 2);
+  const anchorBottom = toolbarRect?.height ? toolbarRect.bottom : (readerRect?.height ? readerRect.bottom : 0);
+  const anchorRight = buttonRect.width ? buttonRect.right : window.innerWidth - edge;
+  const left = Math.max(edge, Math.min(window.innerWidth - dialogWidth - edge, anchorRight - dialogWidth));
+
+  modal.style.setProperty("--settings-left", `${left}px`);
+  modal.style.setProperty("--settings-top", `${anchorBottom + edge}px`);
+  modal.style.setProperty("--settings-edge", `${edge}px`);
+}
+
 function setRailOpen(value) {
   railOpen = !!value;
-  safeLocalStorageSet(RAIL_KEY, railOpen ? "1" : "0");
   applyRailState();
   if (railOpen) document.getElementById("web-rail")?.focus({ preventScroll: true });
 }
@@ -838,38 +761,45 @@ function applyRailState() {
   const rail = document.getElementById("web-rail");
   const toggle = document.getElementById("t-rail");
   if (rail) rail.classList.toggle("open", railOpen);
-  if (toggle) toggle.setAttribute("aria-expanded", railOpen ? "true" : "false");
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", railOpen ? "true" : "false");
+    toggle.classList.toggle("rail-on", railOpen);
+  }
 }
 
 function loadRailOpen() {
-  const raw = safeLocalStorageGet(RAIL_KEY);
-  if (raw === "1") return true;
-  if (raw === "0") return false;
-  return window.innerWidth >= 1100;
+  return false;
 }
 
 function initSettingsModal() {
   initSettingsPanel();
   const modal = document.getElementById("web-settings-modal");
-  const close = document.getElementById("web-settings-close");
-  close.addEventListener("click", closeSettingsModal);
   modal.addEventListener("click", (event) => {
     if (event.target === modal) closeSettingsModal();
   });
-  modal.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") closeSettingsModal();
-  });
 }
 
-function openSettingsModal({ focusKey = false } = {}) {
+function openSettingsModal({ focusKey = false, focusSelector = "" } = {}) {
   const modal = document.getElementById("web-settings-modal");
   initSettingsPanel();
   modal.hidden = false;
+  syncSettingsPosition();
+  requestAnimationFrame(syncSettingsPosition);
   document.getElementById("t-settings")?.setAttribute("aria-expanded", "true");
+  warmModelCatalog();
+  const panel = document.getElementById("settings-panel");
+  if (panel?.querySelector("#api-key")?.value.trim()) commitSettingsKey(panel);
   if (settingsTrap) settingsTrap();
+  const explicitFocus = focusSelector ? modal.querySelector(focusSelector) : null;
   settingsTrap = activateFocusTrap(modal, {
-    initialFocus: focusKey ? modal.querySelector("#api-key") : modal.querySelector("select, input, button, summary"),
-    onEscape: closeSettingsModal,
+    initialFocus: explicitFocus || (focusKey ? modal.querySelector("#api-key") : modal.querySelector(".web-settings-dialog")),
+    onEscape: () => {
+      if (closeSettingsPickerFn) {
+        closeSettingsPickerFn();
+        return;
+      }
+      closeSettingsModal();
+    },
   });
 }
 
@@ -881,58 +811,100 @@ function closeSettingsModal() {
   inline.hidden = true;
   inline.innerHTML = "";
   pendingBranchRetry = null;
+  closeSettingsPickerFn = null;
   if (settingsTrap) {
     settingsTrap();
     settingsTrap = null;
   }
 }
 
+function warmModelCatalog() {
+  const settings = loadSettings();
+  if (presetFor(settings.preset).model_source !== "catalog") return;
+  loadModelCatalog().then((models) => {
+    modelCatalogCache = models;
+    const nameEl = document.getElementById("model-select-name");
+    if (nameEl) {
+      const current = loadSettings();
+      nameEl.textContent = modelDisplayName(current.answer_model || presetFor(current.preset).answer_model);
+    }
+  }).catch(() => {});
+}
+
+function modelDisplayName(id) {
+  const hit = modelCatalogCache?.find((model) => model.id === id);
+  return hit ? hit.name : prettyModelId(id);
+}
+
 function initSettingsPanel() {
   const panel = document.getElementById("settings-panel");
   if (!panel) return;
+  closeSettingsPickerFn = null;
   const settings = loadSettings();
   const preset = presetFor(settings.preset);
-  const presetOptions = Object.values(BRAIN_PRESETS).map((item) => {
-    const label = item.recommended ? `${item.label} (recommended)` : item.label;
-    return `<option value="${item.id}" ${preset.id === item.id ? "selected" : ""}>${escapeHtml(label)}</option>`;
-  }).join("");
+  const currentModel = settings.answer_model || preset.answer_model;
+  const providerOptions = Object.values(BRAIN_PRESETS).map((provider) =>
+    `<option value="${escapeAttr(provider.id)}" ${provider.id === preset.id ? "selected" : ""}>${escapeHtml(provider.label)}</option>`
+  ).join("");
   panel.dataset.preset = preset.id;
   panel.innerHTML = `<div class="settings-inner">
-    <div class="settings-hero">
-      <div>
-        <h2>OpenRouter</h2>
-        <p>Use one key for Rabbithole's Ask and Improve structure actions.</p>
+    <div class="settings-section provider-section">
+      <div class="settings-row">
+        <label class="settings-label" for="provider-select">Provider</label>
+        <span class="native-select-wrap">
+          <select id="provider-select" aria-label="Provider">${providerOptions}</select>
+          <svg width="12" height="12" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5"/></svg>
+        </span>
       </div>
-      <a class="key-walkthrough" href="${OPENROUTER_KEYS_URL}" target="_blank" rel="noreferrer">Get a key in 30 seconds →</a>
     </div>
-    <div class="settings-basic settings-openrouter">
-      <div class="field key-field">
-        <label for="api-key">API key</label>
-        <div class="secret-input">
-          <input id="api-key" type="password" autocomplete="off" placeholder="${escapeAttr(apiKeyPlaceholder(settings.preset))}" value="${escapeAttr(getApiKey(settings))}">
-          <button id="api-key-toggle" class="web-secondary" type="button" aria-label="Show API key" aria-pressed="false">Show</button>
-        </div>
-        <div id="api-key-status" class="key-status" aria-live="polite"></div>
-      </div>
-      <label class="switch-field remember-field" for="session-only">
-        <input id="session-only" type="checkbox" role="switch" ${settings.session_only === false ? "checked" : ""}>
-        <span class="switch-track" aria-hidden="true"></span>
-        <span class="switch-copy"><strong>Remember on this device</strong><small>Off keeps the key only in this tab.</small></span>
+    ${preset.id === "custom" ? `<div class="settings-section endpoint-section">
+      <label class="field" for="provider-base">
+        <span>Endpoint</span>
+        <input id="provider-base" value="${escapeAttr(settings.base_url || "")}" placeholder="http://localhost:11434/v1">
+        <small class="field-hint">Use an OpenAI-compatible endpoint. Localhost works directly; remote origins require a self-hosted build.</small>
       </label>
-    </div>
-    <details class="settings-other">
-      <summary>Other providers</summary>
-      <div class="settings-other-grid">
-        <label class="field provider-field" for="provider-preset">
-          <span>Provider</span>
-          <select id="provider-preset">${presetOptions}</select>
-        </label>
-        <label class="field custom-only" for="provider-base">
-          <span>Base URL</span>
-          <input id="provider-base" value="${escapeAttr(settings.base_url || "")}" placeholder="http://localhost:11434/v1">
-        </label>
+    </div>` : ""}
+    ${preset.model_source === "catalog" ? `<div class="settings-section model-section">
+      <div class="settings-row">
+        <span class="settings-label" id="model-select-label">Model</span>
+        <button id="model-select" class="settings-select" type="button" aria-haspopup="listbox" aria-expanded="false" title="${escapeAttr(currentModel)}">
+          <span id="model-select-name">${escapeHtml(modelDisplayName(currentModel))}</span>
+          <svg width="12" height="12" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5"/></svg>
+        </button>
       </div>
-    </details>
+      <div id="model-picker" class="model-picker" hidden>
+        <div class="model-search-wrap">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 10.5 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <input id="model-search" placeholder="Search every model on OpenRouter…" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true" aria-controls="model-list" aria-labelledby="model-select-label">
+          <kbd>esc</kbd>
+        </div>
+        <div id="model-list" class="model-list" role="listbox" aria-labelledby="model-select-label"></div>
+      </div>
+    </div>` : `<div class="settings-section model-section local-model-section">
+      <label class="field" for="local-model">
+        <span>Model</span>
+        <input id="local-model" value="${escapeAttr(currentModel)}" placeholder="llama3.2" autocomplete="off" spellcheck="false">
+        <small class="field-hint">Use the exact name shown by <code>ollama list</code>.</small>
+      </label>
+    </div>`}
+    ${preset.requires_key ? `<div class="settings-section key-section">
+      <div class="settings-row key-row">
+        <label class="settings-label" for="api-key">${escapeHtml(preset.label)} key</label>
+        ${preset.id === "openrouter" ? `<a class="key-get" href="${OPENROUTER_KEYS_URL}" target="_blank" rel="noreferrer">Get a key →</a>` : ""}
+      </div>
+      <div class="key-input-wrap">
+        <input id="api-key" type="password" autocomplete="off" spellcheck="false" placeholder="${escapeAttr(apiKeyPlaceholder(settings.preset))}" value="${escapeAttr(getApiKey(settings))}">
+        <button id="api-key-toggle" type="button" aria-label="Show key" aria-pressed="false">${eyeSvg(false)}</button>
+      </div>
+      <div id="api-key-status" class="key-status idle visible" aria-live="polite">${escapeHtml(keyIdleWhisper(preset))}</div>
+      <label class="settings-row remember-row" for="session-only">
+        <span class="switch-copy"><strong>Remember on this device</strong><small>Turn off on shared computers.</small></span>
+        <span class="switch" aria-hidden="true">
+          <input id="session-only" type="checkbox" role="switch" ${settings.session_only === false ? "checked" : ""}>
+          <span class="switch-track"></span>
+        </span>
+      </label>
+    </div>` : ""}
     <details class="settings-advanced">
       <summary>Advanced</summary>
       <div class="settings-advanced-grid">
@@ -946,79 +918,331 @@ function initSettingsPanel() {
           <input id="author-model" value="${escapeAttr(settings.author_model || "")}">
           <small class="model-hint" data-model-hint="author">${escapeHtml(testedModelHint(settings.author_model || preset.author_model))}</small>
         </label>
-        <label class="field wide-field" for="fetch-proxy-url">
-          <span>Fetch proxy URL</span>
-          <input id="fetch-proxy-url" value="${escapeAttr(settings.fetch_proxy_url || "")}" placeholder="https://your-worker.example/?url=">
+        <label class="field" for="fetch-proxy-url">
+          <span>Link relay</span>
+          <input id="fetch-proxy-url" value="${escapeAttr(settings.fetch_proxy_url || "")}" placeholder="https://your-relay.example/?url=">
+          <small class="field-hint">When a site blocks in-browser fetching, links open through this relay instead. It sees only the page URL — never your key or your questions.</small>
         </label>
-        <p class="custom-csp-note wide-field">Custom remote origins require editing this static app's CSP. Localhost custom endpoints are allowed by default.</p>
       </div>
     </details>
-    <div class="settings-actions">
-      <div></div>
-      <button id="save-settings" class="web-primary" type="button">Save settings</button>
-    </div>
   </div>`;
+  wireSettingsPanel(panel);
+}
 
+function wireSettingsPanel(panel) {
   const keyInput = panel.querySelector("#api-key");
   const status = panel.querySelector("#api-key-status");
   let validateTimer = 0;
-  panel.querySelector("#provider-preset").addEventListener("change", (event) => {
-    const next = settingsForPreset(event.target.value, readSettingsForm());
-    panel.dataset.preset = next.preset;
-    panel.querySelector("#provider-base").value = next.base_url;
-    panel.querySelector("#answer-model").value = next.answer_model;
-    panel.querySelector("#author-model").value = next.author_model;
-    keyInput.placeholder = apiKeyPlaceholder(next.preset);
-    setKeyStatus(status, providerKeyHint(keyInput.value, next.preset), "hint");
+
+  wireProviderSelect(panel);
+  wireModelPicker(panel);
+
+  if (keyInput && status) {
+    keyInput.addEventListener("input", () => {
+      window.clearTimeout(validateTimer);
+      validateTimer = window.setTimeout(() => commitSettingsKey(panel), 350);
+    });
+    keyInput.addEventListener("paste", () => window.setTimeout(() => commitSettingsKey(panel), 0));
+    keyInput.addEventListener("blur", () => commitSettingsKey(panel));
+    keyInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        commitSettingsKey(panel, { required: true });
+      }
+    });
+    panel.querySelector("#api-key-toggle")?.addEventListener("click", () => toggleKeyReveal(keyInput, panel.querySelector("#api-key-toggle")));
+    panel.querySelector("#session-only")?.addEventListener("change", (event) => {
+      applySettingsPatch({ session_only: !event.target.checked });
+    });
+  }
+  const liveField = (selector, key) => {
+    panel.querySelector(selector)?.addEventListener("change", (event) => {
+      applySettingsPatch({ [key]: event.target.value.trim() });
+      updateModelHints(panel);
+      syncModelSelectLabel(panel);
+    });
+  };
+  liveField("#provider-base", "base_url");
+  liveField("#answer-model", "answer_model");
+  liveField("#author-model", "author_model");
+  liveField("#fetch-proxy-url", "fetch_proxy_url");
+  const localModelInput = panel.querySelector("#local-model");
+  let localModelTimer = 0;
+  const commitLocalModel = () => {
+    const model = localModelInput?.value.trim();
+    if (!model) return;
+    applySettingsPatch({ answer_model: model, author_model: model });
+  };
+  localModelInput?.addEventListener("input", () => {
+    const model = localModelInput.value.trim();
+    const answerInput = panel.querySelector("#answer-model");
+    const authorInput = panel.querySelector("#author-model");
+    if (answerInput) answerInput.value = model;
+    if (authorInput) authorInput.value = model;
     updateModelHints(panel);
+    window.clearTimeout(localModelTimer);
+    localModelTimer = window.setTimeout(commitLocalModel, 180);
   });
-  keyInput.addEventListener("input", () => {
-    window.clearTimeout(validateTimer);
-    const hint = providerKeyHint(keyInput.value, panel.querySelector("#provider-preset").value);
-    setKeyStatus(status, hint, hint ? "hint" : "");
-    validateTimer = window.setTimeout(() => validateKeyFromSettings(false), 350);
+  localModelInput?.addEventListener("change", () => {
+    window.clearTimeout(localModelTimer);
+    commitLocalModel();
   });
-  keyInput.addEventListener("blur", () => validateKeyFromSettings(false));
-  keyInput.addEventListener("paste", () => window.setTimeout(() => validateKeyFromSettings(false), 0));
-  panel.querySelector("#answer-model").addEventListener("input", () => updateModelHints(panel));
-  panel.querySelector("#author-model").addEventListener("input", () => updateModelHints(panel));
-  panel.querySelector("#api-key-toggle").addEventListener("click", () => toggleSecretInput(panel));
-  panel.querySelector("#save-settings").addEventListener("click", async () => {
-    if (keyInput.value.trim() && !(await validateKeyFromSettings(true))) return;
-    const next = readSettingsForm();
-    saveSettings(next);
-    refreshCurrentBrain(next);
-    showToast({ message: "Settings saved." });
-  });
+  panel.querySelector("#answer-model")?.addEventListener("input", () => updateModelHints(panel));
+  panel.querySelector("#author-model")?.addEventListener("input", () => updateModelHints(panel));
   updateModelHints(panel);
 }
 
-async function validateKeyFromSettings(required) {
-  const panel = document.getElementById("settings-panel");
-  const settings = readSettingsForm();
-  const input = panel.querySelector("#api-key");
-  const status = panel.querySelector("#api-key-status");
-  return validateKeyForPreset({
-    key: input.value,
-    presetId: settings.preset,
-    statusEl: status,
-    required,
-    onShake: () => input.classList.add("shake-once"),
+function wireProviderSelect(panel) {
+  const select = panel.querySelector("#provider-select");
+  if (!select) return;
+  select.addEventListener("change", (event) => {
+    const id = event.target.value;
+    const current = loadSettings();
+    if (!id || id === current.preset) return;
+    saveSettings({ ...current, api_key: getApiKey(current) });
+    applySettingsPatch(settingsForPreset(id, current));
+    initSettingsPanel();
+    warmModelCatalog();
+    document.getElementById("provider-select")?.focus({ preventScroll: true });
   });
 }
 
-function readSettingsForm(root = document) {
-  const remember = root.getElementById?.("session-only")?.checked === true ||
-    root.querySelector?.("#session-only")?.checked === true;
-  return {
-    preset: root.getElementById?.("provider-preset")?.value || root.querySelector?.("#provider-preset")?.value || "openrouter",
-    base_url: root.getElementById?.("provider-base")?.value.trim() || root.querySelector?.("#provider-base")?.value.trim() || "",
-    author_model: root.getElementById?.("author-model")?.value.trim() || root.querySelector?.("#author-model")?.value.trim() || "",
-    answer_model: root.getElementById?.("answer-model")?.value.trim() || root.querySelector?.("#answer-model")?.value.trim() || "",
-    fetch_proxy_url: root.getElementById?.("fetch-proxy-url")?.value.trim() || root.querySelector?.("#fetch-proxy-url")?.value.trim() || "",
-    session_only: !remember,
-    api_key: root.getElementById?.("api-key")?.value || root.querySelector?.("#api-key")?.value || "",
+function wireModelPicker(panel) {
+  const select = panel.querySelector("#model-select");
+  const picker = panel.querySelector("#model-picker");
+  const search = panel.querySelector("#model-search");
+  const list = panel.querySelector("#model-list");
+  if (!select || !picker) return;
+  let catalogFailed = false;
+
+  const openPicker = () => {
+    closeSettingsPickerFn?.({ refocus: false });
+    picker.hidden = false;
+    select.setAttribute("aria-expanded", "true");
+    panel.classList.add("picking");
+    search.value = "";
+    renderList();
+    search.focus({ preventScroll: true });
+    closeSettingsPickerFn = closePicker;
+    if (!modelCatalogCache) {
+      loadModelCatalog().then((models) => {
+        modelCatalogCache = models;
+        if (!picker.hidden) renderList();
+      }).catch(() => {
+        catalogFailed = true;
+        if (!picker.hidden) renderList();
+      });
+    }
   };
+  const closePicker = ({ refocus = true } = {}) => {
+    picker.hidden = true;
+    select.setAttribute("aria-expanded", "false");
+    panel.classList.remove("picking");
+    closeSettingsPickerFn = null;
+    if (refocus) select.focus({ preventScroll: true });
+  };
+
+  const renderList = () => {
+    const settings = loadSettings();
+    const current = settings.answer_model || presetFor(settings.preset).answer_model;
+    const query = search.value.trim();
+    if (!modelCatalogCache) {
+      list.innerHTML = catalogFailed
+        ? `${query ? customModelRowHtml(query) : ""}<div class="model-note">Couldn't reach OpenRouter for the model list. Type a model id to use it directly.</div>`
+        : `<div class="model-note">Loading models…</div>`;
+      return;
+    }
+    let html = "";
+    if (!query) {
+      const suggested = SUGGESTED_MODEL_IDS
+        .map((id) => modelCatalogCache.find((model) => model.id === id))
+        .filter(Boolean);
+      if (suggested.length) {
+        html += `<div class="model-group-label">Suggested</div>`;
+        html += suggested.map((model) => modelOptionHtml(model, { current, recommended: model.id === RECOMMENDED_MODEL_ID })).join("");
+        html += `<div class="model-group-label">All models</div>`;
+      }
+      html += modelCatalogCache.map((model) => modelOptionHtml(model, { current })).join("");
+    } else {
+      const hits = searchModels(modelCatalogCache, query);
+      html = hits.map((model) => modelOptionHtml(model, { current })).join("");
+      if (!hits.length) html = customModelRowHtml(query);
+    }
+    list.innerHTML = html;
+    list.scrollTop = 0;
+    setActiveOption(0);
+  };
+
+  const optionRows = () => Array.from(list.querySelectorAll(".model-option"));
+  const setActiveOption = (index) => {
+    const rows = optionRows();
+    rows.forEach((row, i) => row.classList.toggle("active", i === index));
+    const active = rows[index];
+    if (active) {
+      active.scrollIntoView({ block: "nearest" });
+      search.setAttribute("aria-activedescendant", active.id || "");
+    }
+  };
+  const activeIndex = () => optionRows().findIndex((row) => row.classList.contains("active"));
+
+  const chooseModel = (id, name) => {
+    applySettingsPatch({ author_model: id, answer_model: id });
+    const nameEl = panel.querySelector("#model-select-name");
+    if (nameEl) nameEl.textContent = name || modelDisplayName(id);
+    select.title = id;
+    const answerInput = panel.querySelector("#answer-model");
+    const authorInput = panel.querySelector("#author-model");
+    if (answerInput) answerInput.value = id;
+    if (authorInput) authorInput.value = id;
+    updateModelHints(panel);
+    closePicker();
+  };
+
+  select.addEventListener("click", () => {
+    if (picker.hidden) openPicker();
+    else closePicker();
+  });
+  search.addEventListener("input", renderList);
+  search.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closePicker();
+      return;
+    }
+    const rows = optionRows();
+    if (!rows.length) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const delta = event.key === "ArrowDown" ? 1 : -1;
+      const next = Math.min(rows.length - 1, Math.max(0, activeIndex() + delta));
+      setActiveOption(next);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      const row = rows[Math.max(0, activeIndex())];
+      if (row) row.click();
+    }
+  });
+  list.addEventListener("click", (event) => {
+    const row = event.target.closest(".model-option");
+    if (!row) return;
+    chooseModel(row.dataset.id, row.querySelector(".model-option-name")?.textContent || "");
+  });
+}
+
+function modelOptionHtml(model, { current, recommended = false } = {}) {
+  const selected = model.id === current;
+  return `<button type="button" class="model-option${selected ? " selected" : ""}" role="option" aria-selected="${selected}" data-id="${escapeAttr(model.id)}" title="${escapeAttr(model.id)}">
+    <span class="model-check" aria-hidden="true">${selected ? `<svg width="12" height="12" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="m3.5 8.5 3 3 6-6.5"/></svg>` : ""}</span>
+    <span class="model-option-name">${escapeHtml(model.name)}</span>
+    ${recommended ? `<span class="model-chip">Recommended</span>` : ""}
+    <span class="model-option-price">${escapeHtml(formatModelPrice(model))}</span>
+  </button>`;
+}
+
+function customModelRowHtml(query) {
+  return `<button type="button" class="model-option model-use-custom" role="option" data-id="${escapeAttr(query)}" title="${escapeAttr(query)}">
+    <span class="model-check" aria-hidden="true"></span>
+    <span class="model-option-name">Use “${escapeHtml(query)}”</span>
+    <span class="model-option-price">as-is</span>
+  </button>`;
+}
+
+function syncModelSelectLabel(panel) {
+  const settings = loadSettings();
+  const current = settings.answer_model || presetFor(settings.preset).answer_model;
+  const nameEl = panel.querySelector("#model-select-name");
+  if (nameEl) nameEl.textContent = modelDisplayName(current);
+  const select = panel.querySelector("#model-select");
+  if (select) select.title = current;
+}
+
+function applySettingsPatch(patch) {
+  const current = loadSettings();
+  const merged = { ...current, ...patch };
+  const providerChanged = presetFor(merged.preset).id !== presetFor(current.preset).id;
+  const apiKey = Object.prototype.hasOwnProperty.call(patch, "api_key")
+    ? patch.api_key
+    : getApiKey(providerChanged ? merged : current);
+  saveSettings({ ...merged, api_key: apiKey });
+  refreshCurrentBrain();
+}
+
+async function commitSettingsKey(panel, { required = false } = {}) {
+  const input = panel.querySelector("#api-key");
+  const status = panel.querySelector("#api-key-status");
+  if (!input || !status) return false;
+  const value = input.value.trim();
+  const settings = loadSettings();
+  const preset = presetFor(settings.preset);
+  const token = ++settingsKeyToken;
+
+  if (!value) {
+    if (getApiKey(settings)) {
+      applySettingsPatch({ api_key: "" });
+      setKeyStatus(status, "Key removed.", "hint");
+    } else {
+      setKeyStatus(status, keyIdleWhisper(preset), "idle");
+    }
+    return false;
+  }
+  if (await maybeSwitchProviderFromKey(value, panel, async () => {
+    const freshStatus = document.querySelector("#settings-panel #api-key-status");
+    setKeyStatus(freshStatus, `Saved for ${presetFor(loadSettings().preset).label}.`, "valid");
+  })) return false;
+  const hint = providerKeyHint(value, preset.id);
+  if (hint) {
+    setKeyStatus(status, hint, "hint");
+    if (required) shake(() => input.classList.add("shake-once"));
+    if (preset.id === "openrouter" && !isPlausibleOpenRouterKey(value)) return false;
+  }
+  if (!preset.requires_key || preset.id !== "openrouter") {
+    applySettingsPatch({ api_key: value });
+    if (!hint) setKeyStatus(status, `Saved for ${preset.label}.`, "valid");
+    return true;
+  }
+  if (!isPlausibleOpenRouterKey(value)) {
+    setKeyStatus(status, value.startsWith("sk-or-") ? "That OpenRouter key looks incomplete." : "OpenRouter keys start with sk-or-v1-.", required ? "invalid" : "hint");
+    if (required) shake(() => input.classList.add("shake-once"));
+    return false;
+  }
+  setKeyStatus(status, "Checking with OpenRouter…", "busy");
+  try {
+    const result = await validateOpenRouterKey(value);
+    if (token !== settingsKeyToken) return false;
+    applySettingsPatch({ api_key: value });
+    setKeyStatus(status, openRouterValidMessage(result), "valid");
+    return true;
+  } catch (err) {
+    if (token !== settingsKeyToken) return false;
+    if (err?.status === 401 || err?.status === 403) {
+      setKeyStatus(status, err.message, "invalid");
+      shake(() => input.classList.add("shake-once"));
+      return false;
+    }
+    // OpenRouter unreachable — don't hold the user's key hostage over our check.
+    applySettingsPatch({ api_key: value });
+    setKeyStatus(status, "Saved — couldn't verify right now.", "hint");
+    return true;
+  }
+}
+
+function keyIdleWhisper(preset) {
+  return `Stored only in this browser, sent directly to ${preset.label}.`;
+}
+
+function eyeSvg(open) {
+  return open
+    ? `<svg width="14" height="14" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M1.9 8S4.2 3.8 8 3.8 14.1 8 14.1 8 11.8 12.2 8 12.2 1.9 8 1.9 8Z"/><circle cx="8" cy="8" r="1.9"/><path d="m3.2 2.6 9.6 10.8"/></svg>`
+    : `<svg width="14" height="14" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M1.9 8S4.2 3.8 8 3.8 14.1 8 14.1 8 11.8 12.2 8 12.2 1.9 8 1.9 8Z"/><circle cx="8" cy="8" r="1.9"/></svg>`;
+}
+
+function toggleKeyReveal(input, button) {
+  const showing = input.type === "text";
+  input.type = showing ? "password" : "text";
+  button.innerHTML = eyeSvg(!showing);
+  button.setAttribute("aria-label", showing ? "Show key" : "Hide key");
+  button.setAttribute("aria-pressed", showing ? "false" : "true");
 }
 
 function loadSettings() {
@@ -1036,21 +1260,52 @@ function defaultWebSettings() {
 
 function saveSettings(settings) {
   const { api_key, ...persistable } = settings;
+  const providerId = presetFor(settings.preset).id;
+  if (persistable.fetch_proxy_url === DEFAULT_FETCH_PROXY_URL) delete persistable.fetch_proxy_url;
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(persistable));
   if (settings.session_only === false) {
+    const keys = readRememberedKeys();
+    if (api_key) keys[providerId] = api_key;
+    else delete keys[providerId];
+    writeRememberedKeys(keys);
     localStorage.setItem(KEY_KEY, api_key || "");
-    memoryKey = "";
+    delete memoryKeys[providerId];
   } else {
+    const keys = readRememberedKeys();
+    delete keys[providerId];
+    writeRememberedKeys(keys);
     localStorage.removeItem(KEY_KEY);
-    memoryKey = api_key || "";
+    memoryKeys[providerId] = api_key || "";
   }
 }
 
 function getApiKey(settings) {
+  const providerId = presetFor(settings.preset).id;
   if (settings.session_only === false) {
-    try { return localStorage.getItem(KEY_KEY) || ""; } catch { return ""; }
+    const keys = readRememberedKeys();
+    if (Object.prototype.hasOwnProperty.call(keys, providerId)) return keys[providerId] || "";
+    if (providerId === "openrouter") {
+      try { return localStorage.getItem(KEY_KEY) || ""; } catch { return ""; }
+    }
+    return "";
   }
-  return memoryKey;
+  return memoryKeys[providerId] || "";
+}
+
+function readRememberedKeys() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(KEYS_KEY) || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeRememberedKeys(keys) {
+  try {
+    if (Object.keys(keys).length) localStorage.setItem(KEYS_KEY, JSON.stringify(keys));
+    else localStorage.removeItem(KEYS_KEY);
+  } catch {}
 }
 
 function refreshCurrentBrain(settings = loadSettings()) {
@@ -1061,12 +1316,14 @@ function refreshCurrentBrain(settings = loadSettings()) {
 
 function handleBranchAuthRequired({ node, error, retry }) {
   pendingBranchRetry = retry;
-  openSettingsModal({ focusKey: true });
+  const missingKey = error?.code === "missing_key";
   const slot = document.getElementById("settings-inline-key");
   slot.hidden = false;
   renderInlineKeyPanel(slot, {
     idPrefix: "branch",
-    message: error?.message || "Update your key to retry this ask.",
+    title: missingKey ? "Add a key to ask" : "Update your key",
+    note: missingKey ? "" : "Your ask is saved and will continue once a key is connected.",
+    status: missingKey ? "" : (error?.message || ""),
     afterValidated: async () => {
       slot.hidden = true;
       pendingBranchRetry = null;
@@ -1075,45 +1332,51 @@ function handleBranchAuthRequired({ node, error, retry }) {
       showToast({ message: `Retrying "${node?.title || "ask"}".` });
     },
   });
+  openSettingsModal({ focusSelector: "#branch-key" });
 }
 
-function renderInlineKeyPanel(container, { idPrefix, message = "", afterValidated = null } = {}) {
+function renderInlineKeyPanel(container, { idPrefix, title = "", note = "", status = "", afterValidated = null } = {}) {
   const settings = loadSettings();
+  const preset = presetFor(settings.preset);
   const remember = settings.session_only === false;
+  const heading = title || "Add a key to ask";
+  const body = note || (preset.id === "openrouter"
+    ? "Use your own OpenRouter key for every model. Stored only in this browser and sent directly to OpenRouter."
+    : `Use your own ${preset.label} key. Stored only in this browser and sent directly to ${preset.label}.`);
   container.innerHTML = `<section class="inline-key-panel">
-    <div class="inline-key-head">
-      <div>
-        <h3>Add your OpenRouter key</h3>
-        <p>${escapeHtml(message || "Rabbithole uses your key directly from this browser.")}</p>
-      </div>
-      <a href="${OPENROUTER_KEYS_URL}" target="_blank" rel="noreferrer">Get a key in 30 seconds →</a>
+    <div class="inline-key-copy">
+      <h3>${escapeHtml(heading)}</h3>
+      <p>${escapeHtml(body)}</p>
     </div>
-    <label class="field key-field" for="${idPrefix}-key">
-      <span>API key</span>
-      <input id="${idPrefix}-key" type="password" autocomplete="off" placeholder="sk-or-v1-..." value="">
-    </label>
-    <label class="switch-field remember-field" for="${idPrefix}-remember">
-      <input id="${idPrefix}-remember" type="checkbox" role="switch" ${remember ? "checked" : ""}>
-      <span class="switch-track" aria-hidden="true"></span>
-      <span class="switch-copy"><strong>Remember on this device</strong><small>Off keeps the key only in this tab.</small></span>
-    </label>
+    <div class="key-input-wrap">
+      <input id="${idPrefix}-key" type="password" autocomplete="off" spellcheck="false" placeholder="${escapeAttr(apiKeyPlaceholder(preset.id))}" value="">
+      <button id="${idPrefix}-key-toggle" type="button" aria-label="Show key" aria-pressed="false">${eyeSvg(false)}</button>
+    </div>
     <div id="${idPrefix}-key-status" class="key-status" aria-live="polite"></div>
-    <div class="inline-key-actions">
-      <button class="web-primary" type="button" id="${idPrefix}-connect">Connect</button>
+    <div class="inline-key-foot">
+      <label class="remember-mini" for="${idPrefix}-remember">
+        <span class="switch" aria-hidden="true">
+          <input id="${idPrefix}-remember" type="checkbox" role="switch" ${remember ? "checked" : ""}>
+          <span class="switch-track"></span>
+        </span>
+        <span>Remember on this device</span>
+      </label>
+      ${preset.id === "openrouter" ? `<a class="key-get" href="${OPENROUTER_KEYS_URL}" target="_blank" rel="noreferrer">Get a key →</a>` : ""}
     </div>
   </section>`;
   const input = container.querySelector(`#${idPrefix}-key`);
-  const status = container.querySelector(`#${idPrefix}-key-status`);
+  const statusEl = container.querySelector(`#${idPrefix}-key-status`);
+  const toggle = container.querySelector(`#${idPrefix}-key-toggle`);
+  toggle.addEventListener("click", () => toggleKeyReveal(input, toggle));
+  if (status) setKeyStatus(statusEl, status, "invalid");
   let timer = 0;
   let continued = false;
   const continueOnce = async () => {
     if (continued) return;
     continued = true;
-    const current = loadSettings();
     saveSettings({
-      ...current,
-      preset: current.preset || "openrouter",
-      api_key: input.value,
+      ...loadSettings(),
+      api_key: input.value.trim(),
       session_only: !container.querySelector(`#${idPrefix}-remember`).checked,
     });
     initSettingsPanel();
@@ -1127,7 +1390,7 @@ function renderInlineKeyPanel(container, { idPrefix, message = "", afterValidate
     const ok = await validateKeyForPreset({
       key: input.value,
       presetId,
-      statusEl: status,
+      statusEl,
       required,
       onShake: () => input.classList.add("shake-once"),
     });
@@ -1137,38 +1400,22 @@ function renderInlineKeyPanel(container, { idPrefix, message = "", afterValidate
   input.addEventListener("input", () => {
     window.clearTimeout(timer);
     const hint = providerKeyHint(input.value, loadSettings().preset || "openrouter");
-    setKeyStatus(status, hint, hint ? "hint" : "");
+    setKeyStatus(statusEl, hint, hint ? "hint" : "");
     timer = window.setTimeout(() => validate(false), 350);
   });
   input.addEventListener("paste", () => window.setTimeout(() => validate(false), 0));
   input.addEventListener("blur", () => validate(false));
-  container.querySelector(`#${idPrefix}-connect`).addEventListener("click", () => validate(true));
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      validate(true);
+    }
+  });
   input.focus({ preventScroll: true });
 }
 
 async function maybeSwitchProviderFromKey(key, container, continueOnce) {
-  const value = String(key || "").trim();
-  const status = container.querySelector(".key-status");
-  let target = "";
-  if (value.startsWith("sk-ant-")) target = "anthropic";
-  else if (value.startsWith("sk-") && !value.startsWith("sk-or-")) target = "openai";
-  if (!target) return false;
-  const label = presetFor(target).label;
-  status.innerHTML = `That looks like an ${escapeHtml(label)} key. <button type="button" class="key-switch">Switch provider</button>`;
-  status.className = "key-status hint visible";
-  status.querySelector("button").addEventListener("click", async () => {
-    const current = loadSettings();
-    const next = settingsForPreset(target, current);
-    saveSettings({
-      ...next,
-      api_key: value,
-      session_only: !container.querySelector("input[role='switch']").checked,
-    });
-    initSettingsPanel();
-    refreshCurrentBrain();
-    await continueOnce?.();
-  }, { once: true });
-  return true;
+  return false;
 }
 
 async function validateKeyForPreset({ key, presetId, statusEl, required = false, onShake = null } = {}) {
@@ -1221,8 +1468,11 @@ async function validateOpenRouterKey(key) {
     headers: { Authorization: `Bearer ${key}` },
   });
   if (!response.ok) {
-    if (response.status === 401 || response.status === 403) throw new Error("That key was rejected by OpenRouter.");
-    throw new Error(`OpenRouter returned HTTP ${response.status}.`);
+    const error = new Error(response.status === 401 || response.status === 403
+      ? "That key was rejected by OpenRouter."
+      : `OpenRouter returned HTTP ${response.status}.`);
+    error.status = response.status;
+    throw error;
   }
   let json = {};
   try { json = await response.json(); } catch {}
@@ -1232,9 +1482,9 @@ async function validateOpenRouterKey(key) {
 function providerKeyHint(key, presetId) {
   const value = String(key || "").trim();
   if (!value) return "";
-  if (value.startsWith("sk-ant-") && presetId !== "anthropic") return "That looks like an Anthropic key — switch provider?";
-  if (value.startsWith("sk-") && !value.startsWith("sk-or-") && !value.startsWith("sk-ant-") && presetId !== "openai") {
-    return "That looks like an OpenAI key — switch provider?";
+  if (presetId === "openrouter" && value.startsWith("sk-ant-")) return "That looks like an Anthropic key — use an OpenRouter key here.";
+  if (presetId === "openrouter" && value.startsWith("sk-") && !value.startsWith("sk-or-") && !value.startsWith("sk-ant-")) {
+    return "That looks like an OpenAI key — use an OpenRouter key here.";
   }
   if (presetId === "openrouter" && value.startsWith("sk-or-v1-") && value.length < 30) {
     return "That OpenRouter key looks truncated.";
@@ -1263,16 +1513,6 @@ function setKeyStatus(el, message, tone = "") {
 function shake(onShake) {
   onShake?.();
   window.setTimeout(() => document.querySelectorAll(".shake-once").forEach((el) => el.classList.remove("shake-once")), 260);
-}
-
-function toggleSecretInput(root) {
-  const input = root.querySelector("#api-key");
-  const showing = input.type === "text";
-  input.type = showing ? "password" : "text";
-  const button = root.querySelector("#api-key-toggle");
-  button.textContent = showing ? "Show" : "Hide";
-  button.setAttribute("aria-label", showing ? "Show API key" : "Hide API key");
-  button.setAttribute("aria-pressed", showing ? "false" : "true");
 }
 
 function updateModelHints(panel = document.getElementById("settings-panel")) {
@@ -1324,47 +1564,6 @@ function setIngestStatus(message, tone = "") {
   el.setAttribute("aria-live", tone === "error" ? "assertive" : "polite");
 }
 
-function constellationSvg(hole) {
-  const nodes = Array.isArray(hole?.nodes) ? hole.nodes : [];
-  if (!nodes.length) return `<svg viewBox="0 0 44 32" role="img" aria-label=""></svg>`;
-  const points = nodes.map((node) => {
-    const size = node.size || {};
-    const pos = node.position || {};
-    return {
-      id: node.id,
-      parent: node.parent_id,
-      root: node.id === hole.root_id,
-      x: Number(pos.x || 0) + Number(size.w || 0) / 2,
-      y: Number(pos.y || 0) + Number(size.h || 0) / 2,
-    };
-  });
-  const minX = Math.min(...points.map((p) => p.x));
-  const maxX = Math.max(...points.map((p) => p.x));
-  const minY = Math.min(...points.map((p) => p.y));
-  const maxY = Math.max(...points.map((p) => p.y));
-  const width = maxX - minX;
-  const height = maxY - minY;
-  const fit = (p) => ({
-    x: width ? 4 + ((p.x - minX) / width) * 36 : 22,
-    y: height ? 4 + ((p.y - minY) / height) * 24 : 16,
-  });
-  const byId = new Map(points.map((p) => [p.id, p]));
-  const lines = points.filter((p) => p.parent && byId.has(p.parent)).map((p) => {
-    const a = fit(byId.get(p.parent));
-    const b = fit(p);
-    return `<line x1="${round(a.x)}" y1="${round(a.y)}" x2="${round(b.x)}" y2="${round(b.y)}"></line>`;
-  }).join("");
-  const dots = points.map((p) => {
-    const f = fit(p);
-    return `<circle class="${p.root ? "root-dot" : ""}" cx="${round(f.x)}" cy="${round(f.y)}" r="${p.root ? "2.3" : "1.55"}"></circle>`;
-  }).join("");
-  return `<svg viewBox="0 0 44 32" role="img" aria-label="">${lines}${dots}</svg>`;
-}
-
-function round(value) {
-  return Math.round(value * 10) / 10;
-}
-
 function setBlankZoom(value) {
   blankZoom = Math.min(2.5, Math.max(0.15, Number(value) || 1));
   const world = document.getElementById("world");
@@ -1401,15 +1600,6 @@ function isSingleHttpUrl(value) {
   } catch {
     return false;
   }
-}
-
-function looksLikeDocument(value) {
-  const text = String(value || "").trim();
-  if (text.length > 400) return true;
-  if (/^#{1,6}\s+\S/m.test(text)) return true;
-  if (/```/.test(text)) return true;
-  const paragraphs = text.split(/\n\s*\n/).filter((part) => part.trim().length > 24);
-  return paragraphs.length >= 2;
 }
 
 function holeIdFromHash() {
@@ -1453,8 +1643,6 @@ function blobToDataUrl(blob) {
 function apiKeyPlaceholder(presetId) {
   switch (presetFor(presetId).id) {
     case "openrouter": return "sk-or-v1-...";
-    case "anthropic": return "sk-ant-...";
-    case "openai": return "sk-...";
     default: return "optional";
   }
 }
@@ -1548,6 +1736,7 @@ function exposeTestApi() {
     currentHoleId: () => currentHoleId,
     readRawHole: (id = currentHoleId) => id ? store.readRawHoleForTest(id) : null,
     renderRailForTest: renderRail,
+    createDocumentForTest: createFromComposerDocument,
     deleteHoleForTest: deleteHoleFromRail,
     exportHoleFromRailForTest: exportHoleFromRail,
   };

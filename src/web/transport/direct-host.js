@@ -4,9 +4,10 @@ import { extractAssetRefsFromMarkdown } from "../../core/assets.js";
 import { ProviderError, TitleSentinelParser, fallbackTitleForNode, normalizeProviderError } from "../brain/index.js";
 
 const SAVE_DEBOUNCE_MS = 400;
+const WEB_ROOT_QUESTION = "web_root_question";
 
 export class DirectRabbitholeHost {
-  constructor({ store, hole, brain = null, onEvent = null, onToast = null, onDone = null, onRestore = null, onAuthRequired = null } = {}) {
+  constructor({ store, hole, brain = null, onEvent = null, onToast = null, onDone = null, onRestore = null, onAuthRequired = null, onRootAnswered = null } = {}) {
     this.store = store;
     this.brain = brain;
     this.onEvent = onEvent;
@@ -14,6 +15,7 @@ export class DirectRabbitholeHost {
     this.onDone = onDone;
     this.onRestore = onRestore;
     this.onAuthRequired = onAuthRequired;
+    this.onRootAnswered = onRootAnswered;
     this.state = createHoleState(hole);
     this.holeId = this.state.hole_id;
     this.title = this.state.title;
@@ -58,7 +60,7 @@ export class DirectRabbitholeHost {
       markdown: n.markdown ?? "",
       base_url: n.base_url ?? null,
       base_url_source: n.base_url_source ?? null,
-      origin: n.origin ?? null,
+      origin: n.id === this.state.root_id ? null : (n.origin ?? null),
       position: n.position ?? { x: 0, y: 0 },
       size: n.size ?? null,
       font_scale: n.font_scale ?? 1,
@@ -114,13 +116,17 @@ export class DirectRabbitholeHost {
   handleRetry(payload) {
     const node = this.state.nodes.get(String(payload.node_id || ""));
     if (!node || node.status !== "pending") return { ok: true };
+    if (node.id === this.state.root_id && rootQuestionForNode(node)) {
+      this.startRootAnswer({ reset: true });
+      return { ok: true };
+    }
     this.startAnswer(node.id, { reset: true });
     return { ok: true };
   }
 
   async handleDeleteNode(payload) {
     const targetId = String(payload.node_id || "");
-    if (!targetId || targetId === this.state.root_id) return { ok: false, error: "Cannot delete the root document" };
+    if (!targetId || targetId === this.state.root_id) return { ok: false, error: "The starting document can't be removed" };
     if (!this.state.nodes.has(targetId)) return { ok: true, deleted: [] };
 
     const reduced = reduceHoleEvent(this.state, { type: "delete_node", node_id: targetId });
@@ -217,6 +223,85 @@ export class DirectRabbitholeHost {
     queueMicrotask(() => this.runAnswer(nodeId, controller).catch((err) => {
       this.handleAnswerError(nodeId, err, controller.signal);
     }));
+  }
+
+  startRootAnswer({ reset = false } = {}) {
+    if (this.disposed) return false;
+    const node = this.state.nodes.get(this.state.root_id);
+    const question = rootQuestionForNode(node);
+    if (!node || node.status !== "pending" || !question) return false;
+
+    const controller = new AbortController();
+    const previous = this.abortByNode.get(node.id);
+    if (previous) previous.abort();
+    this.abortByNode.set(node.id, controller);
+
+    if (reset) {
+      this.dispatchProgress(node.id, "", { emit: true });
+    }
+
+    queueMicrotask(() => this.runRootAnswer(node.id, question, controller).catch((err) => {
+      this.handleAnswerError(node.id, err, controller.signal);
+    }));
+    return true;
+  }
+
+  async runRootAnswer(nodeId, question, controller) {
+    const node = this.state.nodes.get(nodeId);
+    if (!node || node.status !== "pending") return;
+    if (!this.brain) {
+      throw new ProviderError("Add your provider key to keep asking.", {
+        status: 401,
+        code: "missing_key",
+        retryable: true,
+      });
+    }
+
+    let markdown = resetMarkdownForRun(node);
+    for await (const chunk of this.brain.authorExplainer({ question }, controller.signal)) {
+      if (controller.signal.aborted || !this.isLivePending(nodeId)) return;
+      markdown += chunk;
+      this.dispatchProgress(nodeId, markdown, { emit: true });
+    }
+    if (controller.signal.aborted || !this.isLivePending(nodeId)) return;
+    if (!markdown.trim()) throw new Error("The provider returned an empty document.");
+
+    const current = this.state.nodes.get(nodeId);
+    const title = titleFromMarkdown(markdown) || current.title || "Untitled";
+    current.origin = null;
+    this.dispatch({
+      type: "node_answered",
+      node_id: current.id,
+      parent_id: null,
+      title,
+      markdown,
+      base_url: current.base_url,
+      base_url_source: current.base_url_source,
+      origin: null,
+      position: current.position,
+      size: current.size,
+      font_scale: current.font_scale,
+      read: true,
+    });
+    this.state.title = title;
+    this.title = title;
+    const finalNode = this.state.nodes.get(nodeId);
+    this.abortByNode.delete(nodeId);
+    this.emit({
+      type: "node_answered",
+      node_id: finalNode.id,
+      parent_id: null,
+      title: finalNode.title,
+      markdown: finalNode.markdown,
+      base_url: finalNode.base_url,
+      base_url_source: finalNode.base_url_source,
+      origin: null,
+      position: finalNode.position,
+      size: finalNode.size,
+      font_scale: finalNode.font_scale,
+    });
+    await this.flushSave();
+    await this.onRootAnswered?.(finalNode);
   }
 
   async runAnswer(nodeId, controller) {
@@ -418,6 +503,16 @@ export function createHoleFromMarkdown({ title, markdown, baseUrl = null } = {})
   };
 }
 
+export function createPendingHoleFromQuestion(question) {
+  const normalized = String(question || "").trim();
+  const title = truncate(normalized, 80) || "Untitled";
+  const hole = createHoleFromMarkdown({ title, markdown: "" });
+  const root = hole.nodes[0];
+  root.status = "pending";
+  root.origin = { [WEB_ROOT_QUESTION]: normalized };
+  return hole;
+}
+
 export function titleFromMarkdown(markdown) {
   const match = /^#\s+(.+)$/m.exec(String(markdown || ""));
   return match ? truncate(match[1].trim(), 80) : "";
@@ -433,4 +528,8 @@ function isAuthError(error) {
 
 function resetMarkdownForRun(node) {
   return node?.markdown && node.status === "pending" ? String(node.markdown) : "";
+}
+
+function rootQuestionForNode(node) {
+  return String(node?.origin?.[WEB_ROOT_QUESTION] || "").trim();
 }

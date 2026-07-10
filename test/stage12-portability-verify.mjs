@@ -42,6 +42,16 @@ try {
       body: JSON.stringify({ data: { label: "test key" } }),
     });
   });
+  // Opening settings warms the OpenRouter model catalog; keep this test offline.
+  await page.route("https://openrouter.ai/api/v1/models", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: { ...corsHeaders(), "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ data: [
+        { id: "anthropic/claude-sonnet-5", name: "Anthropic: Claude Sonnet 5", context_length: 1000000, pricing: { prompt: "0.000003", completion: "0.000015" } },
+      ] }),
+    });
+  });
   await page.route(PROVIDER_URL, async (route) => {
     if (route.request().method() === "OPTIONS") {
       await route.fulfill({ status: 204, headers: corsHeaders(), body: "" });
@@ -69,14 +79,14 @@ try {
   await assertShellPolish(page);
   await page.click("#t-settings");
   await page.fill("#api-key", MOCK_KEY);
-  await page.click("#save-settings");
-  await page.waitForSelector("text=Settings saved.");
-  await page.click("#web-settings-close");
+  await page.press("#api-key", "Enter");
+  await page.waitForSelector("#api-key-status.valid");
+  await page.keyboard.press("Escape");
 
-  await page.click("#t-new");
-  await page.fill("#composer-input", "# Author Check\n\nraw notes about a streamed authoring pass");
-  await page.check("#composer-improve");
-  await page.click("#composer-primary");
+  await page.evaluate(() => window.__rhWebApp.createDocumentForTest(
+    "# Author Check\n\nraw notes about a streamed authoring pass",
+    { improveStructure: true },
+  ));
   await waitForCanvasText(page, "This document was streamed through the author model");
   assert.equal(authorCalls, 1, "Improve structure should call authorDocument once");
 
@@ -162,18 +172,28 @@ async function assertShellPolish(page) {
   await page.waitForSelector("#composer-modal:not([hidden])");
   assert.equal(await page.locator("#toolbar #t-rail").count(), 1, "rail toggle should live in the toolbar");
   assert.equal(await page.locator("#toolbar #t-new").count(), 1, "new Rabbithole button should live in the toolbar");
+  assert.equal(await page.locator(".composer-path").count(), 3, "new Rabbithole should present three clear starting paths");
   await page.keyboard.press("Escape");
   await page.waitForSelector("#composer-modal[hidden]", { state: "attached" });
   await page.click("#t-settings");
   const keyLinkCount = await page.locator(`a[href="${"https://openrouter.ai/keys"}"]`).count();
   assert.equal(keyLinkCount, 1, "OpenRouter key link should appear exactly once in settings");
-  const selectState = await page.$eval("#provider-preset", (select) => ({
-    label: select.options[select.selectedIndex]?.textContent || "",
+  assert.equal(await page.locator("#save-settings, #web-settings-close").count(), 0, "settings should apply live without save or close buttons");
+  const providerState = await page.locator("#provider-select").evaluate((select) => ({
+    tag: select.tagName,
+    labels: Array.from(select.options).map((option) => option.textContent),
+    value: select.value,
     width: select.getBoundingClientRect().width,
   }));
-  assert.equal(selectState.label, "OpenRouter (recommended)");
-  assert(selectState.width >= 190, `provider select should be wide enough, got ${selectState.width}`);
-  await page.click("#web-settings-close");
+  assert.equal(providerState.tag, "SELECT");
+  assert.deepEqual(providerState.labels, ["OpenRouter", "Local"]);
+  assert.equal(providerState.value, "openrouter");
+  assert(providerState.width > 90 && providerState.width < 118, `OpenRouter select should size to its label, got ${providerState.width}`);
+  await page.locator(".settings-advanced summary").click();
+  assert.equal(await page.locator("#answer-model").count(), 1, "advanced settings should retain separate model overrides");
+  assert.equal(await page.locator("#fetch-proxy-url").count(), 1, "advanced settings should retain the link relay");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector("#web-settings-modal[hidden]", { state: "attached" });
 }
 
 async function waitForCanvasText(page, text) {

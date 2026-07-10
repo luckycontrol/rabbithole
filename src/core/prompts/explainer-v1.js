@@ -11,7 +11,7 @@ export const EXPLAINER_SYSTEM_PROMPT_V1 = [
   "Stay honest about unknowns or disputed claims. Do not fabricate citations or pretend certainty you do not have.",
   "Use $...$/$$...$$ math and language-tagged code fences only where genuinely helpful.",
   "Use ```show fences for spatial, diagrammatic, or structural explanations when a visual would carry meaning better than prose.",
-  "Depth should come from future branches, not from making the root document long.",
+  "Depth should come from future branches, not from making the starting document long.",
   "",
   AUTHORING_VOCABULARY_V1,
 ].join("\n");

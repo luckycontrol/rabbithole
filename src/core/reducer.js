@@ -136,7 +136,7 @@ function reduceNodeDeleted(state, event) {
     ? event.node_ids.map(String)
     : collectSubtreeIds(state.nodes, String(event.node_id || ""));
   if (!ids.length) return withState(state, { deletedNodeIds: [], deletedNodes: [] });
-  if (ids.includes(state.root_id)) throw new Error("Cannot delete the root document");
+  if (ids.includes(state.root_id)) throw new Error("The starting document can't be removed");
   const nodes = cloneNodes(state);
   const deletedNodes = [];
   for (const id of ids) {

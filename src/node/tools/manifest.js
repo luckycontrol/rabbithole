@@ -66,7 +66,7 @@ export const toolDefinitions = [
       "It returns status='session_closed' when the human clicks Done or closes the tab.",
     input: obj({
       title: str("Document title (required for a new hole)", { optional: true }),
-      content: str("Raw markdown for the root document", { optional: true }),
+      content: str("Raw markdown for the starting document", { optional: true }),
       file_path: str("Path to a .md file (alternative to content)", { optional: true }),
       base_url: str("Document URL used to resolve relative markdown links/images; absolute http(s) only", {
         optional: true,

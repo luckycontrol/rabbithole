@@ -3,38 +3,22 @@ export const BRAIN_PRESETS = Object.freeze({
     id: "openrouter",
     label: "OpenRouter",
     recommended: true,
+    model_source: "catalog",
     base_url: "https://openrouter.ai/api/v1",
     kind: "openai-compatible",
     requires_key: true,
     author_model: "anthropic/claude-sonnet-5",
     answer_model: "anthropic/claude-sonnet-5",
   }),
-  anthropic: Object.freeze({
-    id: "anthropic",
-    label: "Anthropic direct",
-    base_url: "https://api.anthropic.com/v1",
-    kind: "anthropic-direct",
-    requires_key: true,
-    author_model: "claude-sonnet-5",
-    answer_model: "claude-sonnet-5",
-  }),
-  openai: Object.freeze({
-    id: "openai",
-    label: "OpenAI",
-    base_url: "https://api.openai.com/v1",
-    kind: "openai-compatible",
-    requires_key: true,
-    author_model: "gpt-5",
-    answer_model: "gpt-5",
-  }),
   custom: Object.freeze({
     id: "custom",
-    label: "Custom / local",
+    label: "Local",
+    model_source: "custom",
     base_url: "http://localhost:11434/v1",
     kind: "openai-compatible",
     requires_key: false,
-    author_model: "anthropic/claude-sonnet-5",
-    answer_model: "anthropic/claude-sonnet-5",
+    author_model: "llama3.2",
+    answer_model: "llama3.2",
   }),
 });
 
@@ -50,7 +34,7 @@ export function defaultBrainSettings() {
     author_model: preset.author_model,
     answer_model: preset.answer_model,
     fetch_proxy_url: "",
-    session_only: true,
+    session_only: false,
   };
 }
 

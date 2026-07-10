@@ -81,6 +81,7 @@ export function initBranchSurfaces(){
     hideConfirm();
     if (node) deleteBranch(node);
   });
+  window.addEventListener("resize", function(){ if (shareOpen && shareAnchor) positionShare(shareAnchor); }, { passive: true });
 }
 
 export function hidePeek(){
@@ -130,7 +131,18 @@ export function hidePeek(){
   // ===========================================================================
   // SHARE — export, copy as Markdown, synthesize
   // ===========================================================================
-  var shareOpen = false, shareTrap = null;
+  var shareOpen = false, shareTrap = null, shareAnchor = null;
+  function positionShare(anchor){
+    var edge = window.innerWidth <= 760 ? 8 : 14;
+    var r = anchor.getBoundingClientRect();
+    var bar = anchor.id === "t-share" ? document.getElementById("toolbar") : document.getElementById("reader-top");
+    var barRect = bar && bar.getBoundingClientRect();
+    var anchorBottom = barRect && barRect.height ? barRect.bottom : r.bottom;
+    var width = shareMenu.offsetWidth;
+    var left = Math.max(edge, Math.min(window.innerWidth - width - edge, r.right - width));
+    shareMenu.style.left = left + "px";
+    shareMenu.style.top = (anchorBottom + edge) + "px";
+  }
 export function toggleShare(anchor){
     if (shareOpen){ closeShare(); return; }
     // A frozen snapshot can't export (it IS the export) or reach an agent.
@@ -139,12 +151,12 @@ export function toggleShare(anchor){
     document.getElementById("sm-portable").style.display = (!frozen && typeof branchHooks.exportPortable === "function") ? "" : "none";
     document.getElementById("sm-sep2").style.display = noAgent ? "none" : "";
     document.getElementById("sm-synth").style.display = noAgent ? "none" : "";
-    var r = anchor.getBoundingClientRect();
-    shareMenu.style.left = Math.min(window.innerWidth - shareMenu.offsetWidth - 10, Math.max(10, r.right - shareMenu.offsetWidth)) + "px";
-    shareMenu.style.top = (r.bottom + 8) + "px";
+    shareAnchor = anchor;
+    positionShare(anchor);
     shareOpen = true;
+    anchor.setAttribute("aria-expanded", "true");
     shareMenu.classList.add("visible");
-    setSurfaceOrigin(shareMenu, r);
+    setSurfaceOrigin(shareMenu, anchor.getBoundingClientRect());
     if (shareTrap) shareTrap();
     shareTrap = activateFocusTrap(shareMenu, {
       initialFocus: shareMenu.querySelector("button"),
@@ -154,6 +166,8 @@ export function toggleShare(anchor){
 export function closeShare(){
     shareOpen = false;
     shareMenu.classList.remove("visible");
+    if (shareAnchor) shareAnchor.setAttribute("aria-expanded", "false");
+    shareAnchor = null;
     if (shareTrap){ shareTrap(); shareTrap = null; }
   }
 
@@ -242,7 +256,7 @@ export function synthesize(source){
     var q = "Step back and write the synthesis of this whole Rabbithole so far: the key ideas we explored, how they connect, and the takeaways worth keeping. Make it a standalone summary of the journey.";
     var kid = sendFollowup(root, q, null, true);
     if (mode === "canvas") revealNode(kid, source);
-    flashHint("✦ Synthesizing this journey — it will appear as a branch of the root document.");
+    flashHint("✦ Synthesizing this journey — it will branch from where this Rabbithole began.");
   }
 
   // ===========================================================================

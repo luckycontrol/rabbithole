@@ -10,7 +10,10 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const parsed = parseOutdir(process.argv.slice(2));
 const outdir = parsed.outdir;
 const absOutdir = path.resolve(rootDir, outdir);
-const proxyConfig = readProxyConfig(process.env.RABBITHOLE_PROXY_URL);
+// Rabbithole's hosted link relay; RABBITHOLE_PROXY_URL overrides it, and an
+// empty value ships the app with no default relay.
+const PUBLIC_FETCH_PROXY_URL = "https://rabbithole-fetch-proxy.khemanishlok.workers.dev";
+const proxyConfig = readProxyConfig(process.env.RABBITHOLE_PROXY_URL ?? PUBLIC_FETCH_PROXY_URL);
 
 const KATEX_FONT_SRC =
   /src:\s*url\((fonts\/[^)]+\.woff2)\)\s*format\("woff2"\),\s*url\((fonts\/[^)]+\.woff)\)\s*format\("woff"\),\s*url\((fonts\/[^)]+\.ttf)\)\s*format\("truetype"\);/g;

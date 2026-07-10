@@ -11,7 +11,7 @@ export const CANVAS_SHELL = `
     <button class="tool-btn" id="r-textdown" title="Smaller text">A−</button>
     <button class="tool-btn" id="r-textup" title="Larger text">A+</button>
     <button class="tool-btn" id="r-canvas" title="Open the spatial canvas">⤢ Canvas</button>
-    <button class="tool-btn" id="r-share" title="Share, export, synthesize">↗ Share</button>
+    <button class="tool-btn" id="r-share" title="Share, export, synthesize" aria-haspopup="menu" aria-controls="sharemenu" aria-expanded="false">↗ Share</button>
     <button class="tool-btn" id="r-theme" title="Toggle theme" aria-label="Toggle theme">◑</button>
     <button class="tool-btn" id="r-done" title="End the session (the hole stays saved)">Done</button>
   </div>
@@ -32,7 +32,7 @@ export const CANVAS_SHELL = `
 
 <div id="viewport"><div id="world"><svg id="edges"></svg></div></div>
 <div id="toolbar">
-  <button class="tool-btn tool-icon" id="t-rail" title="Toggle rabbitholes · S" aria-label="Toggle rabbitholes" aria-expanded="false" aria-controls="web-rail"><svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><rect x="2.5" y="2.75" width="11" height="10.5" rx="1.6"/><path d="M6.25 2.75v10.5"/></svg></button>
+  <button class="tool-btn tool-icon" id="t-rail" title="Rabbitholes · S" aria-label="Toggle rabbitholes" aria-expanded="false" aria-controls="web-rail"><svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><rect x="2.5" y="2.75" width="11" height="10.5" rx="1.6"/><path d="M6.25 2.75v10.5"/><rect class="rail-fill" x="3.55" y="3.8" width="1.65" height="8.4" rx="0.82" fill="currentColor" stroke="none"/></svg></button>
   <button class="tool-btn tool-icon" id="t-new" title="New Rabbithole · N" aria-label="New Rabbithole"><svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M8 3.25v9.5"/><path d="M3.25 8h9.5"/></svg></button>
   <span class="sep" id="app-sep"></span>
   <button class="tool-btn" id="t-reader" title="Back to reading"><svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M3.75 3.25h4.5c1 0 1.8.8 1.8 1.8v7.7H5.15c-.77 0-1.4-.63-1.4-1.4z"/><path d="M5.15 12.75c-.77 0-1.4-.63-1.4-1.4s.63-1.4 1.4-1.4h4.9"/></svg>Reader</button>
@@ -44,9 +44,9 @@ export const CANVAS_SHELL = `
   <span class="sep"></span>
   <button class="tool-btn tool-icon" id="t-tidy" title="Tidy up layout · T" aria-label="Tidy up layout · T"><svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><rect x="6.25" y="2.5" width="3.5" height="2.75" rx="0.7"/><rect x="2.75" y="10.75" width="3.5" height="2.75" rx="0.7"/><rect x="9.75" y="10.75" width="3.5" height="2.75" rx="0.7"/><path d="M8 5.25v2.25"/><path d="M4.5 7.5h7"/><path d="M4.5 7.5v3.25"/><path d="M11.5 7.5v3.25"/></svg></button>
   <span class="sep"></span>
-  <button class="tool-btn tool-icon" id="t-share" title="Share, export, synthesize" aria-label="Share, export, synthesize">↗</button>
+  <button class="tool-btn tool-icon" id="t-share" title="Share, export, synthesize" aria-label="Share, export, synthesize" aria-haspopup="menu" aria-controls="sharemenu" aria-expanded="false">↗</button>
   <button class="tool-btn tool-icon" id="t-theme" title="Toggle theme" aria-label="Toggle theme">◑</button>
-  <button class="tool-btn tool-icon" id="t-settings" title="Provider settings" aria-label="Provider settings" aria-controls="web-settings-modal" aria-expanded="false"><svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M6.75 2.25h2.5l.38 1.55c.38.13.74.28 1.07.47l1.35-.82 1.25 2.16-1.18 1.03c.04.22.06.45.06.68s-.02.46-.06.68l1.18 1.03-1.25 2.16-1.35-.82c-.33.19-.69.34-1.07.47l-.38 1.55h-2.5l-.38-1.55a5.1 5.1 0 0 1-1.07-.47l-1.35.82-1.25-2.16 1.18-1.03a3.9 3.9 0 0 1 0-1.36L2.75 5.61 4 3.45l1.35.82c.33-.19.69-.34 1.07-.47z"/><circle cx="8" cy="8" r="1.9"/></svg></button>
+  <button class="tool-btn tool-icon" id="t-settings" title="Model settings" aria-label="Model settings" aria-controls="web-settings-modal" aria-expanded="false"><svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><g transform="translate(12 12) scale(0.92) translate(-12 -12)"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></g></svg></button>
   <span class="sep" id="act-sep" style="display:none"></span>
   <button class="activity" id="act-canvas" title="Jump to it" aria-label="Jump to active answer"></button>
 </div>
@@ -75,14 +75,14 @@ export const CANVAS_SHELL = `
 
 <div id="peek"></div>
 
-<div id="sharemenu">
-  <button class="sm-item" id="sm-trail"><span class="sm-ic">⤷</span>Copy trail as Markdown</button>
-  <button class="sm-item" id="sm-doc"><span class="sm-ic">⧉</span>Copy document as Markdown</button>
+<div id="sharemenu" role="menu" aria-label="Share and export">
+  <button class="sm-item" id="sm-trail" role="menuitem"><span class="sm-ic">⤷</span>Copy trail as Markdown</button>
+  <button class="sm-item" id="sm-doc" role="menuitem"><span class="sm-ic">⧉</span>Copy document as Markdown</button>
   <div class="sm-sep"></div>
-  <button class="sm-item" id="sm-export"><span class="sm-ic">⇩</span>Download snapshot (.html)</button>
-  <button class="sm-item" id="sm-portable"><span class="sm-ic">⇣</span>Export Rabbithole (.rabbithole)</button>
+  <button class="sm-item" id="sm-export" role="menuitem"><span class="sm-ic">⇩</span>Download snapshot (.html)</button>
+  <button class="sm-item" id="sm-portable" role="menuitem"><span class="sm-ic">⇣</span>Export Rabbithole (.rabbithole)</button>
   <div class="sm-sep" id="sm-sep2"></div>
-  <button class="sm-item" id="sm-synth"><span class="sm-ic">✦</span>Synthesize this journey</button>
+  <button class="sm-item" id="sm-synth" role="menuitem"><span class="sm-ic">✦</span>Synthesize this journey</button>
 </div>
 
 <div id="confirm">
