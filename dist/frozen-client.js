@@ -36,9 +36,9 @@ var RabbitholeFrozenClient = (() => {
   var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
   var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/lib/core.js
+  // node_modules/highlight.js/lib/core.js
   var require_core = __commonJS({
-    "../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/lib/core.js"(exports, module) {
+    "node_modules/highlight.js/lib/core.js"(exports, module) {
       function deepFreeze(obj) {
         if (obj instanceof Map) {
           obj.clear = obj.delete = obj.set = function() {
@@ -4482,22 +4482,27 @@ var RabbitholeFrozenClient = (() => {
       var anchor = trigger.getBoundingClientRect(), box = surface.getBoundingClientRect(), viewport2 = viewportRect();
       var edge = tokenPx(surface, "--surface-edge"), gap = tokenPx(surface, "--surface-gap");
       var parts = placement.split("-"), side = parts[0], align = parts[1] || "center";
-      var vertical = side === "top" || side === "bottom";
-      var before = vertical ? anchor.top - viewport2.top : anchor.left - viewport2.left;
-      var after = vertical ? viewport2.top + viewport2.height - anchor.bottom : viewport2.left + viewport2.width - anchor.right;
-      var mainSize = vertical ? box.height : box.width;
-      var preferredSpace = side === "top" || side === "left" ? before : after;
-      var alternateSpace = side === "top" || side === "left" ? after : before;
-      if (preferredSpace < mainSize + gap + edge && alternateSpace > preferredSpace) {
-        side = side === "top" ? "bottom" : side === "bottom" ? "top" : side === "left" ? "right" : "left";
-      }
       var left, top;
-      if (side === "top" || side === "bottom") {
-        top = side === "bottom" ? anchor.bottom + gap : anchor.top - box.height - gap;
-        left = align === "start" ? anchor.left : align === "end" ? anchor.right - box.width : anchor.left + (anchor.width - box.width) / 2;
+      if (side === "center") {
+        left = viewport2.left + (viewport2.width - box.width) / 2;
+        top = viewport2.top + (viewport2.height - box.height) / 2;
       } else {
-        left = side === "right" ? anchor.right + gap : anchor.left - box.width - gap;
-        top = align === "start" ? anchor.top : align === "end" ? anchor.bottom - box.height : anchor.top + (anchor.height - box.height) / 2;
+        var vertical = side === "top" || side === "bottom";
+        var before = vertical ? anchor.top - viewport2.top : anchor.left - viewport2.left;
+        var after = vertical ? viewport2.top + viewport2.height - anchor.bottom : viewport2.left + viewport2.width - anchor.right;
+        var mainSize = vertical ? box.height : box.width;
+        var preferredSpace = side === "top" || side === "left" ? before : after;
+        var alternateSpace = side === "top" || side === "left" ? after : before;
+        if (preferredSpace < mainSize + gap + edge && alternateSpace > preferredSpace) {
+          side = side === "top" ? "bottom" : side === "bottom" ? "top" : side === "left" ? "right" : "left";
+        }
+        if (side === "top" || side === "bottom") {
+          top = side === "bottom" ? anchor.bottom + gap : anchor.top - box.height - gap;
+          left = align === "start" ? anchor.left : align === "end" ? anchor.right - box.width : anchor.left + (anchor.width - box.width) / 2;
+        } else {
+          left = side === "right" ? anchor.right + gap : anchor.left - box.width - gap;
+          top = align === "start" ? anchor.top : align === "end" ? anchor.bottom - box.height : anchor.top + (anchor.height - box.height) / 2;
+        }
       }
       left = Math.min(viewport2.left + viewport2.width - edge - box.width, Math.max(viewport2.left + edge, left));
       top = Math.min(viewport2.top + viewport2.height - edge - box.height, Math.max(viewport2.top + edge, top));
@@ -4505,7 +4510,7 @@ var RabbitholeFrozenClient = (() => {
       if (top !== lastTop) surface.style.top = top + "px";
       lastLeft = left;
       lastTop = top;
-      surface.dataset.placement = side + "-" + align;
+      surface.dataset.placement = side === "center" ? "center" : side + "-" + align;
       updating = false;
     }
     function update() {
@@ -6281,7 +6286,7 @@ var RabbitholeFrozenClient = (() => {
     updateSince();
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/marked/lib/marked.esm.js
+  // node_modules/marked/lib/marked.esm.js
   function _getDefaults() {
     return {
       async: false,
@@ -8427,7 +8432,7 @@ ${text2}</tr>
   var parser = _Parser.parse;
   var lexer = _Lexer.lex;
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/katex/dist/katex.mjs
+  // node_modules/katex/dist/katex.mjs
   var ParseError = class _ParseError extends Error {
     // The underlying error message without any context added.
     constructor(message, token) {
@@ -22755,11 +22760,11 @@ ${text2}</tr>
     __domTree
   };
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/core.js
+  // node_modules/highlight.js/es/core.js
   var import_core7 = __toESM(require_core(), 1);
   var core_default = import_core7.default;
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/bash.js
+  // node_modules/highlight.js/es/languages/bash.js
   function bash(hljs) {
     const regex = hljs.regex;
     const VAR = {};
@@ -23153,7 +23158,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/c.js
+  // node_modules/highlight.js/es/languages/c.js
   function c(hljs) {
     const regex = hljs.regex;
     const C_LINE_COMMENT_MODE = hljs.COMMENT("//", "$", { contains: [{ begin: /\\\n/ }] });
@@ -23447,7 +23452,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/cpp.js
+  // node_modules/highlight.js/es/languages/cpp.js
   function cpp(hljs) {
     const regex = hljs.regex;
     const C_LINE_COMMENT_MODE = hljs.COMMENT("//", "$", { contains: [{ begin: /\\\n/ }] });
@@ -23990,7 +23995,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/csharp.js
+  // node_modules/highlight.js/es/languages/csharp.js
   function csharp(hljs) {
     const BUILT_IN_KEYWORDS = [
       "bool",
@@ -24390,7 +24395,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/css.js
+  // node_modules/highlight.js/es/languages/css.js
   var MODES = (hljs) => {
     return {
       IMPORTANT: {
@@ -25327,7 +25332,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/diff.js
+  // node_modules/highlight.js/es/languages/diff.js
   function diff(hljs) {
     const regex = hljs.regex;
     return {
@@ -25380,7 +25385,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/dockerfile.js
+  // node_modules/highlight.js/es/languages/dockerfile.js
   function dockerfile(hljs) {
     const KEYWORDS3 = [
       "from",
@@ -25414,7 +25419,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/go.js
+  // node_modules/highlight.js/es/languages/go.js
   function go(hljs) {
     const LITERALS3 = [
       "true",
@@ -25568,7 +25573,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/java.js
+  // node_modules/highlight.js/es/languages/java.js
   var decimalDigits = "[0-9](_*[0-9])*";
   var frac = `\\.(${decimalDigits})`;
   var hexDigits = "[0-9a-fA-F](_*[0-9a-fA-F])*";
@@ -25822,7 +25827,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/javascript.js
+  // node_modules/highlight.js/es/languages/javascript.js
   var IDENT_RE = "[A-Za-z$_][0-9A-Za-z$_]*";
   var KEYWORDS = [
     "as",
@@ -26523,7 +26528,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/json.js
+  // node_modules/highlight.js/es/languages/json.js
   function json(hljs) {
     const ATTRIBUTE = {
       className: "attr",
@@ -26563,7 +26568,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/kotlin.js
+  // node_modules/highlight.js/es/languages/kotlin.js
   var decimalDigits2 = "[0-9](_*[0-9])*";
   var frac2 = `\\.(${decimalDigits2})`;
   var hexDigits2 = "[0-9a-fA-F](_*[0-9a-fA-F])*";
@@ -26818,7 +26823,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/latex.js
+  // node_modules/highlight.js/es/languages/latex.js
   function latex(hljs) {
     const regex = hljs.regex;
     const KNOWN_CONTROL_WORDS = regex.either(...[
@@ -27089,7 +27094,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/markdown.js
+  // node_modules/highlight.js/es/languages/markdown.js
   function markdown(hljs) {
     const regex = hljs.regex;
     const INLINE_HTML = {
@@ -27321,7 +27326,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/php.js
+  // node_modules/highlight.js/es/languages/php.js
   function php(hljs) {
     const regex = hljs.regex;
     const NOT_PERL_ETC = /(?![A-Za-z0-9])(?![$])/;
@@ -27922,7 +27927,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/plaintext.js
+  // node_modules/highlight.js/es/languages/plaintext.js
   function plaintext(hljs) {
     return {
       name: "Plain text",
@@ -27934,7 +27939,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/python.js
+  // node_modules/highlight.js/es/languages/python.js
   function python(hljs) {
     const regex = hljs.regex;
     const IDENT_RE3 = /[\p{XID_Start}_]\p{XID_Continue}*/u;
@@ -28349,7 +28354,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/r.js
+  // node_modules/highlight.js/es/languages/r.js
   function r(hljs) {
     const regex = hljs.regex;
     const IDENT_RE3 = /(?:(?:[a-zA-Z]|\.[._a-zA-Z])[._a-zA-Z0-9]*)|\.(?!\d)/;
@@ -28559,7 +28564,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/ruby.js
+  // node_modules/highlight.js/es/languages/ruby.js
   function ruby(hljs) {
     const regex = hljs.regex;
     const RUBY_METHOD_RE = "([a-zA-Z_]\\w*[!?=]?|[-+~]@|<<|>>|=~|===?|<=>|[<>]=?|\\*\\*|[-/+%^&*~`|]|\\[\\]=?)";
@@ -28972,7 +28977,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/rust.js
+  // node_modules/highlight.js/es/languages/rust.js
   function rust(hljs) {
     const regex = hljs.regex;
     const RAW_IDENTIFIER = /(r#)?/;
@@ -29285,7 +29290,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/scala.js
+  // node_modules/highlight.js/es/languages/scala.js
   function scala(hljs) {
     const regex = hljs.regex;
     const ANNOTATION = {
@@ -29476,7 +29481,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/shell.js
+  // node_modules/highlight.js/es/languages/shell.js
   function shell(hljs) {
     return {
       name: "Shell Session",
@@ -29500,7 +29505,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/sql.js
+  // node_modules/highlight.js/es/languages/sql.js
   function sql(hljs) {
     const regex = hljs.regex;
     const COMMENT_MODE = hljs.COMMENT("--", "$");
@@ -30143,7 +30148,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/swift.js
+  // node_modules/highlight.js/es/languages/swift.js
   function source(re) {
     if (!re) return null;
     if (typeof re === "string") return re;
@@ -31018,7 +31023,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/typescript.js
+  // node_modules/highlight.js/es/languages/typescript.js
   var IDENT_RE2 = "[A-Za-z$_][0-9A-Za-z$_]*";
   var KEYWORDS2 = [
     "as",
@@ -31832,7 +31837,7 @@ ${text2}</tr>
     return tsLanguage;
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/xml.js
+  // node_modules/highlight.js/es/languages/xml.js
   function xml(hljs) {
     const regex = hljs.regex;
     const TAG_NAME_RE = regex.concat(/[\p{L}_]/u, regex.optional(/[\p{L}0-9_.-]*:/u), /[\p{L}0-9_.-]*/u);
@@ -32058,7 +32063,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/yaml.js
+  // node_modules/highlight.js/es/languages/yaml.js
   function yaml(hljs) {
     const LITERALS3 = "true false yes no null";
     const URI_CHARACTERS = "[\\w#;/?:@&=+$,.~*'()[\\]]+";

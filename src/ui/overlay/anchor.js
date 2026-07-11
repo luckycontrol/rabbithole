@@ -24,29 +24,34 @@ export function anchorSurface(trigger, surface, options) {
     var anchor = trigger.getBoundingClientRect(), box = surface.getBoundingClientRect(), viewport = viewportRect();
     var edge = tokenPx(surface, "--surface-edge"), gap = tokenPx(surface, "--surface-gap");
     var parts = placement.split("-"), side = parts[0], align = parts[1] || "center";
-    var vertical = side === "top" || side === "bottom";
-    var before = vertical ? anchor.top - viewport.top : anchor.left - viewport.left;
-    var after = vertical ? viewport.top + viewport.height - anchor.bottom : viewport.left + viewport.width - anchor.right;
-    var mainSize = vertical ? box.height : box.width;
-    var preferredSpace = side === "top" || side === "left" ? before : after;
-    var alternateSpace = side === "top" || side === "left" ? after : before;
-    if (preferredSpace < mainSize + gap + edge && alternateSpace > preferredSpace) {
-      side = side === "top" ? "bottom" : side === "bottom" ? "top" : side === "left" ? "right" : "left";
-    }
     var left, top;
-    if (side === "top" || side === "bottom") {
-      top = side === "bottom" ? anchor.bottom + gap : anchor.top - box.height - gap;
-      left = align === "start" ? anchor.left : align === "end" ? anchor.right - box.width : anchor.left + (anchor.width - box.width) / 2;
+    if (side === "center") {
+      left = viewport.left + (viewport.width - box.width) / 2;
+      top = viewport.top + (viewport.height - box.height) / 2;
     } else {
-      left = side === "right" ? anchor.right + gap : anchor.left - box.width - gap;
-      top = align === "start" ? anchor.top : align === "end" ? anchor.bottom - box.height : anchor.top + (anchor.height - box.height) / 2;
+      var vertical = side === "top" || side === "bottom";
+      var before = vertical ? anchor.top - viewport.top : anchor.left - viewport.left;
+      var after = vertical ? viewport.top + viewport.height - anchor.bottom : viewport.left + viewport.width - anchor.right;
+      var mainSize = vertical ? box.height : box.width;
+      var preferredSpace = side === "top" || side === "left" ? before : after;
+      var alternateSpace = side === "top" || side === "left" ? after : before;
+      if (preferredSpace < mainSize + gap + edge && alternateSpace > preferredSpace) {
+        side = side === "top" ? "bottom" : side === "bottom" ? "top" : side === "left" ? "right" : "left";
+      }
+      if (side === "top" || side === "bottom") {
+        top = side === "bottom" ? anchor.bottom + gap : anchor.top - box.height - gap;
+        left = align === "start" ? anchor.left : align === "end" ? anchor.right - box.width : anchor.left + (anchor.width - box.width) / 2;
+      } else {
+        left = side === "right" ? anchor.right + gap : anchor.left - box.width - gap;
+        top = align === "start" ? anchor.top : align === "end" ? anchor.bottom - box.height : anchor.top + (anchor.height - box.height) / 2;
+      }
     }
     left = Math.min(viewport.left + viewport.width - edge - box.width, Math.max(viewport.left + edge, left));
     top = Math.min(viewport.top + viewport.height - edge - box.height, Math.max(viewport.top + edge, top));
     if (left !== lastLeft) surface.style.left = left + "px";
     if (top !== lastTop) surface.style.top = top + "px";
     lastLeft = left; lastTop = top;
-    surface.dataset.placement = side + "-" + align;
+    surface.dataset.placement = side === "center" ? "center" : side + "-" + align;
     updating = false;
   }
   function update() { if (!disposed && !frame) frame = requestAnimationFrame(updateNow); }

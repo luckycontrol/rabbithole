@@ -22,6 +22,7 @@ export function createSettingsPopover(options) {
   let purpose = "settings";
   let readyCallback = null;
   let recoveryStatus = "";
+  let scrim = null;
   let localModels = null;
   let localDiscovery = "idle";
   let localDiscoveryMessage = "";
@@ -56,7 +57,7 @@ export function createSettingsPopover(options) {
     const currentModel = settings.answer_model || preset.answer_model;
     surface.querySelector("#settings-panel").dataset.preset = preset.id;
     host.innerHTML = `${recoveryStatus ? `<div class="settings-section settings-recovery" role="status">${escapeHtml(recoveryStatus)}</div>` : ""}
-      ${preset.model_source === "catalog" ? `<div class="settings-section model-section"><div class="settings-row"><span class="settings-label" id="model-select-label">Model</span>${comboboxMarkup({ id: "model-select", valueId: "model-select-name", labelledBy: "model-select-label", value: currentModel, label: modelDisplayName(currentModel), title: currentModel, iconHtml: chevron })}</div></div>` : `<div class="settings-section model-section local-model-section"><div class="settings-row"><span class="settings-label" id="local-model-label">Model</span>${comboboxMarkup({ id: "local-model", labelledBy: "local-model-label", value: currentModel, label: currentModel, title: currentModel, iconHtml: chevron })}</div><small class="field-hint">${escapeHtml(localDiscoveryCopy())}</small>${localDiscovery === "error" || localDiscovery === "empty" ? `<button id="local-model-retry" class="settings-text-action" type="button">Try again</button>` : ""}</div>`}
+      ${preset.model_source === "catalog" ? `<div class="settings-section model-section"><div class="settings-row"><span class="settings-label" id="model-select-label">Model</span>${comboboxMarkup({ id: "model-select", valueId: "model-select-name", labelledBy: "model-select-label", value: currentModel, label: modelDisplayName(currentModel), title: currentModel, iconHtml: chevron })}</div></div>` : `<div class="settings-section model-section local-model-section"><div class="settings-row"><span class="settings-label" id="local-model-label">Model</span>${comboboxMarkup({ id: "local-model", labelledBy: "local-model-label", value: currentModel, label: currentModel, title: currentModel, iconHtml: chevron })}</div><small class="field-hint">${escapeHtml(localDiscoveryCopy())}${localDiscovery === "error" || localDiscovery === "empty" ? ` <button id="local-model-retry" class="settings-text-action" type="button">Try again</button>` : ""}</small></div>`}
       ${preset.requires_key ? `<div class="settings-section key-section">${fieldMarkup({ id: "api-key", type: "password", label: `${preset.label} key`, value: getApiKey(settings), placeholder: apiKeyPlaceholder(settings.preset), autocomplete: "off", spellcheck: "false", toggleId: "api-key-toggle", toggleHtml: options.eyeSvg(false), labelAfterHtml: preset.id === "openrouter" ? `<a class="key-get" href="${OPENROUTER_KEYS_URL}" target="_blank" rel="noreferrer">Get a key →</a>` : "", status: { id: "api-key-status", className: "key-status idle visible", text: keyIdleWhisper(preset) } })}<label class="settings-row remember-row" for="session-only"><span class="switch-copy"><strong>Remember on this device</strong><small>Turn off on shared computers.</small></span><span class="switch" aria-hidden="true"><input id="session-only" type="checkbox" role="switch" ${settings.session_only === false ? "checked" : ""}><span class="switch-track"></span></span></label></div>` : ""}
       ${preset.id === "custom" ? `<details class="settings-advanced"><summary>Connection settings</summary><div class="settings-advanced-grid">${fieldMarkup({ id: "provider-base", label: "Endpoint", value: settings.base_url || "", placeholder: "http://localhost:11434/v1", hint: "Use an OpenAI-compatible endpoint." })}</div></details>` : ""}
       ${purpose !== "settings" || !getGenerationSetupStatus(settings).ready ? `<div class="settings-section settings-complete-section"><button id="complete-model-setup" class="web-primary" type="button">Finish setup</button></div>` : ""}`;
@@ -114,7 +115,7 @@ export function createSettingsPopover(options) {
     } catch (error) {
       if (token !== localDiscoveryToken) return;
       localModels = null; localDiscovery = "error";
-      localDiscoveryMessage = error?.message || "Couldn't reach the local model endpoint.";
+      localDiscoveryMessage = "";
     }
     renderConditionalSections();
   }
@@ -180,15 +181,13 @@ export function createSettingsPopover(options) {
     document.body.append(surface); activeTrigger.setAttribute("aria-controls", surface.id); wireProviderControl(); renderConditionalSections();
     if (activeTrigger?.id === "blank-start-setup") {
       surface.classList.add("settings-setup-surface");
-      const anchor = activeTrigger.getBoundingClientRect();
-      const styles = getComputedStyle(surface);
-      const gap = parseFloat(styles.getPropertyValue("--surface-gap")) || 0;
-      const edge = parseFloat(styles.getPropertyValue("--surface-edge")) || 0;
-      surface.style.maxHeight = `${Math.max(280, window.innerHeight - anchor.bottom - gap - edge - 1)}px`;
+      scrim = document.createElement("div");
+      scrim.className = "settings-scrim";
+      document.body.append(scrim);
     }
     const panel = surface.querySelector("#settings-panel"); if (panel.querySelector("#api-key")?.value.trim()) commitSettingsKey();
     const explicit = focusSelector ? surface.querySelector(focusSelector) : null;
-    const placement = activeTrigger?.id === "blank-start-setup" ? "bottom" : "bottom-end";
+    const placement = activeTrigger?.id === "blank-start-setup" ? "center" : "bottom-end";
     popover = openPopover({ trigger: activeTrigger, surface, placement, initialFocus: explicit || (focusKey ? surface.querySelector("#api-key") : surface), onClose: close });
     if (preset.id === "custom") void runLocalDiscovery();
   }
@@ -196,6 +195,7 @@ export function createSettingsPopover(options) {
   function close() {
     if (!surface) return;
     const old = surface; surface = null;
+    scrim?.remove(); scrim = null;
     const activePopover = popover; popover = null; activePopover?.close(); old.remove();
     activeTrigger?.removeAttribute("aria-controls"); activeTrigger?.setAttribute("aria-expanded", "false");
     readyCallback = null; options.onClose?.();
