@@ -7,6 +7,7 @@ import {
   RABBITHOLE_FILE_FORMAT_VERSION,
 } from "../core/portable-projection.js";
 import { migratePersistedHole } from "../core/schema.js";
+import { normalizeBlockIds } from "../core/blocks.js";
 import {
   extractSnapshotPayload,
   MAX_IMPORT_FILE_BYTES,
@@ -62,6 +63,7 @@ export async function importSnapshotFile(store, fileOrText) {
 
 async function persistPortableImport(store, parsed) {
   const migrated = migratePersistedHole(parsed.hole).hole;
+  for (const node of migrated.nodes) node.markdown = normalizeBlockIds(node.markdown).markdown;
   removeCredentialShapedKeys(migrated);
   const assets = await decodeAssets(parsed.assets);
   let hole = migrated;

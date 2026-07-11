@@ -122,6 +122,7 @@ export function mountVisuals(containerEl, surfaceKey){
     }
     var cache = getSurfaceCache(surfaceKey);
     var present = {};
+    var idCounts = {};
     var used = {};
     var mountable = [];
     for (var i = 0; i < placeholders.length; i++){
@@ -130,9 +131,20 @@ export function mountVisuals(containerEl, surfaceKey){
       var type = String(ph.getAttribute("data-viz") || "").toLowerCase();
       var encoded = ph.getAttribute("data-src") || "";
       if (!type || !encoded) continue;
-      var key = visualCacheKey(type, encoded);
+      var blockId = ph.getAttribute("data-block-id") || "";
+      var key = blockId ? "id\n" + blockId : visualCacheKey(type, encoded);
+      if (blockId) idCounts[blockId] = (idCounts[blockId] || 0) + 1;
       present[key] = (present[key] || 0) + 1;
-      mountable.push({ el: ph, type: type, encoded: encoded, key: key });
+      mountable.push({ el: ph, type: type, encoded: encoded, key: key, blockId: blockId });
+    }
+    for (var d = 0; d < mountable.length; d++){
+      var candidate = mountable[d];
+      if (candidate.blockId && idCounts[candidate.blockId] > 1){
+        present[candidate.key] -= 1;
+        candidate.key = visualCacheKey(candidate.type, candidate.encoded);
+        present[candidate.key] = (present[candidate.key] || 0) + 1;
+        candidate.blockId = "";
+      }
     }
     for (var m = 0; m < mountable.length; m++){
       var item = mountable[m];

@@ -30,7 +30,7 @@ import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
 import { escapeHtml } from "./utils.js";
 import { resolveMarkdownUrl } from "./base-url.js";
-import { getBlockType, listBlockTypes } from "./blocks.js";
+import { getBlockType, listBlockTypes, parseBlockInfo } from "./blocks.js";
 
 export const MARKDOWN_RENDERER_SENTINEL = "rabbithole-shared-markdown-renderer-v1";
 
@@ -197,14 +197,14 @@ function renderPendingMath() {
   return '<div class="math-pending" aria-label="Typesetting math">Typesetting math...</div>\n';
 }
 
-/** @param {unknown} lang */
-function normalizeFenceLanguage(lang) {
-  return String(lang || "").match(/\S+/)?.[0] || "";
+/** @param {string | null} id */
+function blockIdAttribute(id) {
+  return id ? ` data-block-id="${escapeHtml(id)}"` : "";
 }
 
-/** @param {string} language */
-function renderPendingVisual(language) {
-  return `<div class="viz viz-pending" data-viz="${escapeHtml(language)}" aria-label="Drawing visual">Drawing…</div>\n`;
+/** @param {string} language @param {string | null} id */
+function renderPendingVisual(language, id) {
+  return `<div class="viz viz-pending" data-viz="${escapeHtml(language)}"${blockIdAttribute(id)} aria-label="Drawing visual">Drawing…</div>\n`;
 }
 
 /** @param {string} src @param {string} marker @param {number} from */
@@ -258,24 +258,25 @@ export function createMarkdownRenderer({ encodeBase64 = defaultEncodeBase64, res
     ? new RegExp(`(?:^|\\n) {0,3}\`{3,}[ \\t]*(?:${escapedTypes.join("|")})(?=$|[ \\t\\n])`, "i")
     : null;
 
-  /** @param {string} language @param {string} source */
-  function renderVisualPlaceholder(language, source) {
+  /** @param {string} language @param {string} source @param {string | null} id */
+  function renderVisualPlaceholder(language, source, id) {
     const encoded = encodeBase64(String(source ?? ""));
-    return `<div class="viz" data-viz="${escapeHtml(language)}" data-src="${encoded}"></div>\n`;
+    return `<div class="viz" data-viz="${escapeHtml(language)}" data-src="${encoded}"${blockIdAttribute(id)}></div>\n`;
   }
 
-  /** @param {string} language @param {string} source */
-  function renderRegisteredFence(language, source) {
+  /** @param {string} language @param {string} source @param {string | null} id */
+  function renderRegisteredFence(language, source, id) {
     const descriptor = getBlockType(language);
     if (!descriptor || !registeredTypes.has(descriptor.type)) return null;
     descriptor.parse(source);
-    return renderVisualPlaceholder(descriptor.type, source);
+    return renderVisualPlaceholder(descriptor.type, source, id);
   }
 
   /** @param {{ text: string, lang?: string, escaped?: boolean }} token */
   function renderCodeFence({ text, lang, escaped }) {
-    const language = normalizeFenceLanguage(lang);
-    const registered = language ? renderRegisteredFence(language, text) : null;
+    const info = parseBlockInfo(lang);
+    const language = info.type;
+    const registered = language ? renderRegisteredFence(language, text, info.id) : null;
     if (registered !== null) return registered;
 
     const hljsLanguage = hljs.getLanguage(language) ? language : language.toLowerCase();
@@ -300,13 +301,14 @@ export function createMarkdownRenderer({ encodeBase64 = defaultEncodeBase64, res
         tokenizer(src) {
           const open = /^(?: {0,3})(`{3,})([^\n`]*)?(?:\n|$)/.exec(src);
           if (!open) return undefined;
-          const language = normalizeFenceLanguage(open[2] || "").toLowerCase();
+          const info = parseBlockInfo(open[2]);
+          const language = info.type;
           if (!registeredTypes.has(language)) return undefined;
           if (findClosingFence(src, open[1], open[0].length) !== -1) return undefined;
-          return { type: "visualFencePending", raw: src, language };
+          return { type: "visualFencePending", raw: src, language, blockId: info.id };
         },
         renderer(token) {
-          return renderPendingVisual(token.language);
+          return renderPendingVisual(token.language, token.blockId);
         },
       },
       {

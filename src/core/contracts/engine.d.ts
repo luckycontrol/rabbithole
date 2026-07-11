@@ -117,7 +117,7 @@ export interface ReduceEffects {
   deletedNodes?: HoleNode[];
 }
 export interface ReduceResult { state: HoleState; effects: ReduceEffects; }
-export interface ReduceOptions { now?: string; }
+export interface ReduceOptions { now?: string; idFactory?: () => string; }
 
 export declare function createHoleState(input?: Partial<Omit<HoleState, "nodes" | "progressRuns">> & { nodes?: Map<string, HoleNode> | HoleNode[] }): HoleState;
 export declare function holeStateToHole(state: HoleState): Omit<HoleState, "nodes" | "progressRuns"> & { nodes: HoleNode[] };

@@ -1,4 +1,5 @@
 import { createHoleState, holeStateToHole, holeStateToHydrationNodes, reduceHoleEvent } from "../../core/reducer.js";
+import { normalizeBlockIds } from "../../core/blocks.js";
 import { lineageNodesFromMap, truncate } from "../../core/model.js";
 import { extractAssetRefsFromMarkdown } from "../../core/assets.js";
 import { GenerationRun } from "../../core/generation-run.js";
@@ -559,7 +560,7 @@ export function createHoleFromMarkdown({ title, markdown, baseUrl = null } = {})
       id: rootId,
       parent_id: null,
       title: inferredTitle,
-      markdown: String(markdown || ""),
+      markdown: normalizeBlockIds(String(markdown || "")).markdown,
       base_url: baseUrl,
       base_url_source: baseUrl ? "explicit" : null,
       origin: null,

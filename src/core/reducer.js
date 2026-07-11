@@ -1,4 +1,5 @@
 import { maybeUpgradeBaseUrlFromFrontmatter, normalizeStoredBaseUrlFields } from "./base-url.js";
+import { normalizeBlockIds } from "./blocks.js";
 import {
   applyNodeUpdateFields,
   collectSubtreeIds,
@@ -89,7 +90,7 @@ export function reduceHoleEvent(state, event, options = {}) {
     case "node_progress":
       return reduceNodeProgress(state, /** @type {NodeProgressEvent} */ (event));
     case "node_answered":
-      return reduceNodeAnswered(state, /** @type {NodeAnsweredEvent} */ (event));
+      return reduceNodeAnswered(state, /** @type {NodeAnsweredEvent} */ (event), options);
     case "delete_node":
     case "node_deleted":
       return reduceNodeDeleted(state, /** @type {DeleteNodeEvent} */ (event));
@@ -161,8 +162,8 @@ function reduceNodeProgress(state, event) {
   return withState({ ...state, nodes, progressRuns }, { node_id: nodeId });
 }
 
-/** @param {HoleState} state @param {NodeAnsweredEvent} event */
-function reduceNodeAnswered(state, event) {
+/** @param {HoleState} state @param {NodeAnsweredEvent} event @param {ReduceOptions} options */
+function reduceNodeAnswered(state, event, options) {
   const nodeId = String(event.node_id || "");
   const current = state.nodes.get(nodeId) || {
     id: nodeId,
@@ -185,7 +186,7 @@ function reduceNodeAnswered(state, event) {
     ...current,
     parent_id: event.parent_id ?? current.parent_id ?? null,
     title: String(event.title ?? current.title ?? "Untitled").trim() || "Untitled",
-    markdown: String(event.markdown ?? current.markdown ?? ""),
+    markdown: normalizeBlockIds(String(event.markdown ?? current.markdown ?? ""), { idFactory: options.idFactory }).markdown,
     base_url: event.base_url ?? current.base_url ?? null,
     base_url_source: event.base_url_source ?? current.base_url_source ?? null,
     origin: event.origin ?? current.origin ?? null,

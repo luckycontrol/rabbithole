@@ -187,7 +187,7 @@ async function runMarkdownWireFixture() {
   const liveHtml = await liveRes.text();
   const liveHydration = parseHydration(liveHtml);
   assertNoContentHtml(liveHydration, "live hydration");
-  assert.equal(liveHydration.nodes[0].markdown, rootMarkdown);
+  assert.match(liveHydration.nodes[0].markdown, /```show id=[a-z0-9]{4,8}\n/);
   assert(!liveHtml.includes('<h1 id="root">Root</h1>'), "live page should not include server-rendered root markdown HTML");
 
   const requestId = "req-stage8";
@@ -244,6 +244,10 @@ async function runMarkdownWireFixture() {
   assert(answered, "node_answered event should be broadcast");
   assertNoContentHtml(answered, "node_answered");
   assertIncludes(answered.markdown, "Done.");
+  assert.match(answered.markdown, /```show id=[a-z0-9]{4,8}\n/, "completed generation mints block identity before persistence");
+  await session.flushSave();
+  const persistedAfterAnswer = await new FsStore().loadHole(session.holeId);
+  assert.equal(persistedAfterAnswer.nodes.find((node) => node.id === nodeId).markdown, answered.markdown);
 
   const reloaded = await fetch(session.url);
   const rehydration = parseHydration(await reloaded.text());
@@ -285,9 +289,26 @@ async function runMarkdownWireFixture() {
   console.log("ok stage8: markdown-only hydration/SSE, tool shapes, streaming, canonical export, and web-import round trip");
 }
 
+async function assertLegacyViewDoesNotMint() {
+  const store = new FsStore();
+  const markdown = "Legacy\n\n```show\n<div>unchanged</div>\n```\n";
+  await store.saveHole({
+    hole_id: "legacy-view-only", title: "Legacy", root_id: "root", created_at: "2026-01-01T00:00:00.000Z", view_state: null,
+    nodes: [{ id: "root", parent_id: null, title: "Legacy", markdown, base_url: null, base_url_source: null, origin: null, position: { x: 0, y: 0 }, size: null, font_scale: 1, collapsed: false, status: "answered", read: true, created_at: "2026-01-01T00:00:00.000Z", extensions: {} }],
+  });
+  const opened = await openRabbithole({ holeId: "legacy-view-only" });
+  const session = getSession(opened.session_id);
+  await fetch(session.url);
+  await session.flushSave();
+  assert.equal((await store.loadHole("legacy-view-only")).nodes[0].markdown, markdown);
+  session.close("legacy_view_done");
+  console.log("ok stage8: opening and viewing a legacy hole does not mint ids or rewrite stored markdown");
+}
+
 try {
   await runRendererGoldenFixtures();
   await runMarkdownWireFixture();
+  await assertLegacyViewDoesNotMint();
   await fs.writeFile(path.join(process.env.RABBITHOLE_DIR, "future-mcp.json"), JSON.stringify({ schema_version: 3 }));
   await assert.rejects(
     () => openRabbithole({ holeId: "future-mcp" }),

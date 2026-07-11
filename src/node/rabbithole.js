@@ -5,6 +5,7 @@ import { buildCanvasHtml } from "./html/canvas.js";
 import { createSession, getSession, getSessionByHole, closeSessionsForHole } from "./sessions.js";
 import { addAssetsToHole, defaultFsStore } from "./fs-store.js";
 import { deriveNodeBaseUrl, normalizeBaseUrl } from "../core/base-url.js";
+import { normalizeBlockIds } from "../core/blocks.js";
 
 async function resolveMarkdown({ content, filePath }) {
   if (content) return content;
@@ -27,7 +28,7 @@ export async function openRabbithole({ title, content, filePath, holeId, baseUrl
   }
 
   log(`openRabbithole: "${title}"`);
-  const markdown = await resolveMarkdown({ content, filePath });
+  const markdown = normalizeBlockIds(await resolveMarkdown({ content, filePath })).markdown;
   const base = deriveNodeBaseUrl({ markdown, explicitBaseUrl: baseUrl });
   const newHoleId = randomUUID();
   if (ingestId) await defaultFsStore.adoptStagedAssets(newHoleId, ingestId);

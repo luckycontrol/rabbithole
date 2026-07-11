@@ -35,6 +35,74 @@ export function listBlockTypes() {
   return [...blockTypes.values()];
 }
 
+export const BLOCK_ID_PATTERN = /^[a-z0-9]{4,8}$/;
+
+/** @param {unknown} info */
+export function parseBlockInfo(info) {
+  const parts = String(info || "").trim().split(/\s+/).filter(Boolean);
+  const type = normalizedType(parts[0]);
+  let id = null;
+  for (let i = 1; i < parts.length; i += 1) {
+    const match = /^id=([^\s]+)$/i.exec(parts[i]);
+    if (match && BLOCK_ID_PATTERN.test(match[1])) id = match[1];
+  }
+  return { type, id };
+}
+
+function defaultBlockIdFactory() {
+  const bytes = new Uint8Array(5);
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => (byte % 36).toString(36)).join("");
+}
+
+/**
+ * Add durable ids to registered fenced blocks and canonicalize registered
+ * opener info strings. Every byte outside an affected opener is preserved.
+ *
+ * @param {string} markdown
+ * @param {{ idFactory?: () => string }} [options]
+ */
+export function normalizeBlockIds(markdown, { idFactory = defaultBlockIdFactory } = {}) {
+  const source = String(markdown ?? "");
+  const lines = source.match(/[^\r\n]*(?:\r\n|\n|\r|$)/g) || [];
+  let active = null;
+  let changed = false;
+  const output = [];
+  for (const wholeLine of lines) {
+    if (!wholeLine) continue;
+    const ending = wholeLine.endsWith("\r\n") ? "\r\n" : wholeLine.endsWith("\n") ? "\n" : wholeLine.endsWith("\r") ? "\r" : "";
+    const line = ending ? wholeLine.slice(0, -ending.length) : wholeLine;
+    if (active) {
+      const close = /^( {0,3})(`{3,}|~{3,})[ \t]*$/.exec(line);
+      if (close && close[2][0] === active.char && close[2].length >= active.width) active = null;
+      output.push(wholeLine);
+      continue;
+    }
+    const open = /^( {0,3})(`{3,}|~{3,})([^\r\n]*)$/.exec(line);
+    if (!open) {
+      output.push(wholeLine);
+      continue;
+    }
+    const marker = open[2];
+    const info = open[3].trim();
+    active = { char: marker[0], width: marker.length };
+    const parsed = parseBlockInfo(info);
+    if (!getBlockType(parsed.type)) {
+      output.push(wholeLine);
+      continue;
+    }
+    let id = parsed.id;
+    if (!id) {
+      id = String(idFactory());
+      if (!BLOCK_ID_PATTERN.test(id)) throw new Error(`Block id factory returned invalid id ${JSON.stringify(id)}`);
+    }
+    const normalized = `${open[1]}${marker}${parsed.type} id=${id}${ending}`;
+    changed ||= normalized !== wholeLine;
+    output.push(normalized);
+  }
+  return { markdown: output.join(""), changed };
+}
+
 registerBlockType({
   type: "show",
   version: 1,

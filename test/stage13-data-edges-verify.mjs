@@ -247,6 +247,26 @@ const snapshot = (payload, before = "", after = "") =>
   await assert.rejects(async () => importSnapshotFile(await newStore(), `${SNAPSHOT_PAYLOAD_OPEN}{ nope${SNAPSHOT_PAYLOAD_CLOSE}`), /snapshot payload must be valid JSON/);
   await assert.rejects(async () => importSnapshotFile(await newStore(), '<script id="rabbithole-portable" type="application/vnd.rabbithole+json">{}</script>'), /payload element is malformed/);
 
+  const idlessMarkdown = "```show\n<div>durable</div>\n```";
+  const identityStore = await newStore();
+  const firstImport = await importRabbitholeFile(identityStore, portable(validHole({
+    hole_id: "block-identity-portable",
+    nodes: [validNode({ markdown: idlessMarkdown })],
+  })));
+  const firstSaved = await identityStore.loadHole(firstImport.hole_id);
+  assert.match(firstSaved.nodes[0].markdown, /^```show id=[a-z0-9]{4,8}\n/);
+  const firstId = /id=([a-z0-9]{4,8})/.exec(firstSaved.nodes[0].markdown)[1];
+  const reimport = await importRabbitholeFile(identityStore, portable(firstSaved));
+  const reimported = await identityStore.loadHole(reimport.hole_id);
+  assert.equal(/id=([a-z0-9]{4,8})/.exec(reimported.nodes[0].markdown)[1], firstId);
+
+  const snapshotImport = await importSnapshotFile(identityStore, snapshot(portable(validHole({
+    hole_id: "block-identity-snapshot",
+    nodes: [validNode({ markdown: idlessMarkdown })],
+  }))));
+  assert.match((await identityStore.loadHole(snapshotImport.hole_id)).nodes[0].markdown, /^```show id=[a-z0-9]{4,8}\n/);
+  console.log("ok stage13: portable and snapshot imports mint durable block ids and canonical re-import preserves them");
+
   const storage = new Map();
   const previousWindow = globalThis.window;
   const previousLocalStorage = globalThis.localStorage;

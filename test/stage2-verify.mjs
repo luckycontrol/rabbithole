@@ -6,10 +6,10 @@ import path from "node:path";
 import { TextDecoder } from "node:util";
 import { encodeBase64Utf8, renderMarkdownToHtml } from "../src/core/markdown.js";
 import { createMarkdownRenderer } from "../src/core/markdown-renderer.js";
-import { getBlockType, listBlockTypes, registerBlockType } from "../src/core/blocks.js";
+import { getBlockType, listBlockTypes, normalizeBlockIds, registerBlockType } from "../src/core/blocks.js";
 import { buildCanvasHtml } from "../src/node/html/canvas.js";
 import { getDompurifyScript } from "../src/node/html/built-assets.js";
-import { mountVisuals, registerBlockMount } from "../src/ui/visuals.js";
+import { mountVisuals, registerBlockMount, visualSurfaceCaches } from "../src/ui/visuals.js";
 
 function count(haystack, needle) {
   return haystack.split(needle).length - 1;
@@ -32,9 +32,14 @@ async function runMarkdownFixtures() {
   assert.equal(decodeDataSrc(showHtml), showBody);
   assert(!showHtml.includes("&lt;style&gt;"), "recognized show fence should not render as escaped code");
 
-  const pendingShow = await renderMarkdownToHtml(["Intro.", "", "```show", "<div>half"].join("\n"));
+  const identified = await renderMarkdownToHtml(["```show extra=yes id=b7ka2", showBody, "```"].join("\n"));
+  assert(identified.includes('data-block-id="b7ka2"'));
+  assert.equal(decodeDataSrc(identified), showBody, "block identity must not alter extracted source");
+
+  const pendingShow = await renderMarkdownToHtml(["Intro.", "", "```show extra=yes id=b7ka2", "<div>half"].join("\n"));
   assert(pendingShow.includes('class="viz viz-pending"'));
   assert(pendingShow.includes('data-viz="show"'));
+  assert(pendingShow.includes('data-block-id="b7ka2"'));
   assert(pendingShow.includes("Drawing…"));
   assert(!pendingShow.includes("```show"));
   assert(!pendingShow.includes("<div>half"));
@@ -47,7 +52,22 @@ async function runMarkdownFixtures() {
   assert(rawHtml.includes("&lt;section onclick=&quot;alert(1)&quot;&gt;raw&lt;/section&gt;"));
   assert(!rawHtml.includes("<section"));
 
-  console.log("ok markdown: visual placeholders, pending states, raw HTML escaping");
+  console.log("ok markdown: visual placeholders carry durable ids through settled/pending rendering and source extraction");
+}
+
+function runBlockIdNormalization() {
+  const source = [
+    "Before  ", "", "` ```show `", "", "```javascript", "```show", "inside", "```", "", "```show", "one", "```",
+    "", "~~~show note=yes id=d9mc4", "two", "~~~", "", "After",
+  ].join("\n");
+  const result = normalizeBlockIds(source, { idFactory: () => "b7ka2" });
+  assert.equal(result.changed, true);
+  assert(result.markdown.includes("```show id=b7ka2\none\n```"));
+  assert(result.markdown.includes("~~~show id=d9mc4\ntwo\n~~~"));
+  assert(result.markdown.includes("```javascript\n```show\ninside\n```"));
+  assert(result.markdown.includes("` ```show `"));
+  assert.deepEqual(normalizeBlockIds(result.markdown, { idFactory: () => "c8lb3" }), { markdown: result.markdown, changed: false });
+  console.log("ok blocks: persist normalization is registered-only, byte-preserving, deterministic, and idempotent");
 }
 
 function runBlockRegistryContract() {
@@ -280,8 +300,8 @@ function findShadowContent(mounted) {
 async function runClientMountSimulation() {
   const harness = createVisualHarness();
   const body = '<div class="box" onclick="bad()">Identity</div>';
-  const firstHtml = await renderMarkdownToHtml(["Intro.", "", "```show", body, "```"].join("\n"));
-  const secondHtml = await renderMarkdownToHtml(["Intro updated.", "", "```show", body, "```", "", "More prose."].join("\n"));
+  const firstHtml = await renderMarkdownToHtml(["Intro.", "", "```show id=b7ka2", body, "```"].join("\n"));
+  const secondHtml = await renderMarkdownToHtml(["Intro updated.", "", "```show id=b7ka2", body, "```", "", "More prose."].join("\n"));
   const container = harness.document.createElement("div");
 
   container.innerHTML = firstHtml;
@@ -294,6 +314,25 @@ async function runClientMountSimulation() {
   const second = findMounted(container);
   assert.strictEqual(second, first, "same content key on same surface should reuse the mounted element");
   assert.equal(second.__marker.preserved, true);
+
+  const duplicateSource = "<div>same</div>";
+  const pairHtml = await renderMarkdownToHtml(["```show id=c8lb3", duplicateSource, "```", "", "```show id=d9mc4", duplicateSource, "```"].join("\n"));
+  container.innerHTML = pairHtml;
+  harness.mountVisuals(container, "reader:stable-pair");
+  const pair = container.childNodes.filter((node) => node.classList?.contains("viz-mounted"));
+  pair[0].__identity = "first";
+  pair[1].__identity = "second";
+  const insertedHtml = await renderMarkdownToHtml(["```show id=e0nd5", duplicateSource, "```", "", "```show id=c8lb3", duplicateSource, "```", "", "```show id=d9mc4", duplicateSource, "```"].join("\n"));
+  container.innerHTML = insertedHtml;
+  harness.mountVisuals(container, "reader:stable-pair");
+  const inserted = container.childNodes.filter((node) => node.classList?.contains("viz-mounted"));
+  assert.equal(inserted[1].__identity, "first");
+  assert.equal(inserted[2].__identity, "second");
+
+  const duplicateIdHtml = await renderMarkdownToHtml(["```show id=f1pe6", "<div>one</div>", "```", "", "```show id=f1pe6", "<div>two</div>", "```"].join("\n"));
+  container.innerHTML = duplicateIdHtml;
+  harness.mountVisuals(container, "reader:duplicate-id");
+  assert.equal(Object.hasOwn(visualSurfaceCaches["reader:duplicate-id"], "id\nf1pe6"), false);
 
   const pendingHtml = await renderMarkdownToHtml(["Intro.", "", "```show", body].join("\n"));
   container.innerHTML = pendingHtml;
@@ -338,7 +377,7 @@ async function runClientMountSimulation() {
   assert(!hostileMountedHtml.includes("<script"), "script tags should still be stripped");
   assert(!hostileMountedHtml.includes("onclick"), "event handler attributes should still be stripped");
 
-  console.log("ok client: mount cache reuses identity, prunes absent keys, sanitizer config, leading styles");
+  console.log("ok client: id-keyed mounts survive prose edits and duplicate insertion; duplicate ids fall back safely");
 }
 
 function runFrameworkSanitization() {
@@ -380,6 +419,7 @@ async function assertPageAssembly() {
   console.log("ok page assembly: DOMPurify inline once and assembled script parses");
 }
 
+runBlockIdNormalization();
 runBlockRegistryContract();
 runDerivedFenceRecognition();
 await runMarkdownFixtures();

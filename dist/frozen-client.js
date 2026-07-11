@@ -2457,6 +2457,17 @@ var RabbitholeFrozenClient = (() => {
   function listBlockTypes() {
     return [...blockTypes.values()];
   }
+  var BLOCK_ID_PATTERN = /^[a-z0-9]{4,8}$/;
+  function parseBlockInfo(info) {
+    const parts = String(info || "").trim().split(/\s+/).filter(Boolean);
+    const type = normalizedType(parts[0]);
+    let id = null;
+    for (let i2 = 1; i2 < parts.length; i2 += 1) {
+      const match = /^id=([^\s]+)$/i.exec(parts[i2]);
+      if (match && BLOCK_ID_PATTERN.test(match[1])) id = match[1];
+    }
+    return { type, id };
+  }
   registerBlockType({
     type: "show",
     version: 1,
@@ -2581,6 +2592,7 @@ var RabbitholeFrozenClient = (() => {
     }
     var cache = getSurfaceCache(surfaceKey);
     var present = {};
+    var idCounts = {};
     var used = {};
     var mountable = [];
     for (var i2 = 0; i2 < placeholders.length; i2++) {
@@ -2589,9 +2601,20 @@ var RabbitholeFrozenClient = (() => {
       var type = String(ph.getAttribute("data-viz") || "").toLowerCase();
       var encoded = ph.getAttribute("data-src") || "";
       if (!type || !encoded) continue;
-      var key = visualCacheKey(type, encoded);
+      var blockId = ph.getAttribute("data-block-id") || "";
+      var key = blockId ? "id\n" + blockId : visualCacheKey(type, encoded);
+      if (blockId) idCounts[blockId] = (idCounts[blockId] || 0) + 1;
       present[key] = (present[key] || 0) + 1;
-      mountable.push({ el: ph, type, encoded, key });
+      mountable.push({ el: ph, type, encoded, key, blockId });
+    }
+    for (var d = 0; d < mountable.length; d++) {
+      var candidate = mountable[d];
+      if (candidate.blockId && idCounts[candidate.blockId] > 1) {
+        present[candidate.key] -= 1;
+        candidate.key = visualCacheKey(candidate.type, candidate.encoded);
+        present[candidate.key] = (present[candidate.key] || 0) + 1;
+        candidate.blockId = "";
+      }
     }
     for (var m = 0; m < mountable.length; m++) {
       var item = mountable[m];
@@ -31550,12 +31573,11 @@ ${text2}</tr>
   function renderPendingMath() {
     return '<div class="math-pending" aria-label="Typesetting math">Typesetting math...</div>\n';
   }
-  function normalizeFenceLanguage(lang) {
-    var _a2;
-    return ((_a2 = String(lang || "").match(/\S+/)) == null ? void 0 : _a2[0]) || "";
+  function blockIdAttribute(id) {
+    return id ? ` data-block-id="${escapeHtml(id)}"` : "";
   }
-  function renderPendingVisual(language) {
-    return `<div class="viz viz-pending" data-viz="${escapeHtml(language)}" aria-label="Drawing visual">Drawing\u2026</div>
+  function renderPendingVisual(language, id) {
+    return `<div class="viz viz-pending" data-viz="${escapeHtml(language)}"${blockIdAttribute(id)} aria-label="Drawing visual">Drawing\u2026</div>
 `;
   }
   function findClosingFence(src, marker, from) {
@@ -31595,20 +31617,21 @@ ${text2}</tr>
     const registeredTypes = new Set(listBlockTypes().map(({ type }) => type));
     const escapedTypes = [...registeredTypes].map((type) => type.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
     const visualFenceStart = escapedTypes.length ? new RegExp(`(?:^|\\n) {0,3}\`{3,}[ \\t]*(?:${escapedTypes.join("|")})(?=$|[ \\t\\n])`, "i") : null;
-    function renderVisualPlaceholder(language, source2) {
+    function renderVisualPlaceholder(language, source2, id) {
       const encoded = encodeBase64(String(source2 != null ? source2 : ""));
-      return `<div class="viz" data-viz="${escapeHtml(language)}" data-src="${encoded}"></div>
+      return `<div class="viz" data-viz="${escapeHtml(language)}" data-src="${encoded}"${blockIdAttribute(id)}></div>
 `;
     }
-    function renderRegisteredFence(language, source2) {
+    function renderRegisteredFence(language, source2, id) {
       const descriptor = getBlockType(language);
       if (!descriptor || !registeredTypes.has(descriptor.type)) return null;
       descriptor.parse(source2);
-      return renderVisualPlaceholder(descriptor.type, source2);
+      return renderVisualPlaceholder(descriptor.type, source2, id);
     }
     function renderCodeFence({ text: text2, lang, escaped }) {
-      const language = normalizeFenceLanguage(lang);
-      const registered = language ? renderRegisteredFence(language, text2) : null;
+      const info = parseBlockInfo(lang);
+      const language = info.type;
+      const registered = language ? renderRegisteredFence(language, text2, info.id) : null;
       if (registered !== null) return registered;
       const hljsLanguage = core_default.getLanguage(language) ? language : language.toLowerCase();
       if (!language || !core_default.getLanguage(hljsLanguage)) return renderPlainCode(text2, language, escaped);
@@ -31630,13 +31653,14 @@ ${text2}</tr>
           tokenizer(src) {
             const open2 = /^(?: {0,3})(`{3,})([^\n`]*)?(?:\n|$)/.exec(src);
             if (!open2) return void 0;
-            const language = normalizeFenceLanguage(open2[2] || "").toLowerCase();
+            const info = parseBlockInfo(open2[2]);
+            const language = info.type;
             if (!registeredTypes.has(language)) return void 0;
             if (findClosingFence(src, open2[1], open2[0].length) !== -1) return void 0;
-            return { type: "visualFencePending", raw: src, language };
+            return { type: "visualFencePending", raw: src, language, blockId: info.id };
           },
           renderer(token) {
-            return renderPendingVisual(token.language);
+            return renderPendingVisual(token.language, token.blockId);
           }
         },
         {
