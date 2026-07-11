@@ -1,21 +1,16 @@
 import http from "node:http";
-import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { openBrowser } from "./browser.js";
 import { log, error as logError } from "../logger.js";
-import { addAssetsToHole, defaultFsStore, getAssetContentType, resolveAsset } from "../fs-store.js";
+import { addAssetsToHole, defaultFsStore } from "../fs-store.js";
 import { maybeUpgradeBaseUrlFromFrontmatter, normalizeBaseUrl } from "../../core/base-url.js";
 import { extractAssetRefsFromMarkdown } from "../../core/assets.js";
-import { createSnapshotProjection } from "../../core/snapshot-projection.js";
-import { buildSnapshotHtml } from "../../core/snapshot-html.js";
-import { CANVAS_STYLES } from "../../core/html/styles.js";
-import { getDompurifyScript, getFrozenClientBundle, getKatexCss } from "../html/built-assets.js";
-import { slugifyTitle } from "../../core/utils.js";
 import { createHoleState, holeStateToHole, holeStateToHydrationNodes, reduceHoleEvent } from "../../core/reducer.js";
 import { toPersistedHole } from "../../core/schema.js";
 import { lineageTitlesFromMap } from "../../core/model.js";
-import { buildJsonError, parseRequestBody, closeServerGracefully, CLOSE_TIMEOUT_MS } from "./http.js";
+import { buildJsonError, closeServerGracefully, CLOSE_TIMEOUT_MS } from "./http.js";
 import { writeSseEvent } from "./sse.js";
+import { handleSessionRequest } from "./session-router.js";
 import { GenerationIngress } from "./generation-ingress.js";
 import { applyPersistedBrowserEvent, assetsOrphanedByDeletion, buildNodeAnsweredEvent, createSaveChain, dispatchBrowserEvent } from "../../core/hole-host.js";
 
@@ -425,35 +420,6 @@ export class RabbitHoleSession {
     };
   }
 
-  async buildSnapshotProjection() {
-    const hole = toPersistedHole(this.toHole());
-    const referencedNames = new Set();
-    for (const node of hole.nodes) {
-      for (const name of extractAssetRefsFromMarkdown(node.markdown)) referencedNames.add(name);
-    }
-    const assets = {};
-    for (const name of [...referencedNames].sort()) {
-      assets[name] = "";
-      if (!this.assetNames.has(name)) continue;
-      try {
-        const filePath = await resolveAsset(this.holeId, name);
-        if (filePath) assets[name] = (await fs.readFile(filePath)).toString("base64");
-      } catch {}
-    }
-    return createSnapshotProjection(hole, this.viewState, assets);
-  }
-
-  async buildExportHtml() {
-    const snapshotProjection = await this.buildSnapshotProjection();
-    return buildSnapshotHtml({
-      title: snapshotProjection.hole.title || "Rabbithole",
-      stylesheetText: `${CANVAS_STYLES}\n${getKatexCss()}`,
-      dompurifySource: getDompurifyScript(),
-      frozenClientSource: getFrozenClientBundle(),
-      snapshotProjection,
-    });
-  }
-
   toHole() {
     // Answered nodes persist in full. Pending nodes persist as durable asks —
     // the question and its anchor survive, but any half-streamed markdown is
@@ -738,142 +704,6 @@ export class RabbitHoleSession {
   // ---- HTTP routing -------------------------------------------------------
 
   async handleRequest(req, res) {
-    this.touch();
-    const url = new URL(req.url || "/", this.url || "http://127.0.0.1");
-    const assetRequestName = rawAssetRequestName(req.url);
-
-    if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
-      res.writeHead(200, {
-        "Content-Type": "text/html; charset=utf-8",
-        "Cache-Control": "no-store, no-cache, must-revalidate",
-      });
-      res.end(this.renderPage(this.buildHydration()));
-      return;
-    }
-
-    if (req.method === "GET" && assetRequestName !== undefined) {
-      await this.serveAsset(assetRequestName, res);
-      return;
-    }
-
-    if (req.method === "GET" && url.pathname === "/snapshot-hole") {
-      res.writeHead(200, {
-        "Content-Type": "application/json; charset=utf-8",
-        "Cache-Control": "no-store, no-cache, must-revalidate",
-      });
-      res.end(JSON.stringify(toPersistedHole(this.toHole())));
-      return;
-    }
-
-    // Compatibility route for saved links: emit the canonical portable snapshot.
-    if (req.method === "GET" && url.pathname === "/export") {
-      const html = await this.buildExportHtml();
-      res.writeHead(200, {
-        "Content-Type": "text/html; charset=utf-8",
-        "Content-Disposition": `attachment; filename="${exportFilename(this.title)}"`,
-        "Cache-Control": "no-store, no-cache, must-revalidate",
-      });
-      res.end(html);
-      return;
-    }
-
-    if (req.method === "GET" && url.pathname === "/health") {
-      res.writeHead(200, {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store, no-cache, must-revalidate",
-      });
-      res.end(JSON.stringify({ ok: true, attached: this.agentAttached, closed: this.closed }));
-      return;
-    }
-
-    if (req.method === "GET" && url.pathname === "/sse") {
-      res.writeHead(200, {
-        "Content-Type": "text/event-stream; charset=utf-8",
-        "Cache-Control": "no-store, no-cache, must-revalidate",
-        Connection: "keep-alive",
-      });
-      res.write("\n");
-      // Replay anything newer than the client's checkpoint: the Last-Event-ID
-      // header on reconnect, or the ?after= query (hydration's last_event_id) on
-      // the first connect, so no broadcast is lost in either gap.
-      const after = Number(req.headers["last-event-id"] || url.searchParams.get("after") || 0);
-      for (const event of this.outboundEvents) {
-        if (event.id > after) writeSseEvent(res, event);
-      }
-      this.everConnected = true;
-      this.clearDisconnectClose();
-      this.sseClients.add(res);
-      req.on("close", () => {
-        this.sseClients.delete(res);
-        // If the browser is gone (tab closed) and doesn't reconnect within the
-        // grace window, close the session instead of blocking until timeout.
-        if (this.everConnected && this.sseClients.size === 0) this.scheduleDisconnectClose();
-      });
-      return;
-    }
-
-    if (req.method === "POST" && url.pathname === "/events") {
-      try {
-        const payload = await parseRequestBody(req, res);
-        const result = await this.handleBrowserEvent(payload);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(result));
-      } catch (err) {
-        if (err?.statusCode === 413) return;
-        const status = err?.statusCode || 500;
-        res.writeHead(status, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
-      }
-      return;
-    }
-
-    res.writeHead(404, { "Content-Type": "text/plain" });
-    res.end("Not Found");
+    return handleSessionRequest(this, req, res);
   }
-
-  async serveAsset(name, res) {
-    const headers = {
-      "Cache-Control": "no-store",
-      "X-Content-Type-Options": "nosniff",
-    };
-    if (!name) {
-      res.writeHead(404, { ...headers, "Content-Type": "text/plain" });
-      res.end("Not Found");
-      return;
-    }
-
-    let filePath = null;
-    try {
-      filePath = await resolveAsset(this.holeId, name);
-    } catch {
-      filePath = null;
-    }
-    if (!filePath) {
-      res.writeHead(404, { ...headers, "Content-Type": "text/plain" });
-      res.end("Not Found");
-      return;
-    }
-
-    try {
-      const bytes = await fs.readFile(filePath);
-      res.writeHead(200, { ...headers, "Content-Type": getAssetContentType(name) });
-      res.end(bytes);
-    } catch {
-      res.writeHead(404, { ...headers, "Content-Type": "text/plain" });
-      res.end("Not Found");
-    }
-  }
-}
-
-function rawAssetRequestName(reqUrl) {
-  const rawPath = String(reqUrl || "").split(/[?#]/, 1)[0];
-  if (!rawPath.startsWith("/assets/")) return undefined;
-  const name = rawPath.slice("/assets/".length);
-  if (!name || /[\/\\%]/.test(name)) return null;
-  return name;
-}
-
-// Download filename for /export — slug of the title, safe for a header.
-function exportFilename(title) {
-  return `rabbithole-${slugifyTitle(title, { fallback: "export" })}.html`;
 }
