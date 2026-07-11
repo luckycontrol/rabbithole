@@ -116,15 +116,17 @@ async function buildWebApp(assetDir) {
     fs.readFile(path.join(assetDir, "frozen-client.js"), "utf8"),
     fs.readFile(path.join(rootDir, "src/web/styles.css"), "utf8"),
   ]);
+  const frozenStyles = `${CANVAS_STYLES}\n${katexCss}`;
 
-  await fs.writeFile(path.join(webDist, "styles.css"), `${CANVAS_STYLES}\n${katexCss}\n${webCss}`, "utf8");
+  await fs.writeFile(path.join(webDist, "styles.css"), `${frozenStyles}\n${webCss}`, "utf8");
   await fs.writeFile(path.join(webDist, "dompurify.js"), dompurify, "utf8");
   await fs.writeFile(path.join(webDist, "favicon.svg"), buildFaviconSvg(), "utf8");
   await copyPdfAssets(webDist);
   await fs.writeFile(
     path.join(webDist, "frozen-source.js"),
     `window.__RABBITHOLE_FROZEN_CLIENT__=${safeJsString(frozenClient)};\n` +
-      `window.__RABBITHOLE_DOMPURIFY_SOURCE__=${safeJsString(dompurify)};\n`,
+      `window.__RABBITHOLE_DOMPURIFY_SOURCE__=${safeJsString(dompurify)};\n` +
+      `window.__RABBITHOLE_FROZEN_STYLES__=${safeJsString(frozenStyles)};\n`,
     "utf8"
   );
   await fs.writeFile(path.join(webDist, "index.html"), buildWebIndexHtml(proxyConfig), "utf8");

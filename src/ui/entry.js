@@ -41,8 +41,10 @@ import {
   setTransportAdapter
 } from "./transport-status.js";
 import { initChrome } from "./chrome-init.js";
+import { setSnapshotHooks } from "./snapshot.js";
 
 export function startRabbithole(hydration, options) {
+  setSnapshotHooks(options && options.snapshotHooks);
   setTransportAdapter(options && options.transport);
   initCore(hydration);
   initVisuals();

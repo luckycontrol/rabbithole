@@ -1,0 +1,56 @@
+Implemented Phase 7 Slice 3. No commit created and `test/budgets.json` was untouched.
+
+Files changed:
+
+- `build.mjs` — builds the canonical frozen stylesheet once and emits `__RABBITHOLE_FROZEN_STYLES__`.
+- `src/ui/snapshot.js` — requires an explicit stylesheet hook; removes document stylesheet scraping.
+- `src/ui/entry.js` — accepts host-provided snapshot hooks.
+- `src/web/app.js` — supplies the build-emitted frozen stylesheet.
+- `src/node/html/canvas.js` — supplies its canonical first inline `<style>` text without embedding CSS twice.
+- `dist/client.js`, `dist/frozen-client.js` — rebuilt tracked bundles.
+- `test/stage10-web-verify.mjs` — asserts canvas and KaTeX CSS are present and `.web-rail` CSS is absent.
+- `test/stage15-security-migrations-verify.mjs` — validates frozen styling without test-injected CSS.
+- `test/MANIFEST.md` — updates the frozen-style contract and arithmetic.
+
+Host sourcing:
+
+- Web: `CANVAS_STYLES + self-contained KaTeX CSS` is composed by `build.mjs`, emitted as `window.__RABBITHOLE_FROZEN_STYLES__`, and supplied through `getStylesheetText`.
+- MCP: the host-owned hook reads the live page’s first inline style, which is its existing canonical `CANVAS_STYLES + KaTeX` composition.
+
+Deletion proof:
+
+- `rg "collectStyleText"` returns zero matches.
+- The `document.styleSheets/cssRules` scraping path and cross-origin fallback were removed.
+
+Manifest arithmetic remains unchanged because the existing C2 case was extended:
+
+`50 + 154 + 11 + 2 + 0 = 217`
+
+Gauges from the full suite:
+
+- `bundle_client_bytes`: 1,085,110 ≤ 1,103,200.35
+- `bundle_frozen_client_bytes`: 1,072,594 ≤ 1,088,745
+- `snapshot_math_bytes`: 1,540,869 ≤ 1,632,229.2
+- `snapshot_assets_bytes`: 1,540,900 ≤ 1,632,341.55
+- `snapshot_math_build_ms`: 0.16 ≤ 25 ms
+- `snapshot_assets_build_ms`: 0.44 ≤ 25 ms
+- `cold_open_ms`: 63 ≤ 189.3 ms
+- `stream_dom_batches`: 6 ≤ 12
+- `stream_update_ms`: 102.1 ≤ 308.7 ms
+- `save_window_ms`: 57.9 ≤ 104 ms
+
+Exact snapshot deltas versus recorded pre-slice baselines:
+
+- Math: 1,554,504 → 1,540,869, down 13,635 bytes.
+- Assets: 1,554,611 → 1,540,900, down 13,711 bytes.
+
+Verification passed:
+
+- `check:types`
+- `check:purity`
+- `check:dist`
+- Stage 8 MCP canvas/export HTML
+- Stage 10 web
+- Stage 15 security/migrations
+- Stage 16 budgets
+- Full `npm test` once, all stages passed.

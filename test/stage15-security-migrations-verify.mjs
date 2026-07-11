@@ -5,7 +5,6 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
-import { CANVAS_STYLES } from "../src/core/html/styles.js";
 
 const ROOT = path.resolve(new URL("..", import.meta.url).pathname);
 const WEB_DIST = path.join(ROOT, "web/dist");
@@ -97,10 +96,6 @@ async function verifyFrozen(snapshot) {
   await page.waitForTimeout(250);
   assert.equal(await page.locator("#toolbar button").count(), 12, "frozen snapshots should render the canvas toolbar buttons");
   assert.equal(await page.locator("#reader-top button").count(), 7, "frozen snapshots should render the reader toolbar buttons");
-  // Web exports intentionally retain the existing unstyled-snapshot C4 tripwire.
-  // Apply the same canvas stylesheet embedded by the canonical snapshot host so
-  // this probe covers the frozen control-suppression contract independently.
-  await page.addStyleTag({ content: CANVAS_STYLES });
   assert.equal(await page.locator("#r-done").isVisible(), false, "frozen snapshots should suppress Done");
   assert.equal(await page.locator("#act-reader").isVisible(), false, "frozen snapshots should suppress reader activity");
   assert.equal(await page.locator("#act-canvas").isVisible(), false, "frozen snapshots should suppress canvas activity");

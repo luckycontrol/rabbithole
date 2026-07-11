@@ -586,6 +586,7 @@ async function startHole(hole, { replace = false } = {}) {
     },
     getFrozenClientSource: () => window.__RABBITHOLE_FROZEN_CLIENT__ || "",
     getDompurifySource: () => window.__RABBITHOLE_DOMPURIFY_SOURCE__ || "",
+    getStylesheetText: () => window.__RABBITHOLE_FROZEN_STYLES__ || "",
   });
 
   const settings = loadSettings();

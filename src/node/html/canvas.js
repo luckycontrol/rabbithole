@@ -40,7 +40,15 @@ ${getDompurifyScript()}
 	  "use strict";
 	  var hydration = ${hydrationJson};
 	${liveSnapshotSource}${clientBundle}
-	  ${clientGlobal}.startRabbithole(hydration);
+	  ${clientGlobal}.startRabbithole(hydration, {
+	    snapshotHooks: {
+	      getFrozenClientSource: function(){ return window.__RABBITHOLE_FROZEN_CLIENT__ || ""; },
+	      getStylesheetText: function(){
+	        var style = document.head && document.head.querySelector("style:first-of-type");
+	        return style ? style.textContent : "";
+	      }
+	    }
+	  });
 	})();
 </script>
 </body>

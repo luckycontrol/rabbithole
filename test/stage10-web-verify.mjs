@@ -967,6 +967,9 @@ async function verifyCanvasBranching() {
   assert.equal(await page.evaluate(() => document.activeElement?.id), "t-share", "closing Share should restore focus to its trigger");
 
   const frozenHtml = await page.evaluate(() => window.__rabbitholeTest.exportSnapshot());
+  assert(frozenHtml.includes("#toolbar"), "web-exported snapshots should embed durable canvas styling");
+  assert(frozenHtml.includes(".katex"), "web-exported snapshots should embed self-contained KaTeX styling");
+  assert(!frozenHtml.includes(".web-rail"), "web-exported snapshots must exclude web-only rail styling");
   const frozenPage = await context.newPage();
   await frozenPage.setContent(frozenHtml, { waitUntil: "load" });
   const frozenStyles = await frozenPage.evaluate(() => ({

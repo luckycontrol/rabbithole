@@ -5372,8 +5372,12 @@ var RabbitholeClient = (() => {
     fetchAssetBinary: null,
     getSnapshotHole: null,
     getFrozenClientSource: null,
-    getDompurifySource: null
+    getDompurifySource: null,
+    getStylesheetText: null
   };
+  function setSnapshotHooks(hooks) {
+    snapshotHooks = Object.assign({}, snapshotHooks, hooks || {});
+  }
   function escapeHtml2(str) {
     return String(str != null ? str : "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
@@ -5434,24 +5438,10 @@ var RabbitholeClient = (() => {
     var hole = await snapshotHooks.getSnapshotHole();
     return createSnapshotProjection(hole, viewState, await buildAssetData(hole.nodes));
   }
-  function collectStyleText() {
-    var _a2;
-    var chunks = [];
-    var sheets = document.styleSheets || [];
-    for (var i2 = 0; i2 < sheets.length; i2++) {
-      try {
-        var rules = sheets[i2].cssRules || [];
-        var ruleText = [];
-        for (var j = 0; j < rules.length; j++) ruleText.push(rules[j].cssText);
-        if (ruleText.length) chunks.push(ruleText.join("\n"));
-      } catch (_) {
-      }
-    }
-    return chunks.join("\n") || ((_a2 = document.querySelector("style")) == null ? void 0 : _a2.textContent) || "";
-  }
   function buildSnapshotHtml(snapshotProjection) {
     var title = snapshotProjection && snapshotProjection.hole && snapshotProjection.hole.title || "Rabbithole";
-    var styleText = collectStyleText();
+    var styleText = typeof snapshotHooks.getStylesheetText === "function" ? snapshotHooks.getStylesheetText() : "";
+    if (!styleText) throw new Error("Frozen stylesheet is unavailable");
     var dompurifySource = extractDompurifySource();
     var frozenClient = typeof snapshotHooks.getFrozenClientSource === "function" ? snapshotHooks.getFrozenClientSource() : window.__RABBITHOLE_FROZEN_CLIENT__;
     if (!frozenClient) throw new Error("Frozen client bundle is unavailable");
@@ -32833,6 +32823,7 @@ ${text2}</tr>
 
   // src/ui/entry.js
   function startRabbithole(hydration2, options2) {
+    setSnapshotHooks(options2 && options2.snapshotHooks);
     setTransportAdapter(options2 && options2.transport);
     initCore(hydration2);
     initVisuals();
