@@ -189,23 +189,23 @@ async function verifyPreferenceFixtures() {
       name: "removed Anthropic-direct provider",
       seed: { settings: { preset: "anthropic", base_url: "https://api.anthropic.com/v1", model: "claude-sonnet-5", session_only: false }, key: SECRET, theme: "dark", last: "anthropic-hole" },
       selected: "openrouter",
-      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5", session_only: false }, expectedKeys: { openrouter: SECRET },
+      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5", transcribe_model: "google/gemini-2.5-flash", session_only: false }, expectedKeys: { openrouter: SECRET },
     },
     {
       name: "removed OpenAI provider",
       seed: { settings: { preset: "openai", base_url: "https://api.openai.com/v1", model: "gpt-5", session_only: false }, key: SECRET, theme: "light", last: "openai-hole" },
       selected: "openrouter",
-      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5", session_only: false }, expectedKeys: { openrouter: SECRET },
+      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5", transcribe_model: "google/gemini-2.5-flash", session_only: false }, expectedKeys: { openrouter: SECRET },
     },
     {
       name: "malformed settings JSON",
       seed: { rawSettings: "{not-json", theme: "dark", last: "malformed-settings-hole" }, selected: "openrouter",
-      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5", session_only: false }, expectedKeys: null,
+      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5", transcribe_model: "google/gemini-2.5-flash", session_only: false }, expectedKeys: null,
     },
     {
       name: "array credential map",
       seed: { settings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5", session_only: false }, rawKeys: "[]", theme: "light", last: "malformed-keys-hole" }, selected: "openrouter",
-      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5", session_only: false }, expectedKeys: null,
+      expectedSettings: { preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-5", transcribe_model: "google/gemini-2.5-flash", session_only: false }, expectedKeys: null,
     },
   ];
   for (const fixture of fixtures) {
@@ -272,6 +272,7 @@ async function assertPreferenceState(page, fixture) {
   assert.equal(await page.getAttribute("html", "data-theme"), fixture.seed.theme, `${fixture.name}: theme survives`);
   assert.equal(state["rh-last-hole"], fixture.seed.last, `${fixture.name}: last-hole preference survives`);
   const expectedSettings = { ...fixture.expectedSettings };
+  expectedSettings.transcribe_model ||= fixture.expectedSettings.preset === "custom" ? "llama3.2" : "google/gemini-2.5-flash";
   if (fixture.expectedSettings.preset === "custom" || fixture.expectedKeys?.openrouter) {
     expectedSettings.generation_setup = {
       version: 1,

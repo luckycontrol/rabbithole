@@ -169,7 +169,7 @@ function inAsk(e){ return e.target && e.target.closest && e.target.closest("#ask
 export function showAskFromSelection(options){
     var parentId = options && options.parentId;
     var parent = parentId && nodes[parentId];
-    if (!parent || parent.status === "pending") return false;
+    if (!parent || parent.status === "pending" || parent.extensions?.pdf?.converting) return false;
     if (closed){
       flashHint(frozen ? "This is a read-only snapshot — asking needs the live Rabbithole."
         : "Session ended — reopen this Rabbithole from your terminal to keep asking.");
@@ -294,7 +294,7 @@ export function updateComposerState(){
     // are answered when it returns. Only a closed session (server gone) does.
     applyComposerState(
       { text: composerText, send: composerSend, wrap: composerInner },
-      { phase: sessionPhase(), pending: !current || current.status === "pending" },
+      { phase: sessionPhase(), pending: !current || current.status === "pending" || !!current.extensions?.pdf?.converting },
       { frozen: "Read-only snapshot — open the live Rabbithole to keep asking",
         closed: "Session ended — reopen this Rabbithole from your terminal; saved questions are answered there",
         pending: "This answer is still being written…",
@@ -309,6 +309,7 @@ export function updateComposerState(){
   // open in the reader — otherwise it appears on the next open. A synthesis ask
   // rides the same path but renders as a distinct branch node, not a chat turn.
 export function sendFollowup(parent, question, lens, synthesis){
+    if (parent?.extensions?.pdf?.converting) return null;
     var requestId = uuid(), childId = uuid();
     var pos = placeChild(parent, BRANCH_FOLLOWUP);
     var node = {
@@ -384,7 +385,7 @@ export function animateScroll(el, target, source){
   function submitFollowup(source){
     if (closed){ flashHint(frozen ? "This is a read-only snapshot." : "Session ended — reopen this Rabbithole from your terminal to continue."); return; }
     var parent = nodes[currentNodeId];
-    if (!parent || parent.status === "pending") return;
+    if (!parent || parent.status === "pending" || parent.extensions?.pdf?.converting) return;
     var question = composerText.value.trim();
     if (!question) return;
     sendFollowup(parent, question, null);

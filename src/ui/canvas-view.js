@@ -323,7 +323,7 @@ export function updateCardComposer(node){
     node.ncComp.classList.toggle("nc-draft", !!node.ncText.value.trim());
     applyComposerState(
       { text: node.ncText, send: node.ncSend, wrap: node.ncInner },
-      { phase: sessionPhase(), pending: node.status === "pending" },
+      { phase: sessionPhase(), pending: node.status === "pending" || !!node.extensions?.pdf?.converting },
       { frozen: "Read-only snapshot", closed: "Session ended — saved",
         pending: "Still being written…", away: "Asks are saved for the agent…",
         live: "Ask a follow-up…" }
@@ -331,7 +331,7 @@ export function updateCardComposer(node){
   }
   function submitCardFollowup(node, source){
     if (closed){ flashHint("Session ended — reopen this Rabbithole from your terminal to continue."); return; }
-    if (node.status === "pending") return;
+    if (node.status === "pending" || node.extensions?.pdf?.converting) return;
     var question = node.ncText.value.trim();
     if (!question) return;
     var kid = canvasLifecycle.hooks.sendFollowup(node, question, null);

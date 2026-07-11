@@ -610,6 +610,7 @@ async function mountHole(hole, { replace = false } = {}) {
     store,
     hole,
     brain,
+    registerAssetUrl: (name, blob) => currentAssetLease?.register(name, blob),
     onToast: (notice) => { if (currentHost === host) showToast(notice); },
     onDone: async () => {
       if (currentHost !== host) return;
@@ -890,6 +891,11 @@ async function createLiveAssetData(holeId) {
   let disposed = false;
   return {
     data,
+    register(name, blob) {
+      if (disposed) return;
+      if (data[name]) URL.revokeObjectURL(data[name]);
+      const url = URL.createObjectURL(blob); data[name] = url; urls.push(url);
+    },
     dispose() {
       if (disposed) return;
       disposed = true;

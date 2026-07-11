@@ -35,6 +35,30 @@ export function enclosedPdfLines(lines, page, rect, markdown) {
   const source = String(markdown ?? "");
   return { text: enclosed.map((line) => source.slice(line.s, line.e)).join("\n"), start: enclosed[0].s, end: enclosed[enclosed.length - 1].e };
 }
+
+const FIGURE_REF_RE = /!\[([^\]\n]*)\]\(figure:page-(\d{1,6}):([^\s)]+)\)/g;
+
+/** @param {unknown} markdown */
+export function parseFigureRefs(markdown) {
+  const source = String(markdown || ""), refs = [];
+  for (const match of source.matchAll(FIGURE_REF_RE)) {
+    const values = match[3].split(",").map(Number);
+    const rect = values.length === 4 && values.every(Number.isFinite) ? { x: values[0], y: values[1], w: values[2], h: values[3] } : null;
+    refs.push({ raw: match[0], caption: match[1], page: Number(match[2]), rect, index: match.index });
+  }
+  return refs;
+}
+
+/** @param {unknown} markdown @param {Array<any>} replacements */
+export function rewriteFigureRefs(markdown, replacements = []) {
+  let cursor = 0, output = "";
+  for (const replacement of replacements) {
+    const ref = replacement.ref || replacement;
+    output += String(markdown).slice(cursor, ref.index) + String(replacement.markdown ?? `*${ref.caption || "Figure"}*`);
+    cursor = ref.index + ref.raw.length;
+  }
+  return output + String(markdown).slice(cursor);
+}
 export const PDF_MAGIC = "%PDF";
 export const MAX_PDF_PAGE_ASSET_BYTES = 24 * 1024 * 1024;
 export const MAX_PDF_PAGES = 100;

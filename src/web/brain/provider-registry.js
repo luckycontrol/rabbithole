@@ -9,6 +9,7 @@ export const PROVIDERS = Object.freeze({
     kind: "openai-compatible",
     requires_key: true,
     model: "anthropic/claude-sonnet-5",
+    transcribe_model: "google/gemini-2.5-flash",
   }),
   custom: Object.freeze({
     id: "custom",
@@ -18,6 +19,7 @@ export const PROVIDERS = Object.freeze({
     kind: "openai-compatible",
     requires_key: false,
     model: "llama3.2",
+    transcribe_model: "llama3.2",
   }),
 });
 
@@ -36,6 +38,7 @@ export function defaultBrainSettings() {
     preset: provider.id,
     base_url: provider.base_url,
     model: provider.model,
+    transcribe_model: provider.transcribe_model,
     fetch_proxy_url: "",
     session_only: false,
   };
@@ -48,5 +51,6 @@ export function settingsForProvider(id, current = {}) {
     preset: provider.id,
     base_url: provider.base_url,
     model: provider.model,
+    transcribe_model: provider.transcribe_model,
   };
 }

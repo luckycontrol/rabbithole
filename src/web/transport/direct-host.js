@@ -6,14 +6,14 @@ import { GenerationRun } from "../../core/generation-run.js";
 import { applyPersistedBrowserEvent, assetsOrphanedByDeletion, buildNodeAnsweredEvent, createSaveChain, dispatchBrowserEvent } from "../../core/hole-host.js";
 import { randomId } from "../../core/utils.js";
 import { ProviderError, fallbackTitleForNode, normalizeProviderError } from "../brain/index.js";
-import { normalizePdfExtension } from "../../core/pdf-shared.js";
-import { cropPdfAssetToDataUrl } from "../pdf-crop.js";
+import { normalizePdfExtension, parseFigureRefs, rewriteFigureRefs } from "../../core/pdf-shared.js";
+import { cropPdfAssetToBlob, cropPdfAssetToDataUrl } from "../pdf-crop.js";
 
 const SAVE_DEBOUNCE_MS = 400;
 const WEB_ROOT_QUESTION = "web_root_question";
 
 export class DirectRabbitholeHost {
-  constructor({ store, hole, brain = null, onToast = null, onDone = null, onRestore = null, onAuthRequired = null, onRootAnswered = null, mintGenerationRunId = defaultGenerationRunId } = {}) {
+  constructor({ store, hole, brain = null, registerAssetUrl = null, onToast = null, onDone = null, onRestore = null, onAuthRequired = null, onRootAnswered = null, mintGenerationRunId = defaultGenerationRunId } = {}) {
     this.store = store;
     this.brain = brain;
     this.onEvent = null;
@@ -23,6 +23,7 @@ export class DirectRabbitholeHost {
     this.onAuthRequired = onAuthRequired;
     this.onRootAnswered = onRootAnswered;
     this.mintGenerationRunId = mintGenerationRunId;
+    this.registerAssetUrl = registerAssetUrl;
     this.state = createHoleState(hole);
     this.holeId = this.state.hole_id;
     this.title = this.state.title;
@@ -40,6 +41,10 @@ export class DirectRabbitholeHost {
     this.lastEventId = 0;
     this.disposed = false;
     this.subscriptions = new Set();
+    for (const node of this.state.nodes.values()) {
+      const pdf = normalizePdfExtension(node);
+      if (pdf?.converting) this.restorePdfConversion(node.id, pdf);
+    }
   }
 
   hydration() {
@@ -100,6 +105,8 @@ export class DirectRabbitholeHost {
           nodes_update: (event) => this.applyPersistedBrowserEvent(event),
           block_state: (event) => this.applyPersistedBrowserEvent(event),
           node_extensions_patch: (event) => this.handleExtensionsPatch(event),
+          convert_pdf: (event) => this.handleConvertPdf(event),
+          convert_cancel: (event) => this.handleConvertCancel(event),
           delete_node: (event) => this.handleDeleteNode(event),
           view_state: (event) => this.applyPersistedBrowserEvent(event),
           done: async () => { await this.flushSave(); this.onDone?.(); return { ok: true }; },
@@ -112,12 +119,79 @@ export class DirectRabbitholeHost {
   }
 
   async handleBranchRequest(payload) {
+    const parent = this.state.nodes.get(String(payload.parent_id || ""));
+    if (normalizePdfExtension(parent)?.converting) throw new Error("This PDF is being converted. Wait for conversion to finish before branching.");
     const result = this.dispatch({ ...payload, type: "branch_request" }, { now: new Date().toISOString() });
     const node = result.createdNode;
     await this.flushSave();
     this.startAnswer(node.id, { reset: false });
     return { ok: true, node_id: node.id, request_id: payload.request_id };
   }
+
+  handleConvertCancel(payload) {
+    this.abortByNode.get(String(payload.node_id || ""))?.abort();
+    return { ok: true };
+  }
+
+  handleConvertPdf(payload) {
+    const nodeId = String(payload.node_id || ""), node = this.state.nodes.get(nodeId), pdf = normalizePdfExtension(node);
+    if (!pdf) throw new Error("This node is not a native PDF.");
+    if ([...this.state.nodes.values()].some((candidate) => candidate.parent_id === nodeId)) throw new Error("Convert before branching.");
+    if (pdf.converting || this.abortByNode.has(nodeId)) throw new Error("Conversion is already running.");
+    if (!this.brain?.transcribePages) throw new Error("Set up a transcription model before converting.");
+    const controller = new AbortController(); this.abortByNode.set(nodeId, controller);
+    const original = node.markdown;
+    this.patchPdf(nodeId, { ...pdf, converting: true, converted: false, original_markdown: original });
+    queueMicrotask(() => this.runPdfConversion(nodeId, controller).catch((error) => this.failPdfConversion(nodeId, error)));
+    return { ok: true, node_id: nodeId };
+  }
+
+  async runPdfConversion(nodeId, controller) {
+    const node = this.state.nodes.get(nodeId), pdf = normalizePdfExtension(node);
+    const batches = []; for (let i = 0; i < pdf.pages.length; i += 5) batches.push(pdf.pages.slice(i, i + 5));
+    let committed = "";
+    const start = (batch, tail) => this.transcribePdfBatch(batch, tail, controller.signal);
+    let pending = batches.length ? start(batches[0], "") : Promise.resolve("");
+    for (let i = 0; i < batches.length; i++) {
+      let chunk = await pending;
+      if (controller.signal.aborted) throw new DOMException("Aborted", "AbortError");
+      pending = i + 1 < batches.length ? start(batches[i + 1], (committed + chunk).slice(-500)) : null;
+      chunk = await this.materializeWebFigures(nodeId, chunk, pdf, i);
+      committed += (committed && chunk ? "\n\n" : "") + chunk;
+      this.dispatch({ type: "node_progress", node_id: nodeId, markdown: committed });
+      this.emit({ type: "pdf_convert_progress", node_id: nodeId, markdown: committed, page_done: batches[i].at(-1).n, page_total: pdf.pages.length });
+      this.scheduleSave();
+    }
+    const current = this.state.nodes.get(nodeId);
+    this.dispatch({ ...buildNodeAnsweredEvent(current), markdown: committed });
+    this.patchPdf(nodeId, { ...normalizePdfExtension(this.state.nodes.get(nodeId)), converting: false, converted: true });
+    this.abortByNode.delete(nodeId); this.emit(buildNodeAnsweredEvent(this.state.nodes.get(nodeId))); await this.flushSave();
+  }
+
+  async transcribePdfBatch(batch, tail, signal) {
+    const pages = await Promise.all(batch.map(async (page) => ({ n: page.n, data_url: await blobDataUrl(await this.store.getAsset(this.holeId, page.asset)) })));
+    let output = ""; for await (const event of this.brain.transcribePages({ pages, tail }, signal)) if (event.type === "text") output += event.delta;
+    return output.trim();
+  }
+
+  async materializeWebFigures(nodeId, markdown, pdf, batchIndex) {
+    const replacements = []; let ordinal = 0;
+    for (const ref of parseFigureRefs(markdown)) {
+      const page = pdf.pages.find((entry) => entry.n === ref.page); let replacement = `*${ref.caption || "Figure"}*`;
+      if (page && ref.rect) try {
+        const names = await this.store.listAssets(this.holeId); if (names.length >= 200) throw new Error("asset limit");
+        const blob = await cropPdfAssetToBlob(await this.store.getAsset(this.holeId, page.asset), ref.rect);
+        const name = `fig-p${String(ref.page).padStart(3, "0")}-${batchIndex * 20 + (++ordinal)}.jpg`;
+        await this.store.putAsset(this.holeId, name, blob); this.registerAssetUrl?.(name, blob); replacement = `![${ref.caption}](asset:${name})`;
+      } catch {}
+      replacements.push({ ref, markdown: replacement });
+    }
+    return rewriteFigureRefs(markdown, replacements);
+  }
+
+  patchPdf(nodeId, value) { this.dispatch({ type: "node_extensions_patch", node_id: nodeId, namespace: "pdf", value }); this.emit({ type: "node_extensions_patch", node_id: nodeId, namespace: "pdf", value }); this.scheduleSave(); }
+  restorePdfConversion(nodeId, pdf) { this.dispatch({ type: "node_progress", node_id: nodeId, markdown: String(pdf.original_markdown ?? this.state.nodes.get(nodeId)?.markdown ?? "") }); this.patchPdf(nodeId, { ...pdf, converting: false, converted: false }); }
+  failPdfConversion(nodeId, error) { const pdf = normalizePdfExtension(this.state.nodes.get(nodeId)); if (pdf) this.restorePdfConversion(nodeId, pdf); this.abortByNode.delete(nodeId); if (error?.name !== "AbortError") this.onToast?.({ message: `PDF conversion failed: ${error?.message || error}` }); }
 
   handleExtensionsPatch(payload) {
     const result = this.applyPersistedBrowserEvent(payload);
@@ -569,6 +643,11 @@ function branchAnsweredFields(node) {
 
 function defaultGenerationRunId() {
   return randomId("generation");
+}
+
+function blobDataUrl(blob) {
+  if (!blob) throw new Error("PDF page asset is missing.");
+  return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsDataURL(blob); });
 }
 
 export function createHoleFromMarkdown({ title, markdown, baseUrl = null } = {}) {

@@ -20,3 +20,12 @@ export async function cropPdfRegionToFile({ holeId, asset, rect, requestId }) {
   surface.width = 0; surface.height = 0;
   return filePath;
 }
+
+export async function cropPdfFigureToAsset({ holeId, asset, rect, name }) {
+  const source = await resolveAsset(holeId, asset);
+  const canvas = await import("@napi-rs/canvas"); const image = await canvas.loadImage(source);
+  const plan = planPdfCrop(rect, image.width, image.height); if (!plan) throw new Error("PDF figure region is empty.");
+  const surface = canvas.createCanvas(plan.width, plan.height), context = surface.getContext("2d");
+  context.fillStyle = "white"; context.fillRect(0, 0, plan.width, plan.height); context.drawImage(image, plan.sx, plan.sy, plan.sw, plan.sh, 0, 0, plan.width, plan.height);
+  const filePath = path.join(await ensureAssetDir(holeId), name); await fs.writeFile(filePath, surface.toBuffer("image/jpeg", 85)); surface.width = 0; surface.height = 0; return filePath;
+}

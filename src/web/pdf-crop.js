@@ -16,6 +16,12 @@ export async function cropPdfAssetToDataUrl(blob, rect) {
   } finally { image.close?.(); }
 }
 
+export async function cropPdfAssetToBlob(blob, rect) {
+  const url = await cropPdfAssetToDataUrl(blob, rect);
+  const response = await fetch(url);
+  return response.blob();
+}
+
 async function decodeImage(blob) {
   if (typeof createImageBitmap === "function") return createImageBitmap(blob);
   const url = URL.createObjectURL(blob);

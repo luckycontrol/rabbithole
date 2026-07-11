@@ -1,0 +1,12 @@
+import assert from "node:assert/strict";
+import { DirectRabbitholeHost, createHoleFromMarkdown } from "../../src/web/transport/direct-host.js";
+globalThis.FileReader ||= class { readAsDataURL(blob) { blob.arrayBuffer().then((bytes) => { this.result = `data:${blob.type};base64,${Buffer.from(bytes).toString("base64")}`; this.onload?.(); }); } };
+const fixture = (converting = false) => { const hole = createHoleFromMarkdown({ title: "PDF", markdown: "# PDF\n\nOriginal" }); hole.nodes[0].extensions.pdf = { version: 1, scale: 2, page_count: 2, pages: [{ n: 1, asset: "page-001.jpg", w: 10, h: 10 }, { n: 2, asset: "page-002.jpg", w: 10, h: 10 }], lines: [], notes: [], converting, converted: false, original_markdown: converting ? "# PDF\n\nOriginal" : null }; return hole; };
+const assets = new Map([["page-001.jpg", new Blob(["one"], { type: "image/jpeg" })], ["page-002.jpg", new Blob(["two"], { type: "image/jpeg" })]]), store = { saveHole: async () => {}, getAsset: async (_id, name) => assets.get(name), listAssets: async () => [...assets.keys()], putAsset: async (_id, name, blob) => assets.set(name, blob) };
+const brain = { async *transcribePages({ pages, tail }) { assert.equal(pages.length, 2); assert.equal(tail, ""); yield { type: "text", delta: "# Converted\n\nFaithful text." }; } };
+const host = new DirectRabbitholeHost({ store, hole: fixture(), brain }), rootId = host.state.root_id, events = []; host.onEvent = (event) => events.push(event);
+const start = await host.handleBrowserEvent({ type: "convert_pdf", node_id: rootId }); assert.equal(start.ok, true, start.error);
+for (let i = 0; i < 50 && !host.state.nodes.get(rootId).extensions.pdf.converted; i++) await new Promise((resolve) => setTimeout(resolve, 5));
+assert.equal(host.state.nodes.get(rootId).markdown, "# Converted\n\nFaithful text."); assert.equal(host.state.nodes.get(rootId).extensions.pdf.converted, true); assert(events.some((event) => event.type === "pdf_convert_progress"));
+const restoring = new DirectRabbitholeHost({ store, hole: fixture(true), brain }); assert.equal(restoring.state.nodes.get(restoring.state.root_id).markdown, "# PDF\n\nOriginal"); assert.equal(restoring.state.nodes.get(restoring.state.root_id).extensions.pdf.converting, false);
+console.log("ok PDF conversion: streamed commit, converted flag, and hydration restore");

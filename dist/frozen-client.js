@@ -2475,6 +2475,9 @@ var RabbitholeFrozenClient = (() => {
     };
   }
   var coreHooks = defaultCoreHooks();
+  function postBrowserEvent(event) {
+    return coreHooks.post(event);
+  }
   var coreScope = null;
   function registerCoreHooks(hooks) {
     Object.assign(coreHooks, hooks || {});
@@ -2926,6 +2929,23 @@ var RabbitholeFrozenClient = (() => {
         dc._rhDispose = dispose;
       } else {
         dc.innerHTML = node.html || "";
+        if (node.extensions && node.extensions.pdf && node.extensions.pdf.converting) {
+          var progress = document.createElement("div");
+          progress.className = "rh-pdf-convert-progress";
+          var done = node._pdfProgress ? node._pdfProgress.done : 0, total = node._pdfProgress ? node._pdfProgress.total : node.extensions.pdf.pages.length;
+          progress.textContent = "Converting \u2014 page " + done + " of " + total;
+          var cancel = document.createElement("button");
+          cancel.type = "button";
+          cancel.className = "node-btn rh-pdf-convert-cancel";
+          cancel.textContent = "Cancel";
+          cancel.addEventListener("click", function(event) {
+            event.stopPropagation();
+            cancel.disabled = true;
+            postBrowserEvent({ type: "convert_cancel", node_id: node.id });
+          });
+          progress.appendChild(cancel);
+          dc.prepend(progress);
+        }
         mountDocMedia(dc, node, base);
       }
     }
@@ -3936,11 +3956,12 @@ var RabbitholeFrozenClient = (() => {
     node.ncHandle.setAttribute("aria-expanded", "false");
   }
   function updateCardComposer(node) {
+    var _a2, _b;
     if (!node.ncText) return;
     node.ncComp.classList.toggle("nc-draft", !!node.ncText.value.trim());
     applyComposerState(
       { text: node.ncText, send: node.ncSend, wrap: node.ncInner },
-      { phase: sessionPhase(), pending: node.status === "pending" },
+      { phase: sessionPhase(), pending: node.status === "pending" || !!((_b = (_a2 = node.extensions) == null ? void 0 : _a2.pdf) == null ? void 0 : _b.converting) },
       {
         frozen: "Read-only snapshot",
         closed: "Session ended \u2014 saved",
@@ -3951,11 +3972,12 @@ var RabbitholeFrozenClient = (() => {
     );
   }
   function submitCardFollowup(node, source2) {
+    var _a2, _b;
     if (closed) {
       flashHint("Session ended \u2014 reopen this Rabbithole from your terminal to continue.");
       return;
     }
-    if (node.status === "pending") return;
+    if (node.status === "pending" || ((_b = (_a2 = node.extensions) == null ? void 0 : _a2.pdf) == null ? void 0 : _b.converting)) return;
     var question = node.ncText.value.trim();
     if (!question) return;
     var kid = canvasLifecycle.hooks.sendFollowup(node, question, null);
@@ -5002,10 +5024,11 @@ var RabbitholeFrozenClient = (() => {
     refreshAmbient();
   }
   function updateComposerState() {
+    var _a2, _b;
     var current = nodes[currentNodeId];
     applyComposerState(
       { text: composerText, send: composerSend, wrap: composerInner },
-      { phase: sessionPhase(), pending: !current || current.status === "pending" },
+      { phase: sessionPhase(), pending: !current || current.status === "pending" || !!((_b = (_a2 = current.extensions) == null ? void 0 : _a2.pdf) == null ? void 0 : _b.converting) },
       {
         frozen: "Read-only snapshot \u2014 open the live Rabbithole to keep asking",
         closed: "Session ended \u2014 reopen this Rabbithole from your terminal; saved questions are answered there",
@@ -5019,6 +5042,8 @@ var RabbitholeFrozenClient = (() => {
     autoGrowEl(composerText, 140);
   }
   function sendFollowup(parent, question, lens, synthesis) {
+    var _a2, _b;
+    if ((_b = (_a2 = parent == null ? void 0 : parent.extensions) == null ? void 0 : _a2.pdf) == null ? void 0 : _b.converting) return null;
     var requestId = uuid(), childId = uuid();
     var pos = placeChild2(parent, BRANCH_FOLLOWUP);
     var node = {
@@ -5124,12 +5149,13 @@ var RabbitholeFrozenClient = (() => {
     cancelScrollAnimation();
   }
   function submitFollowup(source2) {
+    var _a2, _b;
     if (closed) {
       flashHint(frozen ? "This is a read-only snapshot." : "Session ended \u2014 reopen this Rabbithole from your terminal to continue.");
       return;
     }
     var parent = nodes[currentNodeId];
-    if (!parent || parent.status === "pending") return;
+    if (!parent || parent.status === "pending" || ((_b = (_a2 = parent.extensions) == null ? void 0 : _a2.pdf) == null ? void 0 : _b.converting)) return;
     var question = composerText.value.trim();
     if (!question) return;
     sendFollowup(parent, question, null);

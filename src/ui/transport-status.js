@@ -359,6 +359,14 @@ function handleServer(msg){
         if (mode === "reader" && currentNodeId === pn.id) renderReaderBody();
         scheduleEdges();
       }
+    } else if (msg.type === "pdf_convert_progress"){
+      var cn = nodes[msg.node_id];
+      if (cn){
+        cn.md = msg.markdown || ""; cn._pdfProgress = { done: msg.page_done, total: msg.page_total };
+        refreshNodeHtml(cn);
+        if (cn.bodyEl) fillBody(cn);
+        if (mode === "reader" && currentNodeId === cn.id) renderReaderBody();
+      }
     } else if (msg.type === "node_error"){
       var en = nodes[msg.node_id];
       if (en && en.status === "pending"){

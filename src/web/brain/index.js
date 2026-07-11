@@ -15,6 +15,7 @@ export function createBrain(settings, apiKey) {
     baseUrl: base,
     apiKey,
     model,
+    transcribeModel: settings?.transcribe_model || preset.transcribe_model || model,
   };
   return new OpenAICompatibleBrain(common);
 }

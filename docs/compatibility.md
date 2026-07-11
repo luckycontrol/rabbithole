@@ -203,6 +203,14 @@ reference accounting as markdown `asset:` references. PDF files opened by web
 upload or MCP `file_path` use the same normalized builder and persist the same
 body/provenance shape; page JPEG encoder bytes may differ by host.
 
+Conversion adds browser events `convert_pdf { node_id }` and `convert_cancel`,
+plus the emitted-only `pdf_convert_progress { node_id, markdown, page_done,
+page_total }`. During a run `extensions.pdf.converting` is true and
+`original_markdown` is retained for abort/reload recovery; successful completion
+sets `converted`. The node-host agent loop may return `status=convert_request`
+with local page image paths and inline transcription rules. The web preferences
+key `transcribe_model` is independent of author/answer model setup readiness.
+
 Selection branches on native PDF nodes retain the ordinary markdown
 `offset_start`/`offset_end` pair and may additionally carry
 `anchor.pdf { page, rect: { x, y, w, h } }`. Page numbers are positive integers

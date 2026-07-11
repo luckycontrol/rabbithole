@@ -2450,6 +2450,9 @@ var RabbitholeClient = (() => {
     };
   }
   var coreHooks = defaultCoreHooks();
+  function postBrowserEvent(event) {
+    return coreHooks.post(event);
+  }
   var coreScope = null;
   function registerCoreHooks(hooks) {
     Object.assign(coreHooks, hooks || {});
@@ -2921,6 +2924,23 @@ var RabbitholeClient = (() => {
         dc._rhDispose = dispose;
       } else {
         dc.innerHTML = node.html || "";
+        if (node.extensions && node.extensions.pdf && node.extensions.pdf.converting) {
+          var progress = document.createElement("div");
+          progress.className = "rh-pdf-convert-progress";
+          var done = node._pdfProgress ? node._pdfProgress.done : 0, total = node._pdfProgress ? node._pdfProgress.total : node.extensions.pdf.pages.length;
+          progress.textContent = "Converting \u2014 page " + done + " of " + total;
+          var cancel = document.createElement("button");
+          cancel.type = "button";
+          cancel.className = "node-btn rh-pdf-convert-cancel";
+          cancel.textContent = "Cancel";
+          cancel.addEventListener("click", function(event) {
+            event.stopPropagation();
+            cancel.disabled = true;
+            postBrowserEvent({ type: "convert_cancel", node_id: node.id });
+          });
+          progress.appendChild(cancel);
+          dc.prepend(progress);
+        }
         mountDocMedia(dc, node, base);
       }
     }
@@ -3950,11 +3970,12 @@ var RabbitholeClient = (() => {
     node.ncHandle.setAttribute("aria-expanded", "false");
   }
   function updateCardComposer(node) {
+    var _a2, _b;
     if (!node.ncText) return;
     node.ncComp.classList.toggle("nc-draft", !!node.ncText.value.trim());
     applyComposerState(
       { text: node.ncText, send: node.ncSend, wrap: node.ncInner },
-      { phase: sessionPhase(), pending: node.status === "pending" },
+      { phase: sessionPhase(), pending: node.status === "pending" || !!((_b = (_a2 = node.extensions) == null ? void 0 : _a2.pdf) == null ? void 0 : _b.converting) },
       {
         frozen: "Read-only snapshot",
         closed: "Session ended \u2014 saved",
@@ -3965,11 +3986,12 @@ var RabbitholeClient = (() => {
     );
   }
   function submitCardFollowup(node, source2) {
+    var _a2, _b;
     if (closed) {
       flashHint("Session ended \u2014 reopen this Rabbithole from your terminal to continue.");
       return;
     }
-    if (node.status === "pending") return;
+    if (node.status === "pending" || ((_b = (_a2 = node.extensions) == null ? void 0 : _a2.pdf) == null ? void 0 : _b.converting)) return;
     var question = node.ncText.value.trim();
     if (!question) return;
     var kid = canvasLifecycle.hooks.sendFollowup(node, question, null);
@@ -4891,9 +4913,10 @@ var RabbitholeClient = (() => {
   }
   var pendingAsk = null;
   function showAskFromSelection(options2) {
+    var _a2, _b;
     var parentId = options2 && options2.parentId;
     var parent = parentId && nodes[parentId];
-    if (!parent || parent.status === "pending") return false;
+    if (!parent || parent.status === "pending" || ((_b = (_a2 = parent.extensions) == null ? void 0 : _a2.pdf) == null ? void 0 : _b.converting)) return false;
     if (closed) {
       flashHint(frozen ? "This is a read-only snapshot \u2014 asking needs the live Rabbithole." : "Session ended \u2014 reopen this Rabbithole from your terminal to keep asking.");
       return false;
@@ -5057,10 +5080,11 @@ var RabbitholeClient = (() => {
     refreshAmbient();
   }
   function updateComposerState() {
+    var _a2, _b;
     var current = nodes[currentNodeId];
     applyComposerState(
       { text: composerText, send: composerSend, wrap: composerInner },
-      { phase: sessionPhase(), pending: !current || current.status === "pending" },
+      { phase: sessionPhase(), pending: !current || current.status === "pending" || !!((_b = (_a2 = current.extensions) == null ? void 0 : _a2.pdf) == null ? void 0 : _b.converting) },
       {
         frozen: "Read-only snapshot \u2014 open the live Rabbithole to keep asking",
         closed: "Session ended \u2014 reopen this Rabbithole from your terminal; saved questions are answered there",
@@ -5074,6 +5098,8 @@ var RabbitholeClient = (() => {
     autoGrowEl(composerText, 140);
   }
   function sendFollowup(parent, question, lens, synthesis) {
+    var _a2, _b;
+    if ((_b = (_a2 = parent == null ? void 0 : parent.extensions) == null ? void 0 : _a2.pdf) == null ? void 0 : _b.converting) return null;
     var requestId = uuid(), childId = uuid();
     var pos = placeChild2(parent, BRANCH_FOLLOWUP);
     var node = {
@@ -5179,12 +5205,13 @@ var RabbitholeClient = (() => {
     cancelScrollAnimation();
   }
   function submitFollowup(source2) {
+    var _a2, _b;
     if (closed) {
       flashHint(frozen ? "This is a read-only snapshot." : "Session ended \u2014 reopen this Rabbithole from your terminal to continue.");
       return;
     }
     var parent = nodes[currentNodeId];
-    if (!parent || parent.status === "pending") return;
+    if (!parent || parent.status === "pending" || ((_b = (_a2 = parent.extensions) == null ? void 0 : _a2.pdf) == null ? void 0 : _b.converting)) return;
     var question = composerText.value.trim();
     if (!question) return;
     sendFollowup(parent, question, null);
@@ -33415,6 +33442,15 @@ ${text2}</tr>
         if (mode === "reader" && currentNodeId === pn.id) renderReaderBody();
         scheduleEdges();
       }
+    } else if (msg.type === "pdf_convert_progress") {
+      var cn = nodes[msg.node_id];
+      if (cn) {
+        cn.md = msg.markdown || "";
+        cn._pdfProgress = { done: msg.page_done, total: msg.page_total };
+        refreshNodeHtml(cn);
+        if (cn.bodyEl) fillBody(cn);
+        if (mode === "reader" && currentNodeId === cn.id) renderReaderBody();
+      }
     } else if (msg.type === "node_error") {
       var en = nodes[msg.node_id];
       if (en && en.status === "pending") {
@@ -33884,7 +33920,7 @@ ${text2}</tr>
   function mountPdfView(container, node) {
     var _a2, _b;
     var pdf = normalizePdfExtension(node);
-    if (!pdf || pdf.converted) return null;
+    if (!pdf || pdf.converted || pdf.converting) return null;
     var markdown2 = String((_b = (_a2 = node.markdown) != null ? _a2 : node.md) != null ? _b : "");
     container.className = "doc-content rh-pdf";
     var disposed = false;
@@ -34044,6 +34080,20 @@ ${text2}</tr>
     });
     toolbar.appendChild(boxButton);
     container.prepend(toolbar);
+    var convertButton = document.createElement("button");
+    convertButton.type = "button";
+    convertButton.className = "node-btn rh-pdf-convert";
+    var branched = childrenOf(node.id).length > 0;
+    convertButton.textContent = branched ? "Convert before branching" : "Convert to document";
+    convertButton.disabled = branched;
+    convertButton.addEventListener("click", function(event) {
+      event.stopPropagation();
+      convertButton.disabled = true;
+      postBrowserEvent({ type: "convert_pdf", node_id: node.id }).then(function(result) {
+        if (!(result == null ? void 0 : result.ok)) convertButton.disabled = false;
+      });
+    });
+    toolbar.appendChild(convertButton);
     function onKeydown2(event) {
       if (event.key === "Escape" && boxMode) {
         event.preventDefault();

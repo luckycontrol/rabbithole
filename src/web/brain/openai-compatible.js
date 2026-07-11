@@ -1,12 +1,13 @@
-import { buildAnswerMessages, buildAuthorMessages, buildExplainerMessages } from "../../core/prompts/index.js";
+import { buildAnswerMessages, buildAuthorMessages, buildExplainerMessages, buildTranscribeMessages } from "../../core/prompts/index.js";
 import { ProviderError, normalizeProviderError } from "./errors.js";
 import { adaptBranchGeneration, adaptTextGeneration } from "./generation-events.js";
 
 export class OpenAICompatibleBrain {
-  constructor({ baseUrl, apiKey, model, extraHeaders = {}, title = "Rabbithole" } = {}) {
+  constructor({ baseUrl, apiKey, model, transcribeModel, extraHeaders = {}, title = "Rabbithole" } = {}) {
     this.baseUrl = normalizeBaseUrl(baseUrl);
     this.apiKey = apiKey || "";
     this.model = model || "anthropic/claude-sonnet-5";
+    this.transcribeModel = transcribeModel || this.model;
     this.extraHeaders = extraHeaders || {};
     this.title = title;
   }
@@ -60,6 +61,14 @@ export class OpenAICompatibleBrain {
       extraHeaders: this.extraHeaders,
       title: this.title,
     }), { fallbackTitle: context?.fallbackTitle });
+  }
+
+  async *transcribePages(input, signal) {
+    yield* adaptTextGeneration(streamOpenAICompatible({
+      url: chatCompletionsUrl(this.baseUrl), apiKey: this.apiKey,
+      body: { model: this.transcribeModel, messages: buildTranscribeMessages(input), stream: true, temperature: 0.1 },
+      signal, extraHeaders: this.extraHeaders, title: this.title,
+    }));
   }
 }
 

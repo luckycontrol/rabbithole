@@ -103,6 +103,8 @@ export function dispatchBrowserEvent(payload, { handlers, unsupported }) {
     case "nodes_update":
     case "block_state":
     case "node_extensions_patch":
+    case "convert_pdf":
+    case "convert_cancel":
     case "delete_node":
     case "view_state":
     case "done": {

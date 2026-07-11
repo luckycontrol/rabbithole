@@ -2,7 +2,7 @@ import http from "node:http";
 import { randomUUID } from "node:crypto";
 import { openBrowser } from "./browser.js";
 import { log, error as logError } from "../logger.js";
-import { addAssetsToHole, defaultFsStore } from "../fs-store.js";
+import { addAssetsToHole, defaultFsStore, resolveAsset } from "../fs-store.js";
 import { maybeUpgradeBaseUrlFromFrontmatter, normalizeBaseUrl } from "../../core/base-url.js";
 import { extractNodeAssetRefs } from "../../core/assets.js";
 import { createHoleState, holeStateToHole, holeStateToHydrationNodes, reduceHoleEvent } from "../../core/reducer.js";
@@ -13,8 +13,9 @@ import { writeSseEvent } from "./sse.js";
 import { handleSessionRequest } from "./session-router.js";
 import { GenerationIngress } from "./generation-ingress.js";
 import { applyPersistedBrowserEvent, assetsOrphanedByDeletion, buildNodeAnsweredEvent, createSaveChain, dispatchBrowserEvent } from "../../core/hole-host.js";
-import { normalizePdfExtension } from "../../core/pdf-shared.js";
-import { cropPdfRegionToFile } from "../pdf-crop.js";
+import { normalizePdfExtension, parseFigureRefs, rewriteFigureRefs } from "../../core/pdf-shared.js";
+import { TRANSCRIBE_V1_RULES } from "../../core/prompts/transcribe-v1.js";
+import { cropPdfFigureToAsset, cropPdfRegionToFile } from "../pdf-crop.js";
 
 const SESSION_TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2 hours
 const SAVE_DEBOUNCE_MS = 400;
@@ -86,6 +87,7 @@ export class RabbitHoleSession {
     this.watchdogTimer = null;
     this.rearmDetachTimer = null;
     this.inFlightBranchRequests = new Map(); // request_id -> last delivered branch_request not yet answered
+    this.convertRequests = new Map();
 
     this.sseClients = new Set();
     this.everConnected = false;
@@ -109,7 +111,7 @@ export class RabbitHoleSession {
     // Saved asks: questions the human asked while no agent was listening are
     // persisted as pending nodes; a resume re-queues each one (oldest first,
     // under a fresh request_id) so the agent answers them right away.
-    if (isResume) this.requeueSavedAsks();
+    if (isResume) { this.requeueSavedAsks(); this.requeueSavedConversions(); }
 
     this.handleRequest = this.handleRequest.bind(this);
   }
@@ -184,6 +186,7 @@ export class RabbitHoleSession {
 
   close(reason = "session_closed") {
     if (this.closed) return;
+    for (const request of this.convertRequests.values()) if (request.markdown) this.restoreNodeConversion(request.node_id);
     this.closed = true;
     if (this.timeoutHandle) {
       clearTimeout(this.timeoutHandle);
@@ -302,7 +305,7 @@ export class RabbitHoleSession {
   // Every branch_request handed to the agent arms the watchdog; any subsequent
   // agent activity (answer_branch, another waitForEvent) clears or re-arms it.
   deliverToAgent(event) {
-    if (event && event.status === "branch_request") {
+    if (event && (event.status === "branch_request" || event.status === "convert_request")) {
       this.inFlightBranchRequests.set(event.request_id, event);
       this.startAnswerWatchdog();
     }
@@ -369,6 +372,7 @@ export class RabbitHoleSession {
   setAgentAttached(attached, reason = null) {
     if (this.closed || this.agentAttached === attached) return;
     this.agentAttached = attached;
+    if (!attached) for (const request of this.convertRequests.values()) if (request.markdown) this.restoreNodeConversion(request.node_id);
     this.broadcast({ type: "agent_status", attached, reason });
   }
 
@@ -460,6 +464,7 @@ export class RabbitHoleSession {
     this.clearAnswerWatchdog();
     this.markAgentAttached();
     this.inFlightBranchRequests.delete(requestId);
+    if (this.convertRequests.has(requestId)) return this.answerConversion({ requestId, content, partial, signal });
 
     // The human deleted this branch while the agent was writing it — absorb the
     // answer quietly: partials ack, the final call just blocks for the next event.
@@ -538,6 +543,52 @@ export class RabbitHoleSession {
     return this.waitForEvent(signal);
   }
 
+  async answerConversion({ requestId, content, partial, signal }) {
+    const request = this.convertRequests.get(requestId), node = this.nodes.get(request.node_id);
+    if (!node) throw buildJsonError("Conversion node not found", 404);
+    request.markdown += String(content || "");
+    const pdf = normalizePdfExtension(node);
+    this.dispatchHoleEvent({ type: "node_progress", node_id: node.id, markdown: request.markdown });
+    this.broadcast({ type: "pdf_convert_progress", node_id: node.id, markdown: request.markdown, page_done: pdf.pages.at(-1)?.n || 0, page_total: pdf.pages.length });
+    if (partial) { this.startAnswerWatchdog(); this.scheduleSave(); return { ok: true, node_id: node.id, request_id: requestId, partial: true }; }
+    const materialized = await this.materializeNodeFigures(request.markdown, pdf);
+    this.dispatchHoleEvent({ ...buildNodeAnsweredEvent(this.nodes.get(node.id)), markdown: materialized });
+    this.patchNodePdf(node.id, { ...normalizePdfExtension(this.nodes.get(node.id)), converting: false, converted: true, convert_request: false });
+    this.convertRequests.delete(requestId); await this.flushSave(); this.broadcast(buildNodeAnsweredEvent(this.nodes.get(node.id)));
+    return this.waitForEvent(signal);
+  }
+
+  async materializeNodeFigures(markdown, pdf) {
+    const replacements = []; let ordinal = 0;
+    for (const ref of parseFigureRefs(markdown)) {
+      let replacement = `*${ref.caption || "Figure"}*`; const page = pdf.pages.find((entry) => entry.n === ref.page);
+      if (page && ref.rect && this.assetNames.size < 200) try { const name = `fig-p${String(ref.page).padStart(3, "0")}-${++ordinal}.jpg`; await cropPdfFigureToAsset({ holeId: this.holeId, asset: page.asset, rect: ref.rect, name }); this.assetNames.add(name); replacement = `![${ref.caption}](asset:${name})`; } catch {}
+      replacements.push({ ref, markdown: replacement });
+    }
+    return rewriteFigureRefs(markdown, replacements);
+  }
+
+  patchNodePdf(nodeId, value) { this.dispatchHoleEvent({ type: "node_extensions_patch", node_id: nodeId, namespace: "pdf", value }); this.broadcast({ type: "node_extensions_patch", node_id: nodeId, namespace: "pdf", value }); this.scheduleSave(); }
+  restoreNodeConversion(nodeId) { const pdf = normalizePdfExtension(this.nodes.get(nodeId)); if (!pdf) return; this.dispatchHoleEvent({ type: "node_progress", node_id: nodeId, markdown: String(pdf.original_markdown ?? "") }); this.patchNodePdf(nodeId, { ...pdf, converting: false, converted: false, convert_request: false }); for (const [id, request] of this.convertRequests) if (request.node_id === nodeId) this.convertRequests.delete(id); }
+
+  async handleConvertPdf(payload, { saved = false } = {}) {
+    const nodeId = String(payload.node_id || ""), node = this.nodes.get(nodeId), pdf = normalizePdfExtension(node);
+    if (!pdf) throw buildJsonError("This node is not a native PDF", 400);
+    if ([...this.nodes.values()].some((candidate) => candidate.parent_id === nodeId)) throw buildJsonError("Convert before branching", 409);
+    if (pdf.converting && !saved) throw buildJsonError("Conversion is already running", 409);
+    const requestId = randomUUID();
+    if (!saved) this.patchNodePdf(nodeId, { ...pdf, converting: true, converted: false, original_markdown: node.markdown, convert_request: true });
+    this.convertRequests.set(requestId, { node_id: nodeId, markdown: "" });
+    const activePdf = normalizePdfExtension(this.nodes.get(nodeId));
+    const event = { status: "convert_request", session_id: this.id, request_id: requestId, node_id: nodeId, page_count: activePdf.pages.length,
+      pages: await Promise.all(activePdf.pages.map(async (page) => ({ n: page.n, image_path: await resolveAsset(this.holeId, page.asset) }))), rules: TRANSCRIBE_V1_RULES, ...(saved ? { saved: true } : {}) };
+    this.pushEvent(event); await this.flushSave(); return { ok: true, node_id: nodeId, request_id: requestId };
+  }
+
+  requeueSavedConversions() {
+    for (const node of this.nodes.values()) { const pdf = normalizePdfExtension(node); if (pdf?.converting && pdf.convert_request) queueMicrotask(() => this.handleConvertPdf({ node_id: node.id }, { saved: true }).catch((error) => logError(error.message))); else if (pdf?.converting) { this.dispatchHoleEvent({ type: "node_progress", node_id: node.id, markdown: String(pdf.original_markdown ?? node.markdown) }); this.patchNodePdf(node.id, { ...pdf, converting: false, converted: false }); } }
+  }
+
   buildRehydrationPayload() {
     const saved = [...this.nodes.values()].filter((n) => n.status === "pending" && n.origin);
     return {
@@ -595,6 +646,7 @@ export class RabbitHoleSession {
     const parentId = String(payload.parent_id || "");
     const parent = this.nodes.get(parentId);
     if (!parent) throw buildJsonError(`Parent node ${parentId} not found`, 404);
+    if (normalizePdfExtension(parent)?.converting) throw buildJsonError("This PDF is being converted", 409);
 
     const requestId = String(payload.request_id || randomUUID());
     const nodeId = String(payload.node_id || randomUUID());
@@ -710,6 +762,8 @@ export class RabbitHoleSession {
           this.broadcast({ type: "node_extensions_patch", node_id: event.node_id, namespace: event.namespace, value: event.value });
           return result;
         },
+        convert_pdf: (event) => this.handleConvertPdf(event),
+        convert_cancel: (event) => { const nodeId = String(event.node_id || ""); const entry = [...this.convertRequests].find(([, request]) => request.node_id === nodeId); if (entry) this.convertRequests.delete(entry[0]); const pdf = normalizePdfExtension(this.nodes.get(nodeId)); if (pdf) { this.dispatchHoleEvent({ type: "node_progress", node_id: nodeId, markdown: String(pdf.original_markdown ?? "") }); this.patchNodePdf(nodeId, { ...pdf, converting: false, converted: false, convert_request: false }); } return { ok: true }; },
         delete_node: (event) => this.handleDeleteNode(event),
         view_state: (event) => this.applyPersistedBrowserEvent(event),
         done: () => { this.close("done"); return { ok: true }; },

@@ -89,6 +89,7 @@ function defaultCoreHooks(){
 }
 
 var coreHooks = defaultCoreHooks();
+export function postBrowserEvent(event) { return coreHooks.post(event); }
 var coreScope = null;
 
 export function registerCoreHooks(hooks) {
@@ -510,6 +511,14 @@ export function buildDocContent(node, base){
         dc._rhDispose = dispose;
       } else {
         dc.innerHTML = node.html || "";
+        if (node.extensions && node.extensions.pdf && node.extensions.pdf.converting){
+          var progress = document.createElement("div"); progress.className = "rh-pdf-convert-progress";
+          var done = node._pdfProgress ? node._pdfProgress.done : 0, total = node._pdfProgress ? node._pdfProgress.total : node.extensions.pdf.pages.length;
+          progress.textContent = "Converting — page " + done + " of " + total;
+          var cancel = document.createElement("button"); cancel.type = "button"; cancel.className = "node-btn rh-pdf-convert-cancel"; cancel.textContent = "Cancel";
+          cancel.addEventListener("click", function(event){ event.stopPropagation(); cancel.disabled = true; postBrowserEvent({ type: "convert_cancel", node_id: node.id }); }); progress.appendChild(cancel);
+          dc.prepend(progress);
+        }
         mountDocMedia(dc, node, base);
       }
     }

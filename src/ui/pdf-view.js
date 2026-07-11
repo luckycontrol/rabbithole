@@ -1,7 +1,7 @@
 import { enclosedPdfLines, normalizePdfExtension } from "../core/pdf-shared.js";
 import { openImageLightbox } from "./image-ux.js";
 import { resolveAssetUrl } from "./renderer.js";
-import { childrenOf } from "./core.js";
+import { childrenOf, postBrowserEvent } from "./core.js";
 import { mountPdfRectMark } from "./text-marks.js";
 import { showAskFromSelection } from "./ask-followups.js";
 
@@ -30,7 +30,7 @@ export function normalizeRectUnion(rects, pageRect) {
 
 export function mountPdfView(container, node) {
   var pdf = normalizePdfExtension(node);
-  if (!pdf || pdf.converted) return null;
+  if (!pdf || pdf.converted || pdf.converting) return null;
   var markdown = String(node.markdown ?? node.md ?? "");
   container.className = "doc-content rh-pdf";
   var disposed = false;
@@ -128,6 +128,10 @@ export function mountPdfView(container, node) {
   boxButton = document.createElement("button"); boxButton.type = "button"; boxButton.className = "node-btn rh-pdf-box-toggle";
   boxButton.textContent = "□ Draw box"; boxButton.title = "Draw a selection box"; boxButton.setAttribute("aria-label", "Draw a selection box"); boxButton.setAttribute("aria-pressed", "false");
   boxButton.addEventListener("click", function(event){ event.stopPropagation(); setBoxMode(!boxMode); }); toolbar.appendChild(boxButton); container.prepend(toolbar);
+  var convertButton = document.createElement("button"); convertButton.type = "button"; convertButton.className = "node-btn rh-pdf-convert";
+  var branched = childrenOf(node.id).length > 0; convertButton.textContent = branched ? "Convert before branching" : "Convert to document"; convertButton.disabled = branched;
+  convertButton.addEventListener("click", function(event){ event.stopPropagation(); convertButton.disabled = true; postBrowserEvent({ type: "convert_pdf", node_id: node.id }).then(function(result){ if (!result?.ok) convertButton.disabled = false; }); });
+  toolbar.appendChild(convertButton);
   function onKeydown(event) { if (event.key === "Escape" && boxMode) { event.preventDefault(); setBoxMode(false); } }
   document.addEventListener("keydown", onKeydown);
   childrenOf(node.id).forEach(function(child){ if (child.origin && child.origin.anchor && child.origin.anchor.pdf) mountPdfRectMark(container, child.origin.anchor, child.id, "rh-pdf-mark " + (child.status === "answered" ? "mark-ready" : "mark-pending")); });

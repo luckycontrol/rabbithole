@@ -37,7 +37,7 @@ export function ensureCanonical() {
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) stored = parsed;
   } catch {}
 
-  let canonical = stored || defaults;
+  let canonical = stored ? { ...defaults, ...stored } : defaults;
   if (stored && resolveProviderId(stored.preset) !== stored.preset) {
     const provider = providerFor(stored.preset);
     canonical = {
@@ -47,6 +47,7 @@ export function ensureCanonical() {
       model: provider.model,
     };
   }
+  if (stored && !stored.transcribe_model) canonical.transcribe_model = providerFor(canonical.preset).transcribe_model;
   canonical = { ...canonical };
   if (stored && !canonical.generation_setup) {
     const provider = providerFor(canonical.preset);
