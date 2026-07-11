@@ -133,7 +133,7 @@ function cleanupCanvasView(resetHooks){
   // ===========================================================================
   // CANVAS
   // ===========================================================================
-export function applyTransform(){
+function applyTransform(){
     world.style.transform = "translate(" + view.x + "px," + view.y + "px) scale(" + view.scale + ")";
     zoomLabel.textContent = Math.round(view.scale * 100) + "%";
     canvasHooks.scheduleViewSave();
@@ -162,7 +162,7 @@ export function applyTransform(){
       value: filmCameraHandle
     });
   }
-export function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy - view.y) / view.scale }; }
+function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy - view.y) / view.scale }; }
   function zoomAt(sx, sy, factor){
     var next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, view.scale * factor));
     zoomTo(sx, sy, next);
@@ -361,7 +361,7 @@ export function revealNode(n, source){
     if (!dx && !dy) return;
     animatePan(view.x + dx, view.y + dy, source, 230, "out");
   }
-export function animatePan(tx, ty, source, duration, ease){ animateView(tx, ty, view.scale, { source: source, duration: duration, ease: ease }); }
+function animatePan(tx, ty, source, duration, ease){ animateView(tx, ty, view.scale, { source: source, duration: duration, ease: ease }); }
   // One shared view glide (pan + zoom together): frame-all, reveal, and
   // search/activity jumps. A newer glide cancels an in-flight one; hidden windows jump
   // instantly (rAF never fires there).
@@ -370,7 +370,7 @@ export function animatePan(tx, ty, source, duration, ease){ animateView(tx, ty, 
     viewAnimId++;
     if (viewAnimRaf){ cancelAnimationFrame(viewAnimRaf); viewAnimRaf = 0; }
   }
-export function animateView(tx, ty, ts, opts){
+function animateView(tx, ty, ts, opts){
     opts = opts || {};
     cancelViewAnimation();
     var myId = viewAnimId;
@@ -415,7 +415,7 @@ export function fillBody(node){
     canvasHooks.persistNode(node);
   }
 
-export function layoutNode(node){
+function layoutNode(node){
     var el = node.el; el.style.left = node.x + "px"; el.style.top = node.y + "px"; el.style.width = node.w + "px";
     if (!node.collapsed) el.style.height = node.h + "px";
   }
@@ -462,7 +462,7 @@ export function layoutNode(node){
       function(ev){ node.w = Math.max(240, ow + (ev.clientX - sx)/view.scale); node.h = Math.max(160, oh + (ev.clientY - sy)/view.scale); layoutNode(node); scheduleEdges(); },
       function(){ drawEdges(); canvasHooks.persistNode(node); });
   }
-export function toggleCollapse(node, btn){
+function toggleCollapse(node, btn){
     node.collapsed = !node.collapsed;
     node.el.classList.toggle("collapsed", node.collapsed);
     syncCollapseButton(node, btn);
@@ -566,7 +566,7 @@ function clamp(lo, hi, v){ return Math.max(lo, Math.min(hi, v)); }
     dot.classList.toggle("edge-hl", !!edgeHl[childId]);
     dot.classList.toggle("anchored", !!anchored);
   }
-export function rebuildEdges(){
+function rebuildEdges(){
     while (edgesSvg.firstChild) edgesSvg.removeChild(edgesSvg.firstChild);
     edgeEls = {};
     edgeGeometry = {};
@@ -608,7 +608,7 @@ export function drawEdges(){
   // Highlight state lives here, not just on the elements — edges can be removed
   // and recreated when visibility changes, so hover state needs a stable source.
   var edgeHl = {};
-export function setEdgeHighlight(childId, on){
+function setEdgeHighlight(childId, on){
     if (on) edgeHl[childId] = true; else delete edgeHl[childId];
     var els = edgeEls[childId];
     if (!els) return;
@@ -617,7 +617,7 @@ export function setEdgeHighlight(childId, on){
 export function clearEdgeHighlight(childId){
     delete edgeHl[childId];
   }
-export function focusOrigin(node, on){
+function focusOrigin(node, on){
     if (mode !== "canvas") return;
     setEdgeHighlight(node.id, on);
     var p = node.parent_id ? nodes[node.parent_id] : null;
@@ -764,7 +764,7 @@ export function tidy(source){
   // Canvas cards (DOM + rendered markdown for every node) are only built the first
   // time the user actually opens the canvas — Reader is the default, so a large
   // hole pays no canvas cost until/unless it's wanted.
-export function ensureCanvasBuilt(){
+function ensureCanvasBuilt(){
     if (canvasBuilt) return;
     setCanvasBuilt(true);
     Object.keys(nodes).forEach(function(id){ if (!nodes[id].el) createNodeEl(nodes[id]); });

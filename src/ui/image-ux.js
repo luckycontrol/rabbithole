@@ -26,7 +26,7 @@ import { openDialog } from "./primitives/dialog.js";
     var max = Math.max(IMAGE_MIN_WIDTH, dc ? dc.clientWidth : IMAGE_MIN_WIDTH);
     return Math.max(IMAGE_MIN_WIDTH, Math.min(max, value));
   }
-export function nearestImageScrollContainer(el){
+function nearestImageScrollContainer(el){
     var cur = el ? el.parentElement : null;
     while (cur && cur !== document.body && cur !== document.documentElement){
       var style = window.getComputedStyle(cur);
@@ -41,7 +41,7 @@ export function nearestImageScrollContainer(el){
     var rect = scroller.getBoundingClientRect();
     return rect.height ? rect.height / scroller.offsetHeight : 1;
   }
-export function keepImageHandleAnchored(scroller, beforeRect, afterRect){
+function keepImageHandleAnchored(scroller, beforeRect, afterRect){
     if (!scroller || !beforeRect || !afterRect) return;
     var delta = afterRect.bottom - beforeRect.bottom;
     if (!delta) return;
@@ -56,7 +56,7 @@ export function keepImageHandleAnchored(scroller, beforeRect, afterRect){
     delete frame.dataset.rhResized;
     if (key) delete imageResizeMemory[key];
   }
-export function beginImageResize(e, dc, frame, key){
+function beginImageResize(e, dc, frame, key){
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
@@ -104,7 +104,7 @@ export function beginImageResize(e, dc, frame, key){
     var dy = a.clientY - b.clientY;
     return Math.sqrt(dx * dx + dy * dy);
   }
-export function openImageLightbox(src, alt, trigger){
+function openImageLightbox(src, alt, trigger){
     closeImageLightbox();
     var overlay = document.createElement("div");
     overlay.className = "rh-lightbox";
@@ -183,7 +183,7 @@ export function openImageLightbox(src, alt, trigger){
     overlay.addEventListener("pointerup", function(e){ clearPointer(e.pointerId); });
     overlay.addEventListener("pointercancel", function(e){ clearPointer(e.pointerId); });
   }
-export function closeImageLightbox(){
+function closeImageLightbox(){
     if (!activeLightbox) return;
     var dialog = activeLightbox;
     activeLightbox = null;

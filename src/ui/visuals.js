@@ -15,7 +15,7 @@ function defaultVisualHooks(){
 var visualHooks = defaultVisualHooks();
 var visualHooksReady = false;
 var VISUAL_ALLOWED_URI = /^(?:(?:https?:)?\/\/|https?:|\/|\.\/|\.\.\/|#|data:image\/(?:png|jpe?g|gif|webp);base64,|[^:]*$)/i;
-export var VISUAL_SANITIZE_CONFIG = {
+var VISUAL_SANITIZE_CONFIG = {
     USE_PROFILES: { html: true, svg: true, svgFilters: true },
     ADD_TAGS: ["style"],
     ADD_ATTR: ["style"],
@@ -76,10 +76,10 @@ export function registerBlockMount(type, mountSpec){
     }
     return purifier;
   }
-export function sanitizeVisualSource(source){
+function sanitizeVisualSource(source){
     return ensureVisualSanitizer().sanitize(source, VISUAL_SANITIZE_CONFIG);
   }
-export function decodeVisualSource(encoded){
+function decodeVisualSource(encoded){
     var bin = atob(String(encoded || ""));
     if (typeof TextDecoder === "function"){
       var bytes = new Uint8Array(bin.length);
@@ -95,7 +95,7 @@ export function decodeVisualSource(encoded){
   function visualCacheKey(type, encoded){
     return String(type || "") + "\n" + String(encoded || "");
   }
-export function visualFallback(source, message){
+function visualFallback(source, message){
     var wrap = document.createElement("div");
     wrap.className = "viz-fallback";
     var note = document.createElement("div");
@@ -109,7 +109,7 @@ export function visualFallback(source, message){
     wrap.appendChild(pre);
     return wrap;
   }
-export function buildShowVisual(model){
+function buildShowVisual(model){
     return String(model == null ? "" : model);
   }
   function buildMountedVisual(descriptor, mountSpec, model, context){

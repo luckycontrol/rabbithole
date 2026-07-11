@@ -251,7 +251,7 @@ export function disposeTransportStatus(){
   // are restored exactly on every repaint — arriving text must never move the
   // human's place (an innerHTML swap briefly collapses scrollHeight, which
   // would otherwise clamp the scroll and make the view jump).
-export function renderStreamSurfaces(node, firstChunk){
+function renderStreamSurfaces(node, firstChunk){
     if (node.bodyEl){
       var cs = node.bodyEl.scrollTop;
       fillBody(node);
@@ -281,7 +281,7 @@ export function renderStreamSurfaces(node, firstChunk){
     }
   }
 
-export function handleServer(msg){
+function handleServer(msg){
     if (msg.type === "node_answered"){
       var node = nodes[msg.node_id];
       if (!node){

@@ -222,7 +222,7 @@ export function hidePeek(){
     e.preventDefault();
     focusShareItem(target);
   }
-export function toggleShare(anchor, openedByKeyboard){
+function toggleShare(anchor, openedByKeyboard){
     if (shareOpen){ closeShare(); return; }
     // A frozen snapshot can't export (it IS the export) or reach an agent.
     var noAgent = frozen || closed;
@@ -326,7 +326,7 @@ export function closeShare(settings){
         flashHint("Couldn't prepare the Rabbithole export.");
       });
   }
-export function synthesize(source){
+function synthesize(source){
     if (closed){ flashHint("Session ended — reopen this Rabbithole from your terminal first."); return; }
     var root = nodes[rootId];
     if (!root) return;

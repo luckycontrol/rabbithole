@@ -317,7 +317,7 @@ export function sendFollowup(parent, question, lens, synthesis){
   // scroll in the app (submit → your new question) is driven by hand. rAF never
   // fires in a hidden window — jump instantly there instead of never arriving.
   var scrollAnimId = 0, scrollAnimIgnoreUntil = 0, scrollFrameCleanup = null;
-export function cancelScrollAnimation(){ scrollAnimId++; clearScrollFrame(); }
+function cancelScrollAnimation(){ scrollAnimId++; clearScrollFrame(); }
   function clearScrollFrame(){
     if (!scrollFrameCleanup) return;
     var cleanup = scrollFrameCleanup;
@@ -369,7 +369,7 @@ export function animateScroll(el, target, source){
   // Undo an optimistic branch whose request the server rejected/never received.
   // No-op if the node is already gone, or if an answer raced in ahead of the
   // failed-POST callback (don't delete a node the agent actually answered).
-export function rollbackBranch(node){
+function rollbackBranch(node){
     var live = nodes[node.id];
     if (!live || live.status === "answered") return;
     teardownNode(node.id);

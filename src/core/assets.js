@@ -8,7 +8,7 @@ const ASSET_URL_RE = /^asset:(.*)$/i;
 const ASSET_REF_RE = /\basset:([a-z0-9][a-z0-9_-]*\.[a-z0-9]+)/gi;
 
 /** @param {unknown} name */
-export function getAssetExtension(name) {
+function getAssetExtension(name) {
   const match = ASSET_NAME_RE.exec(String(name ?? ""));
   if (!match) return null;
   const ext = match[2];
@@ -16,7 +16,7 @@ export function getAssetExtension(name) {
 }
 
 /** @param {unknown} name */
-export function isValidAssetName(name) {
+function isValidAssetName(name) {
   return getAssetExtension(name) !== null;
 }
 

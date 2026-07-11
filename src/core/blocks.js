@@ -35,7 +35,7 @@ export function listBlockTypes() {
   return [...blockTypes.values()];
 }
 
-export const BLOCK_ID_PATTERN = /^[a-z0-9]{4,8}$/;
+const BLOCK_ID_PATTERN = /^[a-z0-9]{4,8}$/;
 
 /** @param {unknown} info */
 export function parseBlockInfo(info) {

@@ -11,7 +11,7 @@ export function setRendererAssetData(data) {
   assetData = data && typeof data === "object" ? data : null;
 }
 
-export function browserEncodeBase64Utf8(value) {
+function browserEncodeBase64Utf8(value) {
   var source = String(value == null ? "" : value);
   if (typeof TextEncoder === "function") {
     var bytes = new TextEncoder().encode(source);
@@ -46,7 +46,7 @@ export function renderMarkdownToHtml(markdown, options) {
   return markdownRenderer.renderMarkdownToHtml(markdown, options || {});
 }
 
-export function renderNodeMarkdown(node) {
+function renderNodeMarkdown(node) {
   return renderMarkdownToHtml(node && node.md, {
     baseUrl: (node && node.base_url) || null,
     assetNames: assetData ? new Set(Object.keys(assetData)) : null

@@ -253,7 +253,7 @@ async function moveFile(source, dest) {
   }
 }
 
-export async function cleanupStagedAssets({ olderThanMs = STAGING_TTL_MS } = {}) {
+async function cleanupStagedAssets({ olderThanMs = STAGING_TTL_MS } = {}) {
   let entries;
   try {
     entries = await fs.readdir(stagingRootDir(), { withFileTypes: true });
@@ -352,7 +352,7 @@ export async function deleteAsset(holeId, name) {
   await fs.rm(path.join(assetDir(holeId), safeName), { force: true });
 }
 
-export async function deleteHoleAssets(holeId) {
+async function deleteHoleAssets(holeId) {
   await fs.rm(assetDir(holeId), { recursive: true, force: true });
 }
 

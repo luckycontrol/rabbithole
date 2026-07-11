@@ -27,7 +27,7 @@ export function describePdfOpenError(err, { label, encryptedHint, engine }) {
 /** @typedef {TextLine & { column: string }} ClassifiedLine */
 
 /** @param {unknown} pages */
-export function parsePagesRange(pages) {
+function parsePagesRange(pages) {
   if (pages == null || pages === "") return null;
   const value = String(pages).trim();
   const match = /^(\d+)(?:\s*-\s*(\d+))?$/.exec(value);
@@ -64,7 +64,7 @@ export function resolvePagesToProcess(pageCount, pages, notes = []) {
 }
 
 /** @param {number} start @param {number} end */
-export function rangeToArray(start, end) {
+function rangeToArray(start, end) {
   /** @type {number[]} */
   const out = [];
   for (let page = start; page <= end; page += 1) out.push(page);
@@ -84,7 +84,7 @@ export function pdfPageAssetName(pageNumber) {
 }
 
 /** @param {PdfTextItem} item @returns {TextGeometry} */
-export function getTextItemGeometry(item) {
+function getTextItemGeometry(item) {
   const [a, b, c, d, e, f] = item.transform;
   const height = Math.hypot(c, d) || item.height || Math.hypot(a, b) || 1;
   return {
@@ -97,7 +97,7 @@ export function getTextItemGeometry(item) {
 }
 
 /** @param {PdfTextItem[]} items @returns {TextLine[]} */
-export function clusterTextLines(items) {
+function clusterTextLines(items) {
   const textItems = items
     .filter((item) => typeof item.str === "string" && item.str.length > 0 && item.transform)
     .map(getTextItemGeometry)
@@ -155,7 +155,7 @@ export function clusterTextLines(items) {
 }
 
 /** @param {TextLine[]} lines @param {number} pageWidth */
-export function orderLinesForReading(lines, pageWidth) {
+function orderLinesForReading(lines, pageWidth) {
   const mid = pageWidth / 2;
   const gutter = Math.max(12, pageWidth * 0.035);
   const classified = lines.map((line) => {
@@ -195,7 +195,7 @@ export function orderLinesForReading(lines, pageWidth) {
 }
 
 /** @param {{ items?: PdfTextItem[] } | null | undefined} content @param {number} pageWidth */
-export function extractTextFromPdfContent(content, pageWidth) {
+function extractTextFromPdfContent(content, pageWidth) {
   const lines = orderLinesForReading(clusterTextLines(content?.items || []), pageWidth);
   return lines.join("\n");
 }

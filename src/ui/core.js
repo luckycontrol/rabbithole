@@ -40,7 +40,7 @@ export var closedReason = null;
 export var agentAttached = true;
 export var agentReason = null;
 export var connLost = false;
-export var sseFails = 0;
+var sseFails = 0;
 export var canvasBuilt = false;   // canvas DOM is built lazily on first entry
 export var canvasFramed = false;  // frame-all runs once; afterwards the view is preserved
 export var viewAdjusted = false;  // only user-adjusted camera state is persisted
@@ -57,18 +57,18 @@ export var ask = null;
 export var askText = null;
 export var askGo = null;
 export var zoomLabel = null;
-export var hintEl = null;
-export var bannerEl = null;
-export var hintNotice = null;
+var hintEl = null;
+var bannerEl = null;
+var hintNotice = null;
 export var bannerNotice = null;
 export var composerInner = null;
 export var composerText = null;
 export var composerSend = null;
-export var actReader = null;
-export var actCanvas = null;
-export var actSep = null;
-export var sinceEl = null;
-export var sinceMsg = null;
+var actReader = null;
+var actCanvas = null;
+var actSep = null;
+var sinceEl = null;
+var sinceMsg = null;
 export var paletteEl = null;
 export var palText = null;
 export var palResults = null;
@@ -355,7 +355,7 @@ export function unreadNodes(){
     out.sort(function(a,b){ return (a._order||0) - (b._order||0); });
     return out;
   }
-export function pendingNodes(){
+function pendingNodes(){
     var out = [];
     for (var k in nodes) if (nodes[k].status === "pending") out.push(nodes[k]);
     out.sort(function(a,b){ return (a._order||0) - (b._order||0); });

@@ -1,7 +1,7 @@
 import { AUTHORING_VOCABULARY_V1 } from "./authoring-v1.js";
 import { lensLabel, truncate } from "../model.js";
 
-export const ANSWERING_SYSTEM_PROMPT_V1 = [
+const ANSWERING_SYSTEM_PROMPT_V1 = [
   "You are the web Brain for Rabbithole, a branching-document canvas.",
   "Write a focused markdown answer to the human's question using the supplied parent document and lineage context.",
   "",
@@ -30,7 +30,7 @@ export function buildAnswerMessages(context, { tokenBudget = DEFAULT_TOKEN_BUDGE
 }
 
 /** @param {AnswerContext} context @param {{ tokenBudget?: number }} [options] */
-export function packBranchContext(context, { tokenBudget = DEFAULT_TOKEN_BUDGET } = {}) {
+function packBranchContext(context, { tokenBudget = DEFAULT_TOKEN_BUDGET } = {}) {
   const budget = Math.max(2000, Number(tokenBudget) || DEFAULT_TOKEN_BUDGET);
   const charBudget = budget * APPROX_CHARS_PER_TOKEN;
   const rootTitle = clean(context?.root_title || context?.rootTitle || "Untitled");

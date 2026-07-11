@@ -79,7 +79,7 @@ function disposePaletteResources(resetHooks){
 }
 
 export function togglePalette(){ if (palOpen) closePalette(); else openPalette(); }
-export function openPalette(){
+function openPalette(){
     palOpen = true;
     palCanvasCommands = mode === "canvas";
     paletteHooks.hideAsk(); paletteHooks.hidePeek(); paletteHooks.closeShare(); paletteHooks.hideConfirm();
@@ -103,7 +103,7 @@ export function openPalette(){
     });
     palText.setAttribute("aria-expanded", "true");
   }
-export function closePalette(settings){
+function closePalette(settings){
     if (palDialog) palDialog.close("programmatic", settings);
   }
   function onPaletteKeydown(e){

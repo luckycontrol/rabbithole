@@ -49,7 +49,7 @@ export function normalizeLens(lens) {
 }
 
 /** @param {unknown} type @param {string} [selectedText] */
-export function normalizeBranchType(type, selectedText = "") {
+function normalizeBranchType(type, selectedText = "") {
   const key = String(type ?? "").trim();
   if (key === BRANCH_SELECTION || key === BRANCH_FOLLOWUP) return key;
   return selectedText ? BRANCH_SELECTION : BRANCH_FOLLOWUP;
@@ -81,7 +81,7 @@ export function normalizeSize(size) {
 }
 
 /** @param {unknown} anchor */
-export function normalizeAnchor(anchor) {
+function normalizeAnchor(anchor) {
   if (!anchor) return null;
   const start = Math.max(0, Number(/** @type {{ offset_start?: unknown }} */ (anchor).offset_start) || 0);
   const end = Math.max(start, Number(/** @type {{ offset_end?: unknown }} */ (anchor).offset_end) || start);
@@ -190,6 +190,6 @@ export function getNode(nodes, id) {
 }
 
 /** @param {NodeCollection} nodes @returns {Iterable<ModelHoleNode>} */
-export function valuesOfNodes(nodes) {
+function valuesOfNodes(nodes) {
   return nodes instanceof Map ? nodes.values() : Object.values(nodes || {});
 }

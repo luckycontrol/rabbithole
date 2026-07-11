@@ -240,7 +240,7 @@ export function jumpToOrigin(node, source){
   }
 
   // ---------- follow-up thread ----------
-export function buildThreadRule(){
+function buildThreadRule(){
     var r = document.createElement("div");
     r.className = "thread-rule";
     r.textContent = "Conversation";
@@ -263,7 +263,7 @@ export function buildThreadItem(k){
     item.appendChild(a);
     return item;
   }
-export function fillTurnAnswer(a, k){
+function fillTurnAnswer(a, k){
     a.innerHTML = "";
     if (k.status === "pending" && !k.html){
       a.appendChild(buildLoading(k));
@@ -433,14 +433,14 @@ export function renderSidebar(){
     sideEl.replaceChildren(fragment);
     mountSidebarVisuals(newLivePanes);
   }
-export function mountSidebarVisuals(panes){
+function mountSidebarVisuals(panes){
     for (var i = 0; i < panes.length; i++){
       var key = "reader-side:" + panes[i].node.id;
       mountVisuals(panes[i].pane, key);
       if (typeof readerHooks.mountDocImages === "function") readerHooks.mountDocImages(panes[i].pane, panes[i].node, null, key);
     }
   }
-export function pendingStatusHtml(k){
+function pendingStatusHtml(k){
     var copy = {
       frozen: '<span class="si-muted">unanswered in this snapshot</span>',
       closed: '<span class="si-muted">saved — answered when you reopen</span>',
@@ -462,7 +462,7 @@ export function pendingStatusHtml(k){
     openNode(it.dataset.child);
   }
 
-export function setReaderFontScale(delta){
+function setReaderFontScale(delta){
     var node = nodes[currentNodeId];
     node.font_scale = Math.min(MAX_FS, Math.max(MIN_FS, (node.font_scale || 1) + delta));
     var dcs = readerMain.querySelectorAll(".doc-content");
@@ -472,7 +472,7 @@ export function setReaderFontScale(delta){
   }
 
   // ---------- offset <-> range highlighting ----------
-export function rangeFromOffsets(container, startOff, endOff){
+function rangeFromOffsets(container, startOff, endOff){
     var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
     var pos = 0, sN, sO, eN, eO;
     while (walker.nextNode()){
@@ -492,7 +492,7 @@ export function charOffset(container, node, offset){
     try { r.setEnd(node, offset); } catch(e){ return 0; }
     return r.toString().length;
   }
-export function wrapTextNode(textNode, childId, cls){
+function wrapTextNode(textNode, childId, cls){
     var m = document.createElement("mark");
     m.className = cls; m.dataset.child = childId;
     m.tabIndex = 0; m.setAttribute("role", "link");
@@ -501,7 +501,7 @@ export function wrapTextNode(textNode, childId, cls){
     textNode.parentNode.insertBefore(m, textNode);
     m.appendChild(textNode);
   }
-export function wrapRange(range, childId, cls){
+function wrapRange(range, childId, cls){
     var startC = range.startContainer, endC = range.endContainer, startO = range.startOffset, endO = range.endOffset;
     if (startC === endC && startC.nodeType === 3){
       if (startO === endO) return;
@@ -528,7 +528,7 @@ export function wrapRange(range, childId, cls){
 
   // j/k focus ring over the current document's marks (doc order, thread included).
   var kbdMarkIdx = -1;
-export function allMarks(){ return readerMain.querySelectorAll("mark[data-child]"); }
+function allMarks(){ return readerMain.querySelectorAll("mark[data-child]"); }
 export function focusedMark(){
     var marks = allMarks();
     return (kbdMarkIdx >= 0 && kbdMarkIdx < marks.length) ? marks[kbdMarkIdx] : null;

@@ -1,6 +1,6 @@
 import { AUTHORING_VOCABULARY_V1 } from "./authoring-v1.js";
 
-export const EXPLAINER_SYSTEM_PROMPT_V1 = [
+const EXPLAINER_SYSTEM_PROMPT_V1 = [
   "You are the explainer Brain for Rabbithole, a branching-document canvas for learning.",
   "Write a compact, substantive primer document in GFM markdown that answers and teaches the user's question.",
   "",
