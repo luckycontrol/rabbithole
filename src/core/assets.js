@@ -7,6 +7,7 @@ const ASSET_NAME_RE = /^([a-z0-9][a-z0-9_-]*)\.([a-z0-9]+)$/;
 const ASSET_URL_RE = /^asset:(.*)$/i;
 const ASSET_REF_RE = /\basset:([a-z0-9][a-z0-9_-]*\.[a-z0-9]+)/gi;
 
+/** @param {unknown} name */
 export function getAssetExtension(name) {
   const match = ASSET_NAME_RE.exec(String(name ?? ""));
   if (!match) return null;
@@ -14,10 +15,15 @@ export function getAssetExtension(name) {
   return ALLOWED_EXTENSIONS.has(ext) ? ext : null;
 }
 
+/** @param {unknown} name */
 export function isValidAssetName(name) {
   return getAssetExtension(name) !== null;
 }
 
+/**
+ * @param {unknown} name
+ * @param {string} [paramName]
+ */
 export function validateAssetName(name, paramName = "asset name") {
   const value = String(name ?? "");
   if (!isValidAssetName(value)) {
@@ -30,6 +36,7 @@ export function validateAssetName(name, paramName = "asset name") {
   return value;
 }
 
+/** @param {unknown} name */
 export function getAssetContentType(name) {
   const ext = getAssetExtension(name);
   if (!ext) validateAssetName(name);
@@ -50,11 +57,16 @@ export function getAssetContentType(name) {
   }
 }
 
+/** @param {string} name */
 export function defaultAssetUrlResolver(name) {
   const slash = String.fromCharCode(47);
   return slash + "assets" + slash + name;
 }
 
+/**
+ * @param {unknown} raw
+ * @param {{assetNames?: Set<string> | null, resolveAssetUrl?: (name: string) => string}} [options]
+ */
 export function resolveAssetMarkdownImageUrl(raw, { assetNames = null, resolveAssetUrl = defaultAssetUrlResolver } = {}) {
   const match = ASSET_URL_RE.exec(String(raw ?? ""));
   if (!match) return undefined;
@@ -65,6 +77,7 @@ export function resolveAssetMarkdownImageUrl(raw, { assetNames = null, resolveAs
   return resolveAssetUrl(name);
 }
 
+/** @param {unknown} markdown */
 export function extractAssetRefsFromMarkdown(markdown) {
   const refs = new Set();
   for (const match of String(markdown ?? "").matchAll(ASSET_REF_RE)) {

@@ -16,6 +16,7 @@ export const EXPLAINER_SYSTEM_PROMPT_V1 = [
   AUTHORING_VOCABULARY_V1,
 ].join("\n");
 
+/** @param {{question?: unknown}} [options] */
 export function buildExplainerMessages({ question = "" } = {}) {
   return [
     { role: "system", content: EXPLAINER_SYSTEM_PROMPT_V1 },
@@ -31,6 +32,7 @@ export function buildExplainerMessages({ question = "" } = {}) {
   ];
 }
 
+/** @param {unknown} value */
 function clean(value) {
   return String(value ?? "").replace(/\r\n?/g, "\n").trim();
 }

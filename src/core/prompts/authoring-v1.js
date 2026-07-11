@@ -37,6 +37,21 @@ export const AUTHORING_SYSTEM_PROMPT_V1 = [
   AUTHORING_VOCABULARY_V1,
 ].join("\n");
 
+/**
+ * @typedef {object} AuthorSource
+ * @property {unknown} [title]
+ * @property {unknown} [name]
+ * @property {unknown} [source_name]
+ * @property {unknown} [base_url]
+ * @property {unknown} [baseUrl]
+ * @property {unknown} [kind]
+ * @property {unknown} [type]
+ * @property {unknown} [markdown]
+ * @property {unknown} [content]
+ * @property {unknown} [text]
+ */
+
+/** @param {AuthorSource} [source] */
 export function buildAuthorMessages(source = {}) {
   const title = clean(source.title || source.name || source.source_name || "");
   const baseUrl = clean(source.base_url || source.baseUrl || "");
@@ -60,6 +75,7 @@ export function buildAuthorMessages(source = {}) {
   ];
 }
 
+/** @param {unknown} value */
 function clean(value) {
   return String(value ?? "").replace(/\r\n?/g, "\n").trim();
 }

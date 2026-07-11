@@ -15,6 +15,7 @@
     "build:publish": "node scripts/build-publish.mjs",
     "check:dist": "node scripts/check-dist.mjs",
     "check:purity": "node scripts/check-ui-purity.mjs",
+    "check:types": "tsc --noEmit",
     "test": "npm run test:stage1 && npm run test:stage2 && npm run test:stage3 && npm run test:stage4 && npm run test:stage5 && npm run test:stage6 && npm run test:stage7 && npm run test:stage8 && npm run test:stage9 && npm run test:stage9-idb && npm run test:stage10 && npm run test:stage10x && npm run test:stage11 && npm run test:stage12 && npm run test:stage13 && npm run test:stage14 && npm run test:stage15 && npm run test:stage16",
     "test:stage1": "node test/stage1-verify.mjs",
     "test:stage2": "node test/stage2-verify.mjs",
@@ -74,6 +75,7 @@
   "devDependencies": {
     "esbuild": "0.28.1",
     "fake-indexeddb": "^6.2.5",
-    "playwright": "^1.61.1"
+    "playwright": "^1.61.1",
+    "typescript": "5.9.3"
   }
 }

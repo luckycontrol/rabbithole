@@ -29,9 +29,17 @@ export const RABBITHOLE_STORE_METHODS = Object.freeze([
   "adoptStagedAssets",
 ]);
 
+/**
+ * Checks the runtime store port by method presence. Detailed method shapes are
+ * intentionally reserved for the reviewed store contract declaration.
+ * @param {object | null | undefined} store
+ * @returns {object}
+ */
 export function assertRabbitholeStore(store) {
   for (const method of RABBITHOLE_STORE_METHODS) {
-    if (typeof store?.[method] !== "function") throw new Error(`RabbitholeStore missing ${method}()`);
+    if (typeof /** @type {Record<string, unknown> | null | undefined} */ (store)?.[method] !== "function") {
+      throw new Error(`RabbitholeStore missing ${method}()`);
+    }
   }
-  return store;
+  return /** @type {object} */ (store);
 }

@@ -30,6 +30,7 @@ await esbuild.build({
   target: "es2018",
   minify: false,
   sourcemap: false,
+  tsconfigRaw: {},
   legalComments: "none",
   logLevel: "silent"
 });
@@ -43,6 +44,7 @@ await esbuild.build({
   target: "es2018",
   minify: false,
   sourcemap: false,
+  tsconfigRaw: {},
   legalComments: "none",
   logLevel: "silent"
 });
