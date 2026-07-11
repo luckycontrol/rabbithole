@@ -30,6 +30,7 @@ import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
 import { escapeHtml } from "./utils.js";
 import { resolveMarkdownUrl } from "./base-url.js";
+import { getBlockType, listBlockTypes } from "./blocks.js";
 
 export const MARKDOWN_RENDERER_SENTINEL = "rabbithole-shared-markdown-renderer-v1";
 
@@ -45,10 +46,6 @@ const BACKSLASH_OPEN_DISPLAY = "\\[";
 const BACKSLASH_CLOSE_DISPLAY = "\\]";
 const TRAILING_NEWLINE = /\n$/;
 const BLOCK_MATH_START = /(?:^|\n) {0,3}(?:\$\$(?!\$)|\\\[)/;
-const VISUAL_FENCE_LANGUAGES = new Set(["show"]);
-const VISUAL_FENCE_START = /(?:^|\n) {0,3}`{3,}[ \t]*show(?=$|[ \t\n])/i;
-
-/** @typedef {(source: string, context: { language: string }) => string} FenceRenderer */
 /** @typedef {{ baseUrl: string | null, assetNames: Set<string> | null, resolveAssetUrl: (name: string) => string | null }} RenderContext */
 /** @typedef {{ name: string, level: "block" | "inline", start(src: string): number | undefined, tokenizer(src: string): any, renderer(token: any): string }} RabbitholeExtension */
 
@@ -255,13 +252,11 @@ function defaultAssetUrlResolver() {
 
 /** @param {{ encodeBase64?: (source: string) => string, resolveAssetUrl?: (name: string) => string | null }} [adapters] */
 export function createMarkdownRenderer({ encodeBase64 = defaultEncodeBase64, resolveAssetUrl = defaultAssetUrlResolver } = {}) {
-  /** @type {Map<string, FenceRenderer>} */
-  const fenceRenderers = new Map();
-
-  /** @param {string} language @param {FenceRenderer} render */
-  function registerFenceRenderer(language, render) {
-    fenceRenderers.set(String(language || "").toLowerCase(), render);
-  }
+  const registeredTypes = new Set(listBlockTypes().map(({ type }) => type));
+  const escapedTypes = [...registeredTypes].map((type) => type.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const visualFenceStart = escapedTypes.length
+    ? new RegExp(`(?:^|\\n) {0,3}\`{3,}[ \\t]*(?:${escapedTypes.join("|")})(?=$|[ \\t\\n])`, "i")
+    : null;
 
   /** @param {string} language @param {string} source */
   function renderVisualPlaceholder(language, source) {
@@ -271,8 +266,10 @@ export function createMarkdownRenderer({ encodeBase64 = defaultEncodeBase64, res
 
   /** @param {string} language @param {string} source */
   function renderRegisteredFence(language, source) {
-    const render = fenceRenderers.get(language.toLowerCase());
-    return render ? render(source, { language }) : null;
+    const descriptor = getBlockType(language);
+    if (!descriptor || !registeredTypes.has(descriptor.type)) return null;
+    descriptor.parse(source);
+    return renderVisualPlaceholder(descriptor.type, source);
   }
 
   /** @param {{ text: string, lang?: string, escaped?: boolean }} token */
@@ -296,7 +293,7 @@ export function createMarkdownRenderer({ encodeBase64 = defaultEncodeBase64, res
         name: "visualFencePending",
         level: "block",
         start(src) {
-          const match = VISUAL_FENCE_START.exec(src);
+          const match = visualFenceStart?.exec(src);
           if (!match) return undefined;
           return match.index + (match[0][0] === "\n" ? 1 : 0);
         },
@@ -304,7 +301,7 @@ export function createMarkdownRenderer({ encodeBase64 = defaultEncodeBase64, res
           const open = /^(?: {0,3})(`{3,})([^\n`]*)?(?:\n|$)/.exec(src);
           if (!open) return undefined;
           const language = normalizeFenceLanguage(open[2] || "").toLowerCase();
-          if (!VISUAL_FENCE_LANGUAGES.has(language)) return undefined;
+          if (!registeredTypes.has(language)) return undefined;
           if (findClosingFence(src, open[1], open[0].length) !== -1) return undefined;
           return { type: "visualFencePending", raw: src, language };
         },
@@ -421,8 +418,6 @@ export function createMarkdownRenderer({ encodeBase64 = defaultEncodeBase64, res
     };
   }
 
-  registerFenceRenderer("show", (source) => renderVisualPlaceholder("show", source));
-
   /** @param {unknown} markdown @param {{ baseUrl?: string | null, assetNames?: Set<string> | null, resolveAssetUrl?: ((name: string) => string | null) | null }} [options] */
   function renderMarkdownToHtml(markdown, { baseUrl = null, assetNames = null, resolveAssetUrl: perCallResolver = null } = {}) {
     const context = {
@@ -438,7 +433,6 @@ export function createMarkdownRenderer({ encodeBase64 = defaultEncodeBase64, res
   }
 
   return {
-    registerFenceRenderer,
     renderMarkdownToHtml,
   };
 }

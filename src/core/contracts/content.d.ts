@@ -1,23 +1,19 @@
 /**
  * Content and learning-primitive vocabulary for Phases 6–8.
  *
- * Runtime authority today is split. {@link ../markdown-renderer.js}
- * (`createMarkdownRenderer`) owns closed-fence dispatch: renderers are stored
- * by lowercased language and registered as `registerFenceRenderer(language,
- * render)`. `show` is the only built-in registration; unknown fences fall
- * through to highlighted/plain code. Its separate, hardcoded `show` tokenizer
- * emits the pending placeholder for an unclosed fence. {@link ../markdown.js}
- * exposes the same two-argument registration for the shared Node renderer.
- * Consequently `MarkdownExtension` describes that language/render pair; it is
- * not a claim that an object-shaped plugin registry exists at runtime.
+ * Runtime block authority is {@link ../blocks.js}. Its descriptor registry
+ * drives closed-fence placeholders and pending-fence recognition in
+ * {@link ../markdown-renderer.js}; unknown fences remain highlighted/plain
+ * code. `show` is the only built-in descriptor.
  *
- * Client upgrade authority is {@link ../../ui/visuals.js}. Both
+ * Client mounts are bound to those same descriptors in
+ * {@link ../../ui/visuals.js}. Both
  * {@link ../../ui/entry.js} and {@link ../../ui/frozen-entry.js} call
  * `mountVisuals`, which finds `.viz[data-viz][data-src]`, skips pending
  * placeholders, base64-decodes the source, dispatches through the separate
- * `registerVisualHandler(type, build)` registry, and replaces the placeholder
- * with cached DOM. There is no `HydratableBlock` registry or lifecycle contract
- * today.
+ * `registerBlockMount(type, mountSpec)`, and replace placeholders with cached
+ * DOM. Sanitized descriptors can only supply HTML strings; the framework owns
+ * sanitization and insertion before optional wiring.
  *
  * IMPORTANT — PROVISIONAL AND REVISABLE: Phase 8's content spike owns the final
  * hydratable-block, primitive, lifecycle, identity, state, and security formats.
@@ -30,6 +26,19 @@
 export interface MarkdownRenderContext {
   /** Normalized first info-string word, preserving its source casing today. */
   language: string;
+}
+
+export interface BlockTypeDescriptor<Model = unknown> {
+  type: string;
+  version: number;
+  parse(source: string): Model;
+  toPlainText(model: Model): string;
+  security: "sanitize-html" | "inert";
+}
+
+export interface BlockMountSpec<Model = unknown> {
+  renderHtml?(model: Model): string;
+  wire?(rootElement: HTMLElement, model: Model): void;
 }
 
 /** Vocabulary projection of today's two-argument fence registration. */

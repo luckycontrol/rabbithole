@@ -25,6 +25,9 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | visual placeholders, pending show/math, raw HTML escaping | C2 | Defines visible pending and safe markdown behavior. | Rendering: unclosed fence mid-stream; injection via fences/imported payloads (raw-HTML subset) |
 | visual mount identity/cache pruning | C3 | Pins the current cache-and-replace implementation. | — |
 | visual sanitizer policy and leading styles | C2 | Protects the `show` security policy and allowed styling. | Rendering: injection via fences/imported payloads (live path) |
+| block descriptor and mount registration contract | C2 | Requires validated descriptors, unique block types, and mounts bound to known descriptors. | — |
+| pending block recognition derives from the registry | C2 | Proves registered types receive streaming placeholders while unknown fences remain plain code. | Rendering: unclosed fence mid-stream; unknown fence language |
+| mount framework sanitizes adapter HTML before wiring | C2 | Makes sanitizer enforcement a framework property rather than a handler convention. | Rendering: injection via fences/imported payloads (live path) |
 | DOMPurify/page assembly order and script parse | C3 | Pins one-script assembly and library placement. | — |
 
 ## `stage3-base-url-verify.mjs`
@@ -354,20 +357,22 @@ These live-provider eval cases run only through `npm run eval`; their regex/heur
 
 ## Counts
 
-Current inventory arithmetic: `59 + 154 + 11 + 1 + 0 = 225` total cases.
+Current inventory arithmetic: `59 + 157 + 11 + 1 + 0 = 228` total cases.
 
 Phase 8 Slice 1 adds seven C1 cases: MCP resume refusal, filesystem and IndexedDB load refusal, web import refusal, non-object bag validation, the v1 forward-safety cycle, and portable/snapshot bag projection: `52 + 7 = 59` and `218 + 7 = 225`, yielding `59 + 154 + 11 + 1 + 0 = 225`.
+
+Phase 8 Slice 2 adds three C2 cases for the block registry contract, registry-derived pending recognition, and framework-owned mount sanitization: `154 + 3 = 157` and `225 + 3 = 228`, yielding `59 + 157 + 11 + 1 + 0 = 228`.
 
 Counts treat each row above as one case; the shared Stage 9 contract counts once per backend because `npm test` executes it against both. Phase 5 Slice 2 added three C1 rows (`41 + 3 = 44`, `184 + 3 = 187`). Slice 3 added three C2 rows and reclassified the reducer mutation probe from C3 to C2: `129 + 3 + 1 = 133`, `10 - 1 = 9`, and `187 + 3 = 190` total. Slice 4 retires the stale-progress C4 as a C2 and adds four ordering goldens: `133 + 1 + 4 = 138`, `4 - 1 = 3`, and `190 + 4 = 194` total. Slice 5 adds one generation-vocabulary C2 case: `138 + 1 = 139` and `194 + 1 = 195` total. Slice 7 adds one content-vocabulary C2 case: `139 + 1 = 140` and `195 + 1 = 196` total. Slice 8 adds one hydration-wire C1 golden: `44 + 1 = 45` and `196 + 1 = 197` total. Slice 9 adds one packaging C1 case and one installed-launch C2 case: `45 + 1 = 46`, `140 + 1 = 141`, and `197 + 2 = 199` total. Phase 6 Slice 1 adds four C2 adapter/parser/error cases and two C3 SSE framing cases: `141 + 4 = 145`, `9 + 2 = 11`, and `199 + 6 = 205` total. Phase 6 Slice 2 adds two C2 cases: `145 + 2 = 147` and `205 + 2 = 207` total. Phase 6 Slice 3 adds three C2 browser-branch wiring cases: `147 + 3 = 150` and `207 + 3 = 210` total. Phase 6 Slice 4 adds three C2 root/authoring/seam-retirement cases: `150 + 3 = 153` and `210 + 3 = 213` total. Phase 7 Slice 1 reclassifies the portable-import MIME fossil from C4 to C1: `46 + 1 = 47`, `3 - 1 = 2`, and the total remains `214`. Phase 7 Slice 2 adds three C1 snapshot-format cases (canonical inert projection, escaping fidelity, and legacy viewing compatibility): `47 + 3 = 50` and `214 + 3 = 217` total. Phase 7 Slice 3 extends the existing frozen-styles C2 case, so the arithmetic remains `50 + 154 + 11 + 2 + 0 = 217`. Phase 7 Slice 4 retires the hand-edited snapshot C4 as an executable C1 boundary case: `50 + 1 = 51`, `2 - 1 = 1`, and the total remains `217`, yielding `51 + 154 + 11 + 1 + 0 = 217`. The MCP snapshot regression fix adds one C2 live-product download case: `154 + 1 = 155` and `217 + 1 = 218`, yielding `51 + 155 + 11 + 1 + 0 = 218`. Phase 7 Slice 5a reclassifies one legacy frozen-export C2 row as a canonical cross-host artifact C1 row: `51 + 1 = 52`, `155 - 1 = 154`, and the total remains `218`, yielding `52 + 154 + 11 + 1 + 0 = 218`.
 
 | Category | Count |
 |---|---:|
 | C1 compatibility contract | 59 |
-| C2 behavioral product contract | 154 |
+| C2 behavioral product contract | 157 |
 | C3 implementation snapshot | 11 |
 | C4 known defect | 1 |
 | C5 design target | 0 |
-| **Total** | **225** |
+| **Total** | **228** |
 
 ## Known-defect fossils
 

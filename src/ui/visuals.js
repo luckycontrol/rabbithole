@@ -1,8 +1,10 @@
   // ===========================================================================
-  // VISUAL FENCES
-  // ===========================================================================
+// VISUAL FENCES
+// ===========================================================================
+import { getBlockType } from "../core/blocks.js";
+
 export var visualSurfaceCaches = {};
-var visualHandlers = {};
+var blockMounts = {};
 var visualHooksReady = false;
 var VISUAL_ALLOWED_URI = /^(?:(?:https?:)?\/\/|https?:|\/|\.\/|\.\.\/|#|data:image\/(?:png|jpe?g|gif|webp);base64,|[^:]*$)/i;
 export var VISUAL_SANITIZE_CONFIG = {
@@ -23,9 +25,18 @@ export var VISUAL_SANITIZE_CONFIG = {
     ".rh-viz-content img{max-width:100%;height:auto;}" +
     ".rh-viz-content a{color:var(--accent);text-decoration-color:color-mix(in srgb,var(--accent) 42%,transparent);}" +
     ".rh-viz-content code,.rh-viz-content pre{font-family:var(--font-mono);}";
-export function registerVisualHandler(type, build){
-    if (!type || typeof build !== "function") return;
-    visualHandlers[String(type).toLowerCase()] = build;
+export function registerBlockMount(type, mountSpec){
+    var key = String(type || "").toLowerCase();
+    var descriptor = getBlockType(key);
+    if (!descriptor) throw new Error('Cannot register mount for unknown block type "' + key + '"');
+    if (!mountSpec || typeof mountSpec !== "object") throw new TypeError('Block mount for "' + key + '" must be an object');
+    if (descriptor.security === "sanitize-html" && typeof mountSpec.renderHtml !== "function") {
+      throw new TypeError('Block mount for "' + key + '" must provide renderHtml(model)');
+    }
+    if (mountSpec.wire !== undefined && typeof mountSpec.wire !== "function") {
+      throw new TypeError('Block mount wire for "' + key + '" must be a function');
+    }
+    blockMounts[key] = mountSpec;
   }
   function ensureVisualSanitizer(){
     var purifier = window.DOMPurify;
@@ -71,12 +82,13 @@ export function visualFallback(source, message){
     wrap.appendChild(pre);
     return wrap;
   }
-export function buildShowVisual(source){
-    try {
-      var clean = sanitizeVisualSource(source);
+export function buildShowVisual(model){
+    return String(model == null ? "" : model);
+  }
+  function buildMountedVisual(descriptor, mountSpec, model){
       var host = document.createElement("div");
-      host.className = "viz-mounted viz-show";
-      host.setAttribute("data-viz-mounted", "show");
+      host.className = "viz-mounted viz-" + descriptor.type;
+      host.setAttribute("data-viz-mounted", descriptor.type);
       host.style.contain = "content";
       var shadow = host.attachShadow({ mode: "open" });
       var style = document.createElement("style");
@@ -85,14 +97,16 @@ export function buildShowVisual(source){
       frame.className = "rh-viz-frame";
       var content = document.createElement("div");
       content.className = "rh-viz-content";
-      content.innerHTML = clean;
+      if (descriptor.security === "sanitize-html") {
+        content.innerHTML = sanitizeVisualSource(mountSpec.renderHtml(model));
+      } else {
+        content.textContent = descriptor.toPlainText(model);
+      }
       frame.appendChild(content);
       shadow.appendChild(style);
       shadow.appendChild(frame);
+      if (mountSpec.wire) mountSpec.wire(content, model);
       return host;
-    } catch(e) {
-      return visualFallback(source, "Unable to render visual. Showing source.");
-    }
   }
   function getSurfaceCache(surfaceKey){
     var key = String(surfaceKey || "default");
@@ -127,14 +141,20 @@ export function mountVisuals(containerEl, surfaceKey){
       if (!cache[item.key]) cache[item.key] = [];
       var mounted = cache[item.key][idx];
       if (!mounted){
-        var handler = visualHandlers[item.type];
+        var descriptor = getBlockType(item.type);
+        var mountSpec = blockMounts[item.type];
         var source;
         try {
           source = decodeVisualSource(item.encoded);
-          mounted = handler ? handler(source, item.type) : visualFallback(source, "Unsupported visual type. Showing source.");
         } catch(e) {
-          source = "";
           mounted = visualFallback("", "Unable to decode visual source.");
+        }
+        if (!mounted) try {
+          mounted = descriptor && mountSpec
+            ? buildMountedVisual(descriptor, mountSpec, descriptor.parse(source))
+            : visualFallback(source, "Unsupported visual type. Showing source.");
+        } catch(e) {
+          mounted = visualFallback(source, "Unable to render visual. Showing source.");
         }
         cache[item.key][idx] = mounted;
       }
@@ -147,8 +167,4 @@ export function mountVisuals(containerEl, surfaceKey){
     }
   }
 
-registerVisualHandler("show", function(source){ return buildShowVisual(source); });
-
-export function initVisuals(){
-  window.__rhVisuals = { mount: mountVisuals, caches: visualSurfaceCaches, config: VISUAL_SANITIZE_CONFIG, register: registerVisualHandler };
-}
+registerBlockMount("show", { renderHtml: buildShowVisual });

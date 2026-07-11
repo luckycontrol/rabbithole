@@ -4,10 +4,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { TextDecoder } from "node:util";
-import { renderMarkdownToHtml } from "../src/core/markdown.js";
+import { encodeBase64Utf8, renderMarkdownToHtml } from "../src/core/markdown.js";
+import { createMarkdownRenderer } from "../src/core/markdown-renderer.js";
+import { getBlockType, listBlockTypes, registerBlockType } from "../src/core/blocks.js";
 import { buildCanvasHtml } from "../src/node/html/canvas.js";
 import { getDompurifyScript } from "../src/node/html/built-assets.js";
-import { mountVisuals } from "../src/ui/visuals.js";
+import { mountVisuals, registerBlockMount } from "../src/ui/visuals.js";
 
 function count(haystack, needle) {
   return haystack.split(needle).length - 1;
@@ -46,6 +48,38 @@ async function runMarkdownFixtures() {
   assert(!rawHtml.includes("<section"));
 
   console.log("ok markdown: visual placeholders, pending states, raw HTML escaping");
+}
+
+function runBlockRegistryContract() {
+  assert.equal(getBlockType("SHOW")?.version, 1);
+  assert(listBlockTypes().some(({ type }) => type === "show"));
+  assert.throws(() => registerBlockType({
+    type: "show", version: 1, parse: (source) => source, toPlainText: () => "", security: "sanitize-html",
+  }), /already registered/);
+  assert.throws(() => registerBlockType({ type: "missing-parse", version: 1, toPlainText: () => "", security: "inert" }), /parse\(source\)/);
+  assert.throws(() => registerBlockType({ type: "missing-text", version: 1, parse: (source) => source, security: "inert" }), /toPlainText\(model\)/);
+  assert.throws(() => registerBlockType({ type: "bad-security", version: 1, parse: (source) => source, toPlainText: () => "", security: "trusted" }), /security must be/);
+  assert.throws(() => registerBlockMount("not-registered", {}), /unknown block type/);
+  console.log("ok blocks: descriptor validation, duplicate rejection, mount binding");
+}
+
+function runDerivedFenceRecognition() {
+  registerBlockType({
+    type: "stage2block",
+    version: 1,
+    parse: (source) => source,
+    toPlainText: () => "",
+    security: "sanitize-html",
+  });
+  const renderer = createMarkdownRenderer({ encodeBase64: encodeBase64Utf8 });
+  const pending = renderer.renderMarkdownToHtml("```stage2block\npartial");
+  assert(pending.includes('class="viz viz-pending"'));
+  assert(pending.includes('data-viz="stage2block"'));
+  assert(!pending.includes("partial"));
+  const unknown = renderer.renderMarkdownToHtml("```stage2unknown\nplain code");
+  assert(unknown.includes('<pre><code class="language-stage2unknown">plain code'));
+  assert(!unknown.includes("viz-pending"));
+  console.log("ok blocks: fresh renderer derives pending recognition from registry");
 }
 
 class MiniClassList {
@@ -307,6 +341,27 @@ async function runClientMountSimulation() {
   console.log("ok client: mount cache reuses identity, prunes absent keys, sanitizer config, leading styles");
 }
 
+function runFrameworkSanitization() {
+  const harness = createVisualHarness();
+  let wiredRoot = null;
+  registerBlockMount("stage2block", {
+    renderHtml() { return '<script>hostile()</script><div onclick="bad()">Safe</div>'; },
+    wire(root) { wiredRoot = root; },
+  });
+  const container = harness.document.createElement("div");
+  const placeholder = harness.document.createElement("div");
+  placeholder.className = "viz";
+  placeholder.setAttribute("data-viz", "stage2block");
+  placeholder.setAttribute("data-src", encodeBase64Utf8("model"));
+  container.appendChild(placeholder);
+  mountVisuals(container, "reader:framework-sanitize");
+  const root = findShadowContent(findMounted(container));
+  assert.strictEqual(wiredRoot, root, "wire should receive the sanitized content root after insertion");
+  assert(!root.textContent.includes("hostile"), "framework should strip script output from mount adapters");
+  assert.equal(root.childNodes[0].getAttribute("onclick"), null, "framework should strip event handlers from mount adapter output");
+  console.log("ok blocks: framework sanitizes adapter HTML before wire");
+}
+
 async function assertPageAssembly() {
   const html = buildCanvasHtml({ title: "Stage 2", root_id: "root", nodes: [] });
   const purify = getDompurifyScript();
@@ -325,7 +380,10 @@ async function assertPageAssembly() {
   console.log("ok page assembly: DOMPurify inline once and assembled script parses");
 }
 
+runBlockRegistryContract();
+runDerivedFenceRecognition();
 await runMarkdownFixtures();
 await runClientMountSimulation();
+runFrameworkSanitization();
 await assertPageAssembly();
 console.log("stage2 verification passed");

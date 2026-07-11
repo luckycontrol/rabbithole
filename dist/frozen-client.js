@@ -2431,9 +2431,47 @@ var RabbitholeFrozenClient = (() => {
     hintNotice.show({ message: msg, duration: 4e3 });
   }
 
+  // src/core/blocks.js
+  var blockTypes = /* @__PURE__ */ new Map();
+  function normalizedType(value) {
+    return String(value || "").toLowerCase();
+  }
+  function registerBlockType(descriptor) {
+    if (!descriptor || typeof descriptor !== "object") throw new TypeError("Block type descriptor must be an object");
+    const type = normalizedType(descriptor.type);
+    if (!type || !/^[a-z][a-z0-9_-]*$/.test(type)) throw new TypeError("Block type descriptor.type must be a fence-safe name");
+    if (!Number.isInteger(descriptor.version) || descriptor.version < 1) throw new TypeError(`Block type "${type}" must have a positive integer version`);
+    if (typeof descriptor.parse !== "function") throw new TypeError(`Block type "${type}" must provide parse(source)`);
+    if (typeof descriptor.toPlainText !== "function") throw new TypeError(`Block type "${type}" must provide toPlainText(model)`);
+    if (descriptor.security !== "sanitize-html" && descriptor.security !== "inert") {
+      throw new TypeError(`Block type "${type}" security must be "sanitize-html" or "inert"`);
+    }
+    if (blockTypes.has(type)) throw new Error(`Block type "${type}" is already registered`);
+    const registered = Object.freeze({ ...descriptor, type });
+    blockTypes.set(type, registered);
+    return registered;
+  }
+  function getBlockType(type) {
+    return blockTypes.get(normalizedType(type));
+  }
+  function listBlockTypes() {
+    return [...blockTypes.values()];
+  }
+  registerBlockType({
+    type: "show",
+    version: 1,
+    parse(source2) {
+      return String(source2 != null ? source2 : "");
+    },
+    toPlainText() {
+      return "";
+    },
+    security: "sanitize-html"
+  });
+
   // src/ui/visuals.js
   var visualSurfaceCaches = {};
-  var visualHandlers = {};
+  var blockMounts = {};
   var visualHooksReady = false;
   var VISUAL_ALLOWED_URI = /^(?:(?:https?:)?\/\/|https?:|\/|\.\/|\.\.\/|#|data:image\/(?:png|jpe?g|gif|webp);base64,|[^:]*$)/i;
   var VISUAL_SANITIZE_CONFIG = {
@@ -2446,9 +2484,18 @@ var RabbitholeFrozenClient = (() => {
     ALLOWED_URI_REGEXP: VISUAL_ALLOWED_URI
   };
   var VISUAL_BASE_CSS = ":host{display:block;width:100%;max-width:100%;margin:0.55em 0 1em;contain:content;color:var(--fg);background:transparent;font:inherit;}.rh-viz-frame{box-sizing:border-box;width:100%;max-width:100%;overflow-x:auto;overflow-y:visible;overscroll-behavior-x:contain;border:1px solid var(--border);border-radius:8px;padding:0.85em 1em;background:var(--node-bg);color:var(--fg);font:inherit;}.rh-viz-content{box-sizing:border-box;min-width:100%;width:auto;color:inherit;font:inherit;}.rh-viz-content *,.rh-viz-content *::before,.rh-viz-content *::after{box-sizing:border-box;}.rh-viz-content svg{max-width:none;height:auto;}.rh-viz-content img{max-width:100%;height:auto;}.rh-viz-content a{color:var(--accent);text-decoration-color:color-mix(in srgb,var(--accent) 42%,transparent);}.rh-viz-content code,.rh-viz-content pre{font-family:var(--font-mono);}";
-  function registerVisualHandler(type, build) {
-    if (!type || typeof build !== "function") return;
-    visualHandlers[String(type).toLowerCase()] = build;
+  function registerBlockMount(type, mountSpec) {
+    var key = String(type || "").toLowerCase();
+    var descriptor = getBlockType(key);
+    if (!descriptor) throw new Error('Cannot register mount for unknown block type "' + key + '"');
+    if (!mountSpec || typeof mountSpec !== "object") throw new TypeError('Block mount for "' + key + '" must be an object');
+    if (descriptor.security === "sanitize-html" && typeof mountSpec.renderHtml !== "function") {
+      throw new TypeError('Block mount for "' + key + '" must provide renderHtml(model)');
+    }
+    if (mountSpec.wire !== void 0 && typeof mountSpec.wire !== "function") {
+      throw new TypeError('Block mount wire for "' + key + '" must be a function');
+    }
+    blockMounts[key] = mountSpec;
   }
   function ensureVisualSanitizer() {
     var purifier = window.DOMPurify;
@@ -2494,28 +2541,31 @@ var RabbitholeFrozenClient = (() => {
     wrap.appendChild(pre);
     return wrap;
   }
-  function buildShowVisual(source2) {
-    try {
-      var clean = sanitizeVisualSource(source2);
-      var host = document.createElement("div");
-      host.className = "viz-mounted viz-show";
-      host.setAttribute("data-viz-mounted", "show");
-      host.style.contain = "content";
-      var shadow = host.attachShadow({ mode: "open" });
-      var style = document.createElement("style");
-      style.textContent = VISUAL_BASE_CSS;
-      var frame = document.createElement("div");
-      frame.className = "rh-viz-frame";
-      var content = document.createElement("div");
-      content.className = "rh-viz-content";
-      content.innerHTML = clean;
-      frame.appendChild(content);
-      shadow.appendChild(style);
-      shadow.appendChild(frame);
-      return host;
-    } catch (e) {
-      return visualFallback(source2, "Unable to render visual. Showing source.");
+  function buildShowVisual(model) {
+    return String(model == null ? "" : model);
+  }
+  function buildMountedVisual(descriptor, mountSpec, model) {
+    var host = document.createElement("div");
+    host.className = "viz-mounted viz-" + descriptor.type;
+    host.setAttribute("data-viz-mounted", descriptor.type);
+    host.style.contain = "content";
+    var shadow = host.attachShadow({ mode: "open" });
+    var style = document.createElement("style");
+    style.textContent = VISUAL_BASE_CSS;
+    var frame = document.createElement("div");
+    frame.className = "rh-viz-frame";
+    var content = document.createElement("div");
+    content.className = "rh-viz-content";
+    if (descriptor.security === "sanitize-html") {
+      content.innerHTML = sanitizeVisualSource(mountSpec.renderHtml(model));
+    } else {
+      content.textContent = descriptor.toPlainText(model);
     }
+    frame.appendChild(content);
+    shadow.appendChild(style);
+    shadow.appendChild(frame);
+    if (mountSpec.wire) mountSpec.wire(content, model);
+    return host;
   }
   function getSurfaceCache(surfaceKey) {
     var key = String(surfaceKey || "default");
@@ -2550,14 +2600,18 @@ var RabbitholeFrozenClient = (() => {
       if (!cache[item.key]) cache[item.key] = [];
       var mounted = cache[item.key][idx];
       if (!mounted) {
-        var handler = visualHandlers[item.type];
+        var descriptor = getBlockType(item.type);
+        var mountSpec = blockMounts[item.type];
         var source2;
         try {
           source2 = decodeVisualSource(item.encoded);
-          mounted = handler ? handler(source2, item.type) : visualFallback(source2, "Unsupported visual type. Showing source.");
         } catch (e) {
-          source2 = "";
           mounted = visualFallback("", "Unable to decode visual source.");
+        }
+        if (!mounted) try {
+          mounted = descriptor && mountSpec ? buildMountedVisual(descriptor, mountSpec, descriptor.parse(source2)) : visualFallback(source2, "Unsupported visual type. Showing source.");
+        } catch (e) {
+          mounted = visualFallback(source2, "Unable to render visual. Showing source.");
         }
         cache[item.key][idx] = mounted;
       }
@@ -2569,12 +2623,7 @@ var RabbitholeFrozenClient = (() => {
       else cache[ckey].length = present[ckey];
     }
   }
-  registerVisualHandler("show", function(source2) {
-    return buildShowVisual(source2);
-  });
-  function initVisuals() {
-    window.__rhVisuals = { mount: mountVisuals, caches: visualSurfaceCaches, config: VISUAL_SANITIZE_CONFIG, register: registerVisualHandler };
-  }
+  registerBlockMount("show", { renderHtml: buildShowVisual });
 
   // src/ui/reader.js
   var readerHooks = {
@@ -31377,8 +31426,6 @@ ${text2}</tr>
   var BACKSLASH_CLOSE_DISPLAY = "\\]";
   var TRAILING_NEWLINE = /\n$/;
   var BLOCK_MATH_START = /(?:^|\n) {0,3}(?:\$\$(?!\$)|\\\[)/;
-  var VISUAL_FENCE_LANGUAGES = /* @__PURE__ */ new Set(["show"]);
-  var VISUAL_FENCE_START = /(?:^|\n) {0,3}`{3,}[ \t]*show(?=$|[ \t\n])/i;
   core_default.registerLanguage("bash", bash);
   core_default.registerLanguage("c", c);
   core_default.registerLanguage("cpp", cpp);
@@ -31545,18 +31592,19 @@ ${text2}</tr>
     return null;
   }
   function createMarkdownRenderer({ encodeBase64 = defaultEncodeBase64, resolveAssetUrl: resolveAssetUrl2 = defaultAssetUrlResolver2 } = {}) {
-    const fenceRenderers = /* @__PURE__ */ new Map();
-    function registerFenceRenderer(language, render3) {
-      fenceRenderers.set(String(language || "").toLowerCase(), render3);
-    }
+    const registeredTypes = new Set(listBlockTypes().map(({ type }) => type));
+    const escapedTypes = [...registeredTypes].map((type) => type.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const visualFenceStart = escapedTypes.length ? new RegExp(`(?:^|\\n) {0,3}\`{3,}[ \\t]*(?:${escapedTypes.join("|")})(?=$|[ \\t\\n])`, "i") : null;
     function renderVisualPlaceholder(language, source2) {
       const encoded = encodeBase64(String(source2 != null ? source2 : ""));
       return `<div class="viz" data-viz="${escapeHtml(language)}" data-src="${encoded}"></div>
 `;
     }
     function renderRegisteredFence(language, source2) {
-      const render3 = fenceRenderers.get(language.toLowerCase());
-      return render3 ? render3(source2, { language }) : null;
+      const descriptor = getBlockType(language);
+      if (!descriptor || !registeredTypes.has(descriptor.type)) return null;
+      descriptor.parse(source2);
+      return renderVisualPlaceholder(descriptor.type, source2);
     }
     function renderCodeFence({ text: text2, lang, escaped }) {
       const language = normalizeFenceLanguage(lang);
@@ -31575,7 +31623,7 @@ ${text2}</tr>
           name: "visualFencePending",
           level: "block",
           start(src) {
-            const match = VISUAL_FENCE_START.exec(src);
+            const match = visualFenceStart == null ? void 0 : visualFenceStart.exec(src);
             if (!match) return void 0;
             return match.index + (match[0][0] === "\n" ? 1 : 0);
           },
@@ -31583,7 +31631,7 @@ ${text2}</tr>
             const open2 = /^(?: {0,3})(`{3,})([^\n`]*)?(?:\n|$)/.exec(src);
             if (!open2) return void 0;
             const language = normalizeFenceLanguage(open2[2] || "").toLowerCase();
-            if (!VISUAL_FENCE_LANGUAGES.has(language)) return void 0;
+            if (!registeredTypes.has(language)) return void 0;
             if (findClosingFence(src, open2[1], open2[0].length) !== -1) return void 0;
             return { type: "visualFencePending", raw: src, language };
           },
@@ -31693,7 +31741,6 @@ ${text2}</tr>
         }
       };
     }
-    registerFenceRenderer("show", (source2) => renderVisualPlaceholder("show", source2));
     function renderMarkdownToHtml2(markdown2, { baseUrl = null, assetNames = null, resolveAssetUrl: perCallResolver = null } = {}) {
       const context = {
         baseUrl,
@@ -31706,7 +31753,6 @@ ${text2}</tr>
       return html2.replace(/>\n+</g, "><").replace(/\n<\/code>/g, "</code>");
     }
     return {
-      registerFenceRenderer,
       renderMarkdownToHtml: renderMarkdownToHtml2
     };
   }
@@ -32543,7 +32589,6 @@ ${text2}</tr>
   }
   function startRabbithole(hydration2) {
     initCore(hydration2);
-    initVisuals();
     registerCoreHooks({
       post: post2,
       openNode,
