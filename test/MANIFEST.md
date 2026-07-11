@@ -125,14 +125,16 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | credentials stay isolated from holes/snapshots | C1 | Protects the no-export credential contract. | Data: preference/credential storage (isolation only, not migrations) |
 | web snapshot export ships an empty style block | C4 | Records that web-exported frozen HTML is unstyled (`snapshot.js` serializes the page's inline `<style>`, which the web build does not emit; the styled export path lives in the canvas host). Phase 7's snapshot boundary fixes this and retires the tripwire. | Data: snapshot export styling |
 | owned provider Select ARIA, keyboard, token anchor, nested Escape, and focus restoration | C2 | Pins the single-select trigger/listbox contract, roving option focus, token-derived anchoring, child-before-parent dismissal, and focus continuity (`stage10-web-verify.mjs:262-292`, `stage10-web-verify.mjs:331-334`). | Chrome: anchored transient surfaces; keyboard-only completion; focus restoration |
-| provider switch, local model field, OpenRouter picker | C2 | Preserves live provider persistence and the Local/OpenRouter conditional settings surfaces through the owned Select (`stage10-web-verify.mjs:293-329`). | Chrome: Combobox catalogs (successful catalog only); settings during active stream (no active stream) |
+| provider switch preserves conditional settings and provider-local credentials | C2 | Preserves live provider persistence and the Local/OpenRouter conditional settings surfaces through the owned Select. | Chrome: settings during active stream (no active stream) |
+| OpenRouter Combobox ARIA, keyboard, token anchor, focus, and designed async states | C2 | Pins the editable-combobox/listbox/option contract, `aria-activedescendant` navigation with input focus retained, token-derived anchoring, loading/empty/error-retry states, exact-id fallback, dual model commit, and trigger focus restoration. | Chrome: Combobox catalogs; anchored transient surfaces; keyboard-only completion; focus restoration |
+| Local Ollama discovery Combobox found/none/error-retry/exact-id states | C2 | Requires discovery to start only on open, calmly explains an empty installation with the `ollama list` hint, recovers failed fetches, preserves free text, and dual-writes the chosen model. | Chrome: Combobox catalogs; keyboard-only completion |
 | inline key-panel eye toggle | C2 | Guards the inline `renderInlineKeyPanel` Field wiring by requiring password/text and `aria-pressed` to change together (`stage10-web-verify.mjs:151-158`). | Chrome: credential entry and accessible state |
-| settings Field names and described-by connections | C2 | Requires all six settings text/password inputs to expose labels and resolvable hint or status descriptions (`stage10-web-verify.mjs:297-305`, `stage10-web-verify.mjs:488-499`). | Chrome: keyboard-only completion (settings field accessibility) |
+| settings Field names and described-by connections | C2 | Requires all five remaining settings text/password inputs to expose labels and resolvable hint or status descriptions. | Chrome: keyboard-only completion (settings field accessibility) |
 | API key Field live status remains functional | C2 | Preserves the polite live-region contract through validation and its successful asynchronous update (`stage10-web-verify.mjs:466`, `stage10-web-verify.mjs:498-501`). | Data: preference/credential storage (status only) |
 | Field halo and focus-visible-only keyboard ring | C2 | Enforces pointer focus without a keyboard ring, composite field halo emphasis, and keyboard-visible focus (`stage10-web-verify.mjs:467-483`). | Chrome: keyboard-only completion (settings focus treatment) |
 | session-only key opt-out | C2 | Protects credential persistence choice. | Data: preference/credential storage (current behavior only) |
 | settings anchor uses token gap/edge, flips, and repositions after content growth | C2 | Enforces the shared measure-flip-clamp engine and token-derived trigger-relative geometry (`stage10-web-verify.mjs:364-420`). | Chrome: anchored surfaces at viewport edges; content changes after open |
-| nested settings layers close top-first on Escape | C2 | Enforces model-picker-before-settings stack ordering and prevents Escape from leaking to lower canvas shortcuts (`stage10-web-verify.mjs:445-452`). | Chrome: nested transient surfaces; keyboard-only completion |
+| nested settings layers close top-first on Escape | C2 | Enforces Combobox-before-settings stack ordering without a consumer-owned closing seam and prevents Escape from leaking to lower canvas shortcuts. | Chrome: nested transient surfaces; keyboard-only completion |
 | settings Escape/outside-pointer restore trigger focus | C2 | Enforces visible focus continuity for both stack dismissal paths (`stage10-web-verify.mjs:450-458`). | Chrome: focus restoration after transient surfaces |
 | live math/code/show document rendering | C2 | Protects core authoring rendering. | — |
 | share popover token anchor geometry, surface/padding, and focus restore | C2 | Enforces shared-engine trigger-relative placement and stack focus restoration while retaining the shared surface metrics (`stage10-web-verify.mjs:486-526`). | Chrome: anchored surfaces at viewport edges; focus restoration after transient surfaces |
@@ -263,11 +265,11 @@ Counts treat each row above as one case; the shared Stage 9 contract counts once
 | Category | Count |
 |---|---:|
 | C1 compatibility contract | 41 |
-| C2 behavioral product contract | 90 |
+| C2 behavioral product contract | 92 |
 | C3 implementation snapshot | 10 |
 | C4 known defect | 5 |
 | C5 design target | 0 |
-| **Total** | **146** |
+| **Total** | **148** |
 
 ## Known-defect fossils
 

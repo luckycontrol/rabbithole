@@ -321,7 +321,6 @@ body.blank-dragging #viewport::after {
 .inline-key-slot[hidden],
 .settings-inline-key[hidden],
 .blank-start[hidden],
-.model-picker[hidden],
 [hidden] {
   display: none !important;
 }
@@ -708,12 +707,17 @@ body.blank-dragging .composer-card {
   white-space: nowrap;
 }
 
-.model-picker {
-  margin-top: 10px;
+.combobox-surface {
+  position: fixed;
+  z-index: var(--layer-popover);
+  width: min(var(--surface-width-panel), calc(100vw - var(--surface-edge) * 2));
   overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  background: color-mix(in srgb, var(--bg) 42%, transparent);
+  border: var(--surface-popover-border);
+  border-radius: var(--surface-popover-radius);
+  background: var(--surface-popover-bg);
+  -webkit-backdrop-filter: var(--surface-popover-blur);
+  backdrop-filter: var(--surface-popover-blur);
+  box-shadow: var(--surface-popover-shadow);
 }
 
 .select-listbox {
@@ -741,7 +745,7 @@ body.blank-dragging .composer-card {
 .select-option:focus,
 .select-option[aria-selected="true"] { background: var(--hl); outline: none; }
 
-.model-search-wrap {
+.combobox-search-wrap {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -750,7 +754,7 @@ body.blank-dragging .composer-card {
   padding: 8px 10px;
 }
 
-.model-search-wrap input {
+.combobox-search-wrap input {
   flex: 1;
   min-width: 0;
   border: 0;
@@ -761,11 +765,11 @@ body.blank-dragging .composer-card {
   font: var(--text-body)/var(--leading-ui) var(--font-ui);
 }
 
-.model-search-wrap input::placeholder {
+.combobox-search-wrap input::placeholder {
   color: var(--fg-faint);
 }
 
-.model-search-wrap kbd {
+.combobox-search-wrap kbd {
   color: var(--fg-faint);
   background: color-mix(in srgb, var(--fg) 8%, transparent);
   border-radius: var(--radius-inline);
@@ -805,6 +809,15 @@ body.blank-dragging .composer-card {
 .model-option:hover,
 .model-option.active {
   background: var(--hl);
+}
+
+.combobox-retry {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
 }
 
 .model-check {
@@ -1001,7 +1014,6 @@ body.blank-dragging .composer-card {
 }
 
 .endpoint-section input,
-.local-model-section input,
 .settings-advanced-grid input,
 .settings-advanced-grid select {
   width: 100%;
@@ -1029,13 +1041,11 @@ body.blank-dragging .composer-card {
 }
 
 .endpoint-section input::placeholder,
-.local-model-section input::placeholder,
 .settings-advanced-grid input::placeholder {
   color: var(--fg-faint);
 }
 
 .endpoint-section input:focus,
-.local-model-section input:focus,
 .settings-advanced-grid input:focus,
 .settings-advanced-grid select:focus {
   outline: none;
@@ -1044,7 +1054,6 @@ body.blank-dragging .composer-card {
 }
 
 .endpoint-section input:focus-visible,
-.local-model-section input:focus-visible,
 .settings-advanced-grid input:focus-visible,
 .key-input-wrap input:focus-visible {
   outline: var(--focus-ring);

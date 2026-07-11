@@ -12,6 +12,7 @@ const BAD_KEY = `sk-or-v1-${"y".repeat(64)}`;
 const PROVIDER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const KEY_URL = "https://openrouter.ai/api/v1/key";
 const MODEL_URL = "https://openrouter.ai/api/v1/models";
+const LOCAL_MODEL_URL = "http://localhost:11434/v1/models";
 
 try {
   await fs.access(path.join(WEB_DIST, "index.html"));
@@ -29,6 +30,7 @@ const browser = await chromium.launch();
 
 try {
   await verifyLandingAndComposer();
+  await verifyComboboxCatalogStates();
   await verifyAskKeyUxAndRail();
   await verifyCanvasBranching();
   console.log("stage10 web verification passed");
@@ -128,6 +130,147 @@ async function verifyLandingAndComposer() {
   await page.waitForFunction((id) => window.__rhWebApp?.currentHoleId() === id, first);
 
   await context.close();
+}
+
+async function verifyComboboxCatalogStates() {
+  const fixture = { data: [
+    { id: "anthropic/claude-sonnet-5", name: "Anthropic: Claude Sonnet 5", pricing: { prompt: "0.000003", completion: "0.000015" } },
+    { id: "openai/gpt-5", name: "OpenAI: GPT-5", pricing: { prompt: "0.00000125", completion: "0.00001" } },
+  ] };
+
+  const delayed = await browser.newContext();
+  const delayedPage = await delayed.newPage();
+  await delayedPage.route(MODEL_URL, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(fixture) });
+  });
+  await openFreshSettings(delayedPage);
+  await delayedPage.focus("#model-select");
+  await delayedPage.keyboard.press("Enter");
+  assert.match(await delayedPage.locator("#model-select-listbox").innerText(), /Loading models/);
+  const comboA11y = await delayedPage.locator("#model-select-input").evaluate((input) => ({
+    role: input.getAttribute("role"), expanded: input.getAttribute("aria-expanded"), controls: input.getAttribute("aria-controls"),
+  }));
+  assert.deepEqual(comboA11y, { role: "combobox", expanded: "true", controls: "model-select-listbox" });
+  await delayedPage.waitForSelector("#model-select-listbox [role=option]");
+  assert.equal(await delayedPage.getAttribute("#model-select-listbox", "role"), "listbox");
+  await delayedPage.waitForTimeout(180);
+  const comboGap = await delayedPage.evaluate(() => {
+    const trigger = document.getElementById("model-select").getBoundingClientRect();
+    const surface = document.querySelector(".model-combobox-surface");
+    const box = surface.getBoundingClientRect();
+    const token = parseFloat(getComputedStyle(surface).getPropertyValue("--surface-gap"));
+    return { actual: box.top >= trigger.bottom ? box.top - trigger.bottom : trigger.top - box.bottom, token };
+  });
+  assert(Math.abs(comboGap.actual - comboGap.token) <= 1, `Combobox should consume the surface gap token, got ${comboGap.actual}px`);
+  await delayedPage.fill("#model-select-input", "gpt");
+  const activeId = await delayedPage.getAttribute("#model-select-input", "aria-activedescendant");
+  assert(activeId && await delayedPage.locator(`#${activeId}[role=option].active`).count() === 1, "editable Combobox should track its visual option with aria-activedescendant");
+  await delayedPage.keyboard.press("ArrowDown");
+  assert.equal(await delayedPage.evaluate(() => document.activeElement?.id), "model-select-input", "arrow navigation should keep focus in the search input");
+  await delayedPage.keyboard.press("Enter");
+  assert.equal(await delayedPage.locator("#model-select-listbox").count(), 0);
+  assert.equal(await delayedPage.evaluate(() => document.activeElement?.id), "model-select", "keyboard commit should restore trigger focus");
+  assert.equal((await delayedPage.evaluate(() => JSON.parse(localStorage.getItem("rh-web-settings")))).answer_model, "openai/gpt-5");
+  await delayed.close();
+
+  const failed = await browser.newContext();
+  const failedPage = await failed.newPage();
+  let catalogAttempts = 0;
+  await failedPage.route(MODEL_URL, async (route) => {
+    catalogAttempts += 1;
+    await route.fulfill(catalogAttempts === 1
+      ? { status: 503, headers: corsHeaders(), body: "unavailable" }
+      : { status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(fixture) });
+  });
+  await openFreshSettings(failedPage);
+  await failedPage.click("#model-select");
+  await failedPage.waitForSelector(".combobox-error");
+  await failedPage.fill("#model-select-input", "vendor/exact-model");
+  assert.equal(await failedPage.locator("[role=option][data-free-text=true]").count(), 1, "failed catalogs should retain the exact-id path");
+  await failedPage.fill("#model-select-input", "");
+  await failedPage.click("[data-combobox-retry]");
+  await failedPage.waitForSelector(".model-option[data-value='openai/gpt-5']");
+  assert.equal(catalogAttempts, 2, "retry should invoke load again and recover");
+  await failed.close();
+
+  const empty = await browser.newContext();
+  const emptyPage = await empty.newPage();
+  await emptyPage.route(MODEL_URL, (route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [] }) }));
+  await openFreshSettings(emptyPage);
+  await emptyPage.click("#model-select");
+  await emptyPage.waitForSelector(".combobox-empty");
+  assert.match(await emptyPage.locator(".combobox-empty").innerText(), /returned no models/i);
+  await emptyPage.fill("#model-select-input", "vendor/exact-model");
+  await emptyPage.keyboard.press("Enter");
+  assert.equal((await emptyPage.evaluate(() => JSON.parse(localStorage.getItem("rh-web-settings")))).author_model, "vendor/exact-model", "empty catalogs should commit free text");
+  await empty.close();
+
+  await verifyLocalComboboxStates(fixture);
+}
+
+async function verifyLocalComboboxStates(openRouterFixture) {
+  const run = async (handler) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.route(MODEL_URL, (route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(openRouterFixture) }));
+    await page.route(LOCAL_MODEL_URL, handler);
+    await openFreshSettings(page);
+    await switchSettingsToLocal(page);
+    return { context, page };
+  };
+
+  const found = await run((route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [{ id: "llama3.2" }, { id: "qwen3:8b" }] }) }));
+  await found.page.click("#local-model");
+  assert.match(await found.page.locator("#local-model-listbox").innerText(), /Looking for installed models/);
+  await found.page.waitForSelector(".model-option[data-value='qwen3:8b']");
+  await found.page.click(".model-option[data-value='qwen3:8b']");
+  const foundSettings = await found.page.evaluate(() => JSON.parse(localStorage.getItem("rh-web-settings")));
+  assert.equal(foundSettings.answer_model, "qwen3:8b"); assert.equal(foundSettings.author_model, "qwen3:8b");
+  await found.context.close();
+
+  const none = await run((route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [] }) }));
+  await none.page.click("#local-model");
+  await none.page.waitForSelector(".combobox-empty");
+  assert.match(await none.page.locator(".combobox-empty").innerText(), /No models are installed.*ollama list/is);
+  await none.context.close();
+
+  let attempts = 0;
+  const failed = await run((route) => {
+    attempts += 1;
+    return route.fulfill(attempts === 1 ? { status: 500, headers: corsHeaders(), body: "failed" }
+      : { status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [{ id: "recovered:latest" }] }) });
+  });
+  await failed.page.click("#local-model");
+  await failed.page.waitForSelector(".combobox-error");
+  await failed.page.fill("#local-model-input", "typed:exact");
+  assert.equal(await failed.page.locator("[role=option][data-value='typed:exact']").count(), 1);
+  await failed.page.fill("#local-model-input", "");
+  await failed.page.click("[data-combobox-retry]");
+  await failed.page.waitForSelector("[role=option][data-value='recovered:latest']");
+  assert.equal(attempts, 2);
+  await failed.context.close();
+
+  const free = await run((route) => route.fulfill({ status: 502, headers: corsHeaders(), body: "failed" }));
+  await free.page.click("#local-model");
+  await free.page.waitForSelector(".combobox-error");
+  await free.page.fill("#local-model-input", "manual:7b");
+  await free.page.keyboard.press("Enter");
+  assert.equal((await free.page.evaluate(() => JSON.parse(localStorage.getItem("rh-web-settings")))).answer_model, "manual:7b", "failed local discovery should commit an exact id");
+  await free.context.close();
+}
+
+async function openFreshSettings(page) {
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.keyboard.press("Escape");
+  await page.click("#t-settings");
+  await page.waitForSelector("#web-settings-modal:not([hidden])");
+}
+
+async function switchSettingsToLocal(page) {
+  await page.click("#provider-select");
+  await page.click("#provider-select-listbox [role=option]:has-text('Local')");
+  await page.waitForSelector("#local-model");
 }
 
 async function verifyAskKeyUxAndRail() {
@@ -293,18 +436,20 @@ async function verifyAskKeyUxAndRail() {
   assert.equal(await page.locator(".endpoint-section #provider-base").count(), 1, "Local should surface its endpoint immediately");
   assert.equal(await page.locator("#api-key").count(), 0, "Local should not show irrelevant credential UI");
   assert.equal(await page.locator("#model-select").count(), 0, "Local should not use the global OpenRouter model picker");
-  assert.equal(await page.locator("#local-model").count(), 1, "Local should expose a plain model id field");
-  assert.deepEqual(await page.evaluate(() => ["provider-base", "local-model"].map((id) => {
+  assert.equal(await page.locator("#local-model").evaluate((control) => control.tagName), "BUTTON", "Local should use the owned Combobox trigger");
+  assert.deepEqual(await page.evaluate(() => ["provider-base"].map((id) => {
     const input = document.getElementById(id);
     const label = document.querySelector(`label[for="${id}"]`);
     const described = (input.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean);
     return { id, named: !!label?.textContent.trim(), described: described.length > 0 && described.every((ref) => !!document.getElementById(ref)) };
   })), [
     { id: "provider-base", named: true, described: true },
-    { id: "local-model", named: true, described: true },
-  ], "Local text fields should have label names and connected Field hints");
-  await page.fill("#local-model", "deepseek-r1:7b");
-  await page.press("#local-model", "Tab");
+  ], "Local endpoint Field should have a label name and connected hint");
+  await page.focus("#local-model");
+  await page.keyboard.press("Enter");
+  await page.fill("#local-model-input", "deepseek-r1:7b");
+  await page.waitForSelector("#local-model-listbox [role=option][data-value='deepseek-r1:7b']");
+  await page.keyboard.press("Enter");
   const localSettings = await page.evaluate(() => JSON.parse(localStorage.getItem("rh-web-settings") || "{}"));
   assert.equal(localSettings.answer_model, "deepseek-r1:7b");
   assert.equal(localSettings.author_model, "deepseek-r1:7b");
@@ -315,15 +460,15 @@ async function verifyAskKeyUxAndRail() {
   await page.keyboard.press(" ");
   assert.equal(await page.inputValue("#api-key"), MOCK_KEY, "returning to a provider should restore only that provider's local key");
   await page.click("#model-select");
-  await page.waitForSelector(".model-option[data-id='anthropic/claude-sonnet-5'] .model-chip");
-  await page.fill("#model-search", "gpt");
+  await page.waitForSelector(".model-option[data-value='anthropic/claude-sonnet-5'] .model-chip");
+  await page.fill("#model-select-input", "gpt");
   assert.equal(
-    await page.locator(".model-option[data-id='openai/gpt-5'] .model-option-price").innerText(),
+    await page.locator(".model-option[data-value='openai/gpt-5'] .model-option-price").innerText(),
     "$1.25 · $10",
     "picker rows should show per-million pricing from the catalog",
   );
-  await page.click(".model-option[data-id='openai/gpt-5']");
-  await page.waitForSelector("#model-picker", { state: "hidden" });
+  await page.click(".model-option[data-value='openai/gpt-5']");
+  await page.waitForSelector("#model-select-listbox", { state: "detached" });
   assert.equal(await page.locator("#model-select-name").innerText(), "GPT-5");
   const pickedSettings = await page.evaluate(() => JSON.parse(localStorage.getItem("rh-web-settings") || "{}"));
   assert.equal(pickedSettings.answer_model, "openai/gpt-5", "model pick should apply instantly, no save button");
@@ -500,9 +645,9 @@ async function verifyCanvasBranching() {
   assert.notEqual(keyboardFieldFocus.outline, "none", "keyboard-focused fields should show the focus-visible ring");
   assert.notEqual(keyboardFieldFocus.halo, "none", "keyboard-focused composite fields should retain the field halo");
   await page.click("#model-select");
-  await page.waitForSelector("#model-picker:not([hidden])");
+  await page.waitForSelector("#model-select-listbox");
   await page.keyboard.press("Escape");
-  assert.equal(await page.locator("#model-picker").getAttribute("hidden"), "", "first Escape should close only the nested model picker");
+  assert.equal(await page.locator("#model-select-listbox").count(), 0, "first Escape should close only the nested model combobox");
   assert.equal(await page.locator("#web-settings-modal").getAttribute("hidden"), null, "settings should remain open after its child closes");
   await page.keyboard.press("Escape");
   await page.waitForSelector("#web-settings-modal[hidden]", { state: "attached" });
@@ -605,11 +750,16 @@ async function verifyCanvasBranching() {
 
   const external = requests.filter((url) => !url.startsWith(baseUrl));
   assert(external.length > 0, "provider and key validation should have been called");
-  assert(external.every((url) => url === PROVIDER_URL || url === KEY_URL || url === MODEL_URL), `unexpected external request(s): ${external.join(", ")}`);
+  assert(external.every((url) => url === PROVIDER_URL || url === KEY_URL || url === MODEL_URL || url === LOCAL_MODEL_URL), `unexpected external request(s): ${external.join(", ")}`);
   await context.close();
 }
 
 async function routeProvider(page, { keyStatus, streams, onProviderCall = null, providerDelayMs = 0 }) {
+  await page.route(LOCAL_MODEL_URL, async (route) => {
+    await route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [
+      { id: "llama3.2", name: "llama3.2" }, { id: "deepseek-r1:7b", name: "deepseek-r1:7b" },
+    ] }) });
+  });
   await page.route(MODEL_URL, async (route) => {
     await route.fulfill({
       status: 200,

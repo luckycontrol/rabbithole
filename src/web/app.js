@@ -7,10 +7,10 @@ import { IdbStore } from "./store/idb-store.js";
 import { DirectRabbitholeHost, createHoleFromMarkdown, createPendingHoleFromQuestion } from "./transport/direct-host.js";
 import { startRabbithole } from "../ui/entry.js";
 import { activateFocusTrap } from "../ui/focus-trap.js";
-import { registerLayer } from "../ui/overlay/layer-stack.js";
 import { openPopover } from "../ui/primitives/popover.js";
 import { fieldMarkup, wireField } from "../ui/primitives/field.js";
 import { selectMarkup, wireSelect } from "../ui/primitives/select.js";
+import { comboboxMarkup, wireCombobox } from "../ui/primitives/combobox.js";
 import { setSnapshotHooks, buildSnapshotHydration, buildSnapshotHtml } from "../ui/snapshot.js";
 import { openUrlToStoredHole } from "./ingest/url.js";
 import { downloadRabbitholeExport, importRabbitholeFile, rabbitholeFilename } from "./portable.js";
@@ -36,13 +36,11 @@ let railOpen = false;
 let blankZoom = 1;
 let composerTrap = null;
 let settingsPopover = null;
-let settingsPickerLayer = null;
 let composerPath = "";
 let pendingComposerAction = null;
 let pendingBranchRetry = null;
 let lastHoleCount = 0;
 let modelCatalogCache = null;
-let closeSettingsPickerFn = null;
 let settingsKeyToken = 0;
 let providerSelect = null;
 
@@ -775,7 +773,6 @@ function openSettingsModal({ focusKey = false, focusSelector = "" } = {}) {
   modal.hidden = false;
   const trigger = document.getElementById("t-settings");
   const dialog = modal.querySelector(".web-settings-dialog");
-  warmModelCatalog();
   const panel = document.getElementById("settings-panel");
   if (panel?.querySelector("#api-key")?.value.trim()) commitSettingsKey(panel);
   const explicitFocus = focusSelector ? modal.querySelector(focusSelector) : null;
@@ -793,22 +790,7 @@ function closeSettingsModal() {
   inline.hidden = true;
   inline.innerHTML = "";
   pendingBranchRetry = null;
-  if (closeSettingsPickerFn) closeSettingsPickerFn({ refocus: false });
-  closeSettingsPickerFn = null;
   if (settingsPopover) { settingsPopover.close(); settingsPopover = null; }
-}
-
-function warmModelCatalog() {
-  const settings = loadSettings();
-  if (providerFor(settings.preset).model_source !== "catalog") return;
-  loadModelCatalog().then((models) => {
-    modelCatalogCache = models;
-    const nameEl = document.getElementById("model-select-name");
-    if (nameEl) {
-      const current = loadSettings();
-      nameEl.textContent = modelDisplayName(current.answer_model || providerFor(current.preset).answer_model);
-    }
-  }).catch(() => {});
 }
 
 function modelDisplayName(id) {
@@ -819,7 +801,6 @@ function modelDisplayName(id) {
 function initSettingsPanel() {
   const panel = document.getElementById("settings-panel");
   if (!panel) return;
-  closeSettingsPickerFn = null;
   providerSelect?.close({ restoreFocus: false });
   providerSelect = null;
   const settings = loadSettings();
@@ -842,23 +823,17 @@ function initSettingsPanel() {
     ${preset.model_source === "catalog" ? `<div class="settings-section model-section">
       <div class="settings-row">
         <span class="settings-label" id="model-select-label">Model</span>
-        <button id="model-select" class="settings-select" type="button" aria-haspopup="listbox" aria-expanded="false" title="${escapeAttr(currentModel)}">
-          <span id="model-select-name">${escapeHtml(modelDisplayName(currentModel))}</span>
-          <svg width="12" height="12" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5"/></svg>
-        </button>
+        ${comboboxMarkup({ id: "model-select", valueId: "model-select-name", labelledBy: "model-select-label", value: currentModel, label: modelDisplayName(currentModel), title: currentModel,
+          iconHtml: `<svg width="12" height="12" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5"/></svg>` })}
       </div>
-      <div id="model-picker" class="model-picker" hidden>
-        <div class="model-search-wrap">
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 10.5 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-          <input id="model-search" placeholder="Search every model on OpenRouter…" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true" aria-controls="model-list" aria-labelledby="model-select-label">
-          <kbd>esc</kbd>
-        </div>
-        <div id="model-list" class="model-list" role="listbox" aria-labelledby="model-select-label"></div>
+    </div>` : `<div class="settings-section model-section local-model-section">
+      <div class="settings-row">
+        <span class="settings-label" id="local-model-label">Model</span>
+        ${comboboxMarkup({ id: "local-model", labelledBy: "local-model-label", value: currentModel, label: currentModel, title: currentModel,
+          iconHtml: `<svg width="12" height="12" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5"/></svg>` })}
       </div>
-    </div>` : `<div class="settings-section model-section local-model-section">${fieldMarkup({
-      id: "local-model", label: "Model", value: currentModel, placeholder: "llama3.2", autocomplete: "off", spellcheck: "false",
-      hintHtml: "Use the exact name shown by <code>ollama list</code>."
-    })}</div>`}
+      <small class="field-hint">Use the exact name shown by <code>ollama list</code>.</small>
+    </div>`}
     ${preset.requires_key ? `<div class="settings-section key-section">
       ${fieldMarkup({ id: "api-key", type: "password", label: `${preset.label} key`, value: getApiKey(settings),
         placeholder: apiKeyPlaceholder(settings.preset), autocomplete: "off", spellcheck: "false", toggleId: "api-key-toggle", toggleHtml: eyeSvg(false),
@@ -894,8 +869,8 @@ function wireSettingsPanel(panel) {
   let validateTimer = 0;
 
   wireProviderSelect(panel);
-  wireModelPicker(panel);
-  ["provider-base", "local-model", "answer-model", "author-model", "fetch-proxy-url"].forEach((id) => wireField(panel, { id }));
+  wireModelComboboxes(panel);
+  ["provider-base", "answer-model", "author-model", "fetch-proxy-url"].forEach((id) => wireField(panel, { id }));
   wireField(panel, { id: "api-key", toggleId: "api-key-toggle", renderToggle: eyeSvg });
 
   if (keyInput && status) {
@@ -926,27 +901,6 @@ function wireSettingsPanel(panel) {
   liveField("#answer-model", "answer_model");
   liveField("#author-model", "author_model");
   liveField("#fetch-proxy-url", "fetch_proxy_url");
-  const localModelInput = panel.querySelector("#local-model");
-  let localModelTimer = 0;
-  const commitLocalModel = () => {
-    const model = localModelInput?.value.trim();
-    if (!model) return;
-    applySettingsPatch({ answer_model: model, author_model: model });
-  };
-  localModelInput?.addEventListener("input", () => {
-    const model = localModelInput.value.trim();
-    const answerInput = panel.querySelector("#answer-model");
-    const authorInput = panel.querySelector("#author-model");
-    if (answerInput) answerInput.value = model;
-    if (authorInput) authorInput.value = model;
-    updateModelHints(panel);
-    window.clearTimeout(localModelTimer);
-    localModelTimer = window.setTimeout(commitLocalModel, 180);
-  });
-  localModelInput?.addEventListener("change", () => {
-    window.clearTimeout(localModelTimer);
-    commitLocalModel();
-  });
   panel.querySelector("#answer-model")?.addEventListener("input", () => updateModelHints(panel));
   panel.querySelector("#author-model")?.addEventListener("input", () => updateModelHints(panel));
   updateModelHints(panel);
@@ -962,138 +916,14 @@ function wireProviderSelect(panel) {
     saveSettings({ ...current, api_key: getApiKey(current) });
     applySettingsPatch(settingsForProvider(id, current));
     initSettingsPanel();
-    warmModelCatalog();
     document.getElementById("provider-select")?.focus({ preventScroll: true });
     },
   });
 }
 
-function wireModelPicker(panel) {
-  const select = panel.querySelector("#model-select");
-  const picker = panel.querySelector("#model-picker");
-  const search = panel.querySelector("#model-search");
-  const list = panel.querySelector("#model-list");
-  if (!select || !picker) return;
-  let catalogFailed = false;
-
-  const openPicker = () => {
-    closeSettingsPickerFn?.({ refocus: false });
-    picker.hidden = false;
-    select.setAttribute("aria-expanded", "true");
-    panel.classList.add("picking");
-    search.value = "";
-    renderList();
-    search.focus({ preventScroll: true });
-    closeSettingsPickerFn = closePicker;
-    settingsPickerLayer?.({ restoreFocus: false });
-    settingsPickerLayer = registerLayer({ element: picker, trigger: select, onClose: () => closePicker() });
-    if (!modelCatalogCache) {
-      loadModelCatalog().then((models) => {
-        modelCatalogCache = models;
-        if (!picker.hidden) renderList();
-      }).catch(() => {
-        catalogFailed = true;
-        if (!picker.hidden) renderList();
-      });
-    }
-  };
-  const closePicker = ({ refocus = true } = {}) => {
-    picker.hidden = true;
-    select.setAttribute("aria-expanded", "false");
-    panel.classList.remove("picking");
-    closeSettingsPickerFn = null;
-    if (settingsPickerLayer) {
-      settingsPickerLayer({ restoreFocus: refocus });
-      settingsPickerLayer = null;
-    }
-    if (refocus) select.focus({ preventScroll: true });
-  };
-
-  const renderList = () => {
-    const settings = loadSettings();
-    const current = settings.answer_model || providerFor(settings.preset).answer_model;
-    const query = search.value.trim();
-    if (!modelCatalogCache) {
-      list.innerHTML = catalogFailed
-        ? `${query ? customModelRowHtml(query) : ""}<div class="model-note">Couldn't reach OpenRouter for the model list. Type a model id to use it directly.</div>`
-        : `<div class="model-note">Loading models…</div>`;
-      return;
-    }
-    let html = "";
-    if (!query) {
-      const suggested = SUGGESTED_MODEL_IDS
-        .map((id) => modelCatalogCache.find((model) => model.id === id))
-        .filter(Boolean);
-      if (suggested.length) {
-        html += `<div class="model-group-label">Suggested</div>`;
-        html += suggested.map((model) => modelOptionHtml(model, { current, recommended: model.id === RECOMMENDED_MODEL_ID })).join("");
-        html += `<div class="model-group-label">All models</div>`;
-      }
-      html += modelCatalogCache.map((model) => modelOptionHtml(model, { current })).join("");
-    } else {
-      const hits = searchModels(modelCatalogCache, query);
-      html = hits.map((model) => modelOptionHtml(model, { current })).join("");
-      if (!hits.length) html = customModelRowHtml(query);
-    }
-    list.innerHTML = html;
-    list.scrollTop = 0;
-    setActiveOption(0);
-  };
-
-  const optionRows = () => Array.from(list.querySelectorAll(".model-option"));
-  const setActiveOption = (index) => {
-    const rows = optionRows();
-    rows.forEach((row, i) => row.classList.toggle("active", i === index));
-    const active = rows[index];
-    if (active) {
-      active.scrollIntoView({ block: "nearest" });
-      search.setAttribute("aria-activedescendant", active.id || "");
-    }
-  };
-  const activeIndex = () => optionRows().findIndex((row) => row.classList.contains("active"));
-
-  const chooseModel = (id, name) => {
-    applySettingsPatch({ author_model: id, answer_model: id });
-    const nameEl = panel.querySelector("#model-select-name");
-    if (nameEl) nameEl.textContent = name || modelDisplayName(id);
-    select.title = id;
-    const answerInput = panel.querySelector("#answer-model");
-    const authorInput = panel.querySelector("#author-model");
-    if (answerInput) answerInput.value = id;
-    if (authorInput) authorInput.value = id;
-    updateModelHints(panel);
-    closePicker();
-  };
-
-  select.addEventListener("click", () => {
-    if (picker.hidden) openPicker();
-    else closePicker();
-  });
-  search.addEventListener("input", renderList);
-  search.addEventListener("keydown", (event) => {
-    const rows = optionRows();
-    if (!rows.length) return;
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      const delta = event.key === "ArrowDown" ? 1 : -1;
-      const next = Math.min(rows.length - 1, Math.max(0, activeIndex() + delta));
-      setActiveOption(next);
-    } else if (event.key === "Enter") {
-      event.preventDefault();
-      const row = rows[Math.max(0, activeIndex())];
-      if (row) row.click();
-    }
-  });
-  list.addEventListener("click", (event) => {
-    const row = event.target.closest(".model-option");
-    if (!row) return;
-    chooseModel(row.dataset.id, row.querySelector(".model-option-name")?.textContent || "");
-  });
-}
-
-function modelOptionHtml(model, { current, recommended = false } = {}) {
+function renderCatalogModelRow(model, { current, recommended = false, group = "", itemIndex = -1 } = {}) {
   const selected = model.id === current;
-  return `<button type="button" class="model-option${selected ? " selected" : ""}" role="option" aria-selected="${selected}" data-id="${escapeAttr(model.id)}" title="${escapeAttr(model.id)}">
+  return `${group ? `<div class="model-group-label">${escapeHtml(group)}</div>` : ""}<button type="button" class="model-option${selected ? " selected" : ""}" role="option" aria-selected="${selected}" data-value="${escapeAttr(model.id)}" data-label="${escapeAttr(model.name)}" data-item-index="${itemIndex}" title="${escapeAttr(model.id)}">
     <span class="model-check" aria-hidden="true">${selected ? `<svg width="12" height="12" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="m3.5 8.5 3 3 6-6.5"/></svg>` : ""}</span>
     <span class="model-option-name">${escapeHtml(model.name)}</span>
     ${recommended ? `<span class="model-chip">Recommended</span>` : ""}
@@ -1101,12 +931,70 @@ function modelOptionHtml(model, { current, recommended = false } = {}) {
   </button>`;
 }
 
-function customModelRowHtml(query) {
-  return `<button type="button" class="model-option model-use-custom" role="option" data-id="${escapeAttr(query)}" title="${escapeAttr(query)}">
+function renderExactModelRow(query) {
+  return `<button type="button" class="model-option model-use-custom" role="option" aria-selected="false" data-value="${escapeAttr(query)}" data-label="${escapeAttr(query)}" data-free-text="true" title="${escapeAttr(query)}">
     <span class="model-check" aria-hidden="true"></span>
     <span class="model-option-name">Use “${escapeHtml(query)}”</span>
     <span class="model-option-price">as-is</span>
   </button>`;
+}
+
+function wireModelComboboxes(panel) {
+  const searchIcon = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 10.5 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+  const after = `<kbd>esc</kbd>`;
+  const commit = (id) => {
+    if (!id) return;
+    applySettingsPatch({ author_model: id, answer_model: id });
+    const answerInput = panel.querySelector("#answer-model");
+    const authorInput = panel.querySelector("#author-model");
+    if (answerInput) answerInput.value = id;
+    if (authorInput) authorInput.value = id;
+    updateModelHints(panel);
+  };
+  wireCombobox(panel, {
+    id: "model-select", valueId: "model-select-name", labelledBy: "model-select-label", placeholder: "Search every model on OpenRouter…",
+    surfaceClassName: "combobox-surface model-combobox-surface popover-surface", listClassName: "combobox-list model-list",
+    searchIconHtml: searchIcon, searchAfterHtml: after, freeText: renderExactModelRow,
+    source: {
+      load: () => loadModelCatalog().then((models) => (modelCatalogCache = models)),
+      filter: (models, query) => {
+        if (query) return searchModels(models, query).map((model, index) => ({ model, itemIndex: index }));
+        const suggested = SUGGESTED_MODEL_IDS.map((id) => models.find((model) => model.id === id)).filter(Boolean);
+        return [
+          ...suggested.map((model, index) => ({ model, itemIndex: models.indexOf(model), group: index === 0 ? "Suggested" : "", recommended: model.id === RECOMMENDED_MODEL_ID })),
+          ...models.map((model, index) => ({ model, itemIndex: index, group: index === 0 && suggested.length ? "All models" : "" })),
+        ];
+      },
+      renderOption: (entry) => renderCatalogModelRow(entry.model, { current: loadSettings().answer_model, ...entry }),
+      loading: () => `<div class="model-note combobox-loading">Loading models…</div>`,
+      empty: (query) => `<div class="model-note combobox-empty">${query ? "No matching models." : "OpenRouter returned no models."}</div>`,
+      error: (retry) => `<div class="model-note combobox-error">Couldn't reach OpenRouter for the model list. ${retry}</div>`,
+    },
+    onChange: commit,
+  });
+
+  const localTrigger = panel.querySelector("#local-model");
+  if (!localTrigger) return;
+  wireCombobox(panel, {
+    id: "local-model", labelledBy: "local-model-label", placeholder: "Search installed Ollama models…",
+    surfaceClassName: "combobox-surface local-model-combobox-surface popover-surface", listClassName: "combobox-list model-list",
+    searchIconHtml: searchIcon, searchAfterHtml: after, freeText: renderExactModelRow,
+    source: {
+      load: async () => {
+        const base = (loadSettings().base_url || "http://localhost:11434/v1").replace(/\/+$/, "");
+        const response = await fetch(`${base}/models`, { headers: { Accept: "application/json" } });
+        if (!response.ok) throw new Error(`Local models returned HTTP ${response.status}.`);
+        const json = await response.json();
+        return (Array.isArray(json?.data) ? json.data : []).filter((model) => model?.id).map((model) => ({ id: String(model.id), name: String(model.name || model.id) }));
+      },
+      filter: (models, query) => searchModels(models, query).map((model, itemIndex) => ({ model, itemIndex })),
+      renderOption: (entry) => renderCatalogModelRow(entry.model, { current: loadSettings().answer_model, itemIndex: entry.itemIndex }),
+      loading: () => `<div class="model-note combobox-loading">Looking for installed models…</div>`,
+      empty: (query) => `<div class="model-note combobox-empty">${query ? "No matching installed models." : "No models are installed yet. Run ollama list to check your local models."}</div>`,
+      error: (retry) => `<div class="model-note combobox-error">Couldn't reach the local model endpoint. ${retry}</div>`,
+    },
+    onChange: commit,
+  });
 }
 
 function syncModelSelectLabel(panel) {

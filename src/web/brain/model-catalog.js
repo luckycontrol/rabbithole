@@ -47,7 +47,6 @@ async function fetchCatalog() {
       completionPrice: Number(model.pricing?.completion) || 0,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  if (!models.length) throw new Error("OpenRouter returned an empty model list.");
   writeCache(models);
   return models;
 }
