@@ -293,6 +293,15 @@ Gauges are machine-relative: `test/budgets.json` records `{baseline, tolerance, 
 | streaming DOM batch count + duration gauges | C2 | A fixed 40-update synthetic stream must stay rAF-coalesced; losing batching is a user-visible regression. | Generation: streaming update budget (rAF count/duration) |
 | save-window gauge | C2 | Elapsed time from final streamed update to persisted markdown bounds the data-loss window on tab close. | Data: export-vs-debounce save window (web path) |
 
+## `stage17-packaging-smoke.mjs`
+
+This release-only check runs through `npm run test:packaging`, outside the default suite, and is matrixed across Node 18 and 20 in CI.
+
+| Case | Category | Rationale | Scenario-ledger entries covered |
+|---|---|---|---|
+| packed artifact contains executable, metadata, runtime source, and committed bundles | C1 | The npm tarball is the public installation contract; every raw Node/core runtime file and built browser asset required by the executable must ship. | Migration/deploy: publish contents and CLI installation compatibility |
+| installed tarball launches and completes MCP initialize | C2 | A clean consumer project must be able to invoke the installed CLI and receive only a valid MCP initialize response on stdout before clean shutdown. | Migration/deploy: `npx` publish-install smoke on Node 18 and 20 |
+
 ## Unwired: `evals/run-eval.mjs`
 
 These live-provider eval cases run only through `npm run eval`; their regex/heuristic scoring makes them behavioral probes, not deterministic golden masters.
@@ -314,16 +323,16 @@ These live-provider eval cases run only through `npm run eval`; their regex/heur
 
 ## Counts
 
-Counts treat each row above as one case; the shared Stage 9 contract counts once per backend because `npm test` executes it against both. Phase 5 Slice 2 added three C1 rows (`41 + 3 = 44`, `184 + 3 = 187`). Slice 3 added three C2 rows and reclassified the reducer mutation probe from C3 to C2: `129 + 3 + 1 = 133`, `10 - 1 = 9`, and `187 + 3 = 190` total. Slice 4 retires the stale-progress C4 as a C2 and adds four ordering goldens: `133 + 1 + 4 = 138`, `4 - 1 = 3`, and `190 + 4 = 194` total. Slice 5 adds one generation-vocabulary C2 case: `138 + 1 = 139` and `194 + 1 = 195` total. Slice 7 adds one content-vocabulary C2 case: `139 + 1 = 140` and `195 + 1 = 196` total. Slice 8 adds one hydration-wire C1 golden: `44 + 1 = 45` and `196 + 1 = 197` total.
+Counts treat each row above as one case; the shared Stage 9 contract counts once per backend because `npm test` executes it against both. Phase 5 Slice 2 added three C1 rows (`41 + 3 = 44`, `184 + 3 = 187`). Slice 3 added three C2 rows and reclassified the reducer mutation probe from C3 to C2: `129 + 3 + 1 = 133`, `10 - 1 = 9`, and `187 + 3 = 190` total. Slice 4 retires the stale-progress C4 as a C2 and adds four ordering goldens: `133 + 1 + 4 = 138`, `4 - 1 = 3`, and `190 + 4 = 194` total. Slice 5 adds one generation-vocabulary C2 case: `138 + 1 = 139` and `194 + 1 = 195` total. Slice 7 adds one content-vocabulary C2 case: `139 + 1 = 140` and `195 + 1 = 196` total. Slice 8 adds one hydration-wire C1 golden: `44 + 1 = 45` and `196 + 1 = 197` total. Slice 9 adds one packaging C1 case and one installed-launch C2 case: `45 + 1 = 46`, `140 + 1 = 141`, and `197 + 2 = 199` total.
 
 | Category | Count |
 |---|---:|
-| C1 compatibility contract | 45 |
-| C2 behavioral product contract | 140 |
+| C1 compatibility contract | 46 |
+| C2 behavioral product contract | 141 |
 | C3 implementation snapshot | 9 |
 | C4 known defect | 3 |
 | C5 design target | 0 |
-| **Total** | **197** |
+| **Total** | **199** |
 
 ## Known-defect fossils
 
@@ -357,7 +366,7 @@ Run at commit 0853e1b (2026-07-10): five deliberate regressions, one per instrum
 
 - Data: genuinely very large holes with a budget (the wide-hole fixture and snapshot gauges only cover reference-sized content); extension-bag survival through an old build (refusal is covered; survival semantics await Phase 5 typing); hand-edited snapshot payload runtime rejection (C4 skip until the Phase 7 import boundary); export-vs-debounce timing for the MCP/filesystem projection (stage16's save-window gauge covers the web path only).
 - Rendering: reduced motion; semantic dark parity.
-- Migration/deploy: a real mid-session deploy (new code opening old IndexedDB, with migration rerun/idempotence — stage15 covers localStorage preferences, not the IDB schema during a live session); CLI version skew with an older CLI against additive wire changes; `npx` publish-install smoke on Node 18 and 20; a v0.1-era hole retained through Phase 9.
+- Migration/deploy: a real mid-session deploy (new code opening old IndexedDB, with migration rerun/idempotence — stage15 covers localStorage preferences, not the IDB schema during a live session); CLI version skew with an older CLI against additive wire changes; a v0.1-era hole retained through Phase 9.
 
 **Phase 3 — settings vertical slice**
 

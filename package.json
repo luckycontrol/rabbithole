@@ -35,6 +35,7 @@
     "test:stage14": "node test/stage14-reducer-conformance.mjs",
     "test:stage15": "node test/stage15-security-migrations-verify.mjs",
     "test:stage16": "node test/stage16-budget-gauges.mjs",
+    "test:packaging": "node test/stage17-packaging-smoke.mjs",
     "calibrate:budgets": "node test/calibrate-budgets.mjs",
     "eval": "node test/evals/run-eval.mjs"
   },
