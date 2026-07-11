@@ -104,15 +104,23 @@ async function verifyNotice(page, engine) {
   const wiring = await page.evaluate(async (base) => {
     const { wireNotice } = await import(base + "/src/ui/primitives/notice.js");
     const el = document.getElementById("notice"), notice = wireNotice(el, { variant: "toast" });
-    notice.show({ title: "Saved", message: "Done", actionLabel: "Undo", duration: 1200 }); window.notice = notice;
+    notice.show({ title: "Saved", message: "Done", actionLabel: "Undo", duration: 1200 });
+    el.querySelector("[data-notice-action]").focus(); window.notice = notice;
     return [el.getAttribute("role"), el.getAttribute("aria-live"), el.querySelector("[data-notice-title]").textContent, el.querySelector("[data-notice-action]").hidden];
   }, baseUrl);
   assert.deepEqual(wiring, ["status", "polite", "Saved", false], `${engine}: notice variant wiring`);
-  await page.hover("#notice"); await page.waitForTimeout(1600);
-  assert.equal(await page.evaluate(() => window.notice.isVisible()), true, `${engine}: notice timer pauses on hover`);
+  await page.waitForTimeout(1600);
+  const visibleWhileFocused = await page.evaluate(() => window.notice.isVisible());
+  assert.equal(visibleWhileFocused, true, `${engine}: notice timer pauses while focus is inside (visible=${visibleWhileFocused})`);
+  await page.hover("#notice");
+  await page.evaluate(() => document.activeElement.blur());
+  await page.waitForTimeout(1600);
+  const visibleWhileHovered = await page.evaluate(() => window.notice.isVisible());
+  assert.equal(visibleWhileHovered, true, `${engine}: notice timer pauses on hover after focus leaves (visible=${visibleWhileHovered})`);
   await page.mouse.move(630, 470);
   await page.waitForFunction(() => !window.notice.isVisible(), { timeout: 4000 });
-  assert.equal(await page.evaluate(() => window.notice.isVisible()), false, `${engine}: notice timer resumes after hover`);
+  const visibleAfterMouseleave = await page.evaluate(() => window.notice.isVisible());
+  assert.equal(visibleAfterMouseleave, false, `${engine}: notice timer resumes after hover (visible=${visibleAfterMouseleave})`);
 }
 
 async function verifyFormPrimitivesAndButtons(page, engine) {

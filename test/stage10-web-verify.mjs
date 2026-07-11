@@ -80,13 +80,23 @@ async function verifyNoticePrimitive() {
   await page.waitForTimeout(180);
   assert.equal(await page.locator("#toast").evaluate((el) => el.classList.contains("visible")), false, "the replacement timer should eventually hide the notice");
 
-  await page.evaluate(() => wireNotice(document.getElementById("toast"), { variant: "toast" }).show({ message: "paused", actionLabel: "Undo", duration: 1200 }));
-  await page.hover("#toast");
+  await page.evaluate(() => {
+    const toast = document.getElementById("toast");
+    wireNotice(toast, { variant: "toast" }).show({ message: "paused", actionLabel: "Undo", duration: 1200 });
+    toast.querySelector("[data-notice-action]").focus();
+  });
   await page.waitForTimeout(1600);
-  assert.equal(await page.locator("#toast").evaluate((el) => el.classList.contains("visible")), true, "hover should pause a toast timer");
+  const visibleWhileFocused = await page.locator("#toast").evaluate((el) => el.classList.contains("visible"));
+  assert.equal(visibleWhileFocused, true, `focus inside should pause a toast timer (visible=${visibleWhileFocused})`);
+  await page.hover("#toast");
+  await page.evaluate(() => document.activeElement.blur());
+  await page.waitForTimeout(1600);
+  const visibleWhileHovered = await page.locator("#toast").evaluate((el) => el.classList.contains("visible"));
+  assert.equal(visibleWhileHovered, true, `hover should keep a toast timer paused after focus leaves (visible=${visibleWhileHovered})`);
   await page.mouse.move(0, 0);
   await page.waitForFunction(() => !document.getElementById("toast").classList.contains("visible"), { timeout: 4000 });
-  assert.equal(await page.locator("#toast").evaluate((el) => el.classList.contains("visible")), false, "a toast timer should resume after hover");
+  const visibleAfterMouseleave = await page.locator("#toast").evaluate((el) => el.classList.contains("visible"));
+  assert.equal(visibleAfterMouseleave, false, `a toast timer should resume after hover (visible=${visibleAfterMouseleave})`);
   await page.close();
 }
 
