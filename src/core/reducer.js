@@ -22,15 +22,24 @@ import {
 
 /** @param {Parameters<import("./contracts/engine.js").createHoleState>[0]} [input] @returns {HoleState} */
 export function createHoleState({ hole_id, title, root_id, created_at = null, view_state = null, nodes = [] } = {}) {
+  const entries = nodes instanceof Map ? nodes : new Map((nodes || []).map((node) => [node.id, node]));
   return {
     hole_id: hole_id || "",
     title: title || "Untitled",
     root_id: root_id || null,
     created_at,
     view_state,
-    nodes: nodes instanceof Map ? new Map(nodes) : new Map((nodes || []).map((node) => [node.id, { ...node }])),
+    nodes: new Map([...entries].map(([id, node]) => [id, {
+      ...node,
+      ...(Object.prototype.hasOwnProperty.call(node, "extensions") ? { extensions: structuredJsonClone(node.extensions) } : {}),
+    }])),
     progressRuns: new Map(),
   };
+}
+
+/** @param {unknown} value @returns {Record<string, unknown>} */
+function structuredJsonClone(value) {
+  return JSON.parse(JSON.stringify(value));
 }
 
 /** @param {HoleState} state */
@@ -67,6 +76,7 @@ export function holeStateToHydrationNodes(state, { suppressRootOrigin = false } 
     collapsed: !!node.collapsed,
     status: node.status ?? "answered",
     read: !!node.read,
+    extensions: structuredJsonClone(node.extensions ?? {}),
   }));
 }
 
@@ -169,6 +179,7 @@ function reduceNodeAnswered(state, event) {
     status: "pending",
     read: false,
     created_at: event.created_at ?? null,
+    extensions: {},
   };
   const next = /** @type {HoleNode} */ ({
     ...current,

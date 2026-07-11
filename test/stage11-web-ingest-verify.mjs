@@ -128,6 +128,22 @@ try {
   assert.match(rejectError, /isn't supported by the link relay yet/i);
   assert.match(rejectError, /arXiv links work best/);
 
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.click("#t-new");
+  const futurePortable = JSON.stringify({
+    format: "rabbithole",
+    format_version: 1,
+    hole: { schema_version: 3, hole_id: "future-web", title: "Future", root_id: "root", created_at: null, updated_at: null, view_state: null, nodes: [] },
+    assets: {},
+  });
+  await page.setInputFiles("#file-md", { name: "future.rabbithole", mimeType: "application/json", buffer: Buffer.from(futurePortable) });
+  await page.waitForSelector("#ingest-status.error");
+  assert.equal(
+    await page.textContent("#ingest-status"),
+    "This Rabbithole was saved by a newer version of Rabbithole — update to open it.",
+    "web import should surface the exact newer-version refusal",
+  );
+
   console.log("stage11 web ingestion verification passed");
 } finally {
   await browser.close();

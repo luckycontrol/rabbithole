@@ -11,7 +11,14 @@ import { createPortableProjection } from "./portable-projection.js";
  * @returns {PortableArtifact}
  */
 export function createSnapshotProjection(hole, viewState, assets) {
-  return createPortableProjection({ ...hole, view_state: viewState }, assets);
+  const projection = createPortableProjection({ ...hole, view_state: viewState }, assets);
+  // Shares exclude personal extension state. Snapshot import runs the payload
+  // through migratePersistedHole, which restores the required empty v2 bag.
+  projection.hole = /** @type {PersistedHole} */ (/** @type {unknown} */ ({
+    ...projection.hole,
+    nodes: projection.hole.nodes.map(({ extensions: _extensions, ...node }) => node),
+  }));
+  return projection;
 }
 
 /** @param {PortableArtifact} projection */

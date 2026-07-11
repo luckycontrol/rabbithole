@@ -123,7 +123,7 @@ try {
   const exported = JSON.parse(exportText);
   assert.equal(exported.format, "rabbithole");
   assert.equal(exported.format_version, 1);
-  assert.equal(exported.hole.schema_version, 1);
+  assert.equal(exported.hole.schema_version, 2);
   assert.equal(typeof exported.assets["page-001.png"], "string");
 
   await ensureRailOpen(page);

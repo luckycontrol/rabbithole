@@ -5200,7 +5200,7 @@ var RabbitholeClient = (() => {
   }
 
   // src/core/schema.js
-  var CURRENT_SCHEMA_VERSION = 1;
+  var CURRENT_SCHEMA_VERSION = 2;
   function validatePersistedHole(hole) {
     if (!hole || typeof hole !== "object" || Array.isArray(hole)) throw new Error("Persisted Rabbithole must be an object");
     if (hole.schema_version !== CURRENT_SCHEMA_VERSION) throw new Error(`Persisted Rabbithole must have schema_version ${CURRENT_SCHEMA_VERSION}`);
@@ -5224,6 +5224,9 @@ var RabbitholeClient = (() => {
     if (!node.position || typeof node.position !== "object") throw new Error(`Persisted node ${node.id} position must be an object`);
     if (node.size !== null && typeof node.size !== "object") throw new Error(`Persisted node ${node.id} size must be object or null`);
     if (node.status !== "pending" && node.status !== "answered") throw new Error(`Persisted node ${node.id} status is invalid`);
+    if (!node.extensions || typeof node.extensions !== "object" || Array.isArray(node.extensions)) {
+      throw new Error(`Persisted node ${node.id} extensions must be a JSON object`);
+    }
     return true;
   }
 
@@ -5268,7 +5271,14 @@ var RabbitholeClient = (() => {
 
   // src/core/snapshot-projection.js
   function createSnapshotProjection(hole, viewState, assets) {
-    return createPortableProjection({ ...hole, view_state: viewState }, assets);
+    const projection = createPortableProjection({ ...hole, view_state: viewState }, assets);
+    projection.hole = /** @type {PersistedHole} */
+    /** @type {unknown} */
+    {
+      ...projection.hole,
+      nodes: projection.hole.nodes.map(({ extensions: _extensions, ...node }) => node)
+    };
+    return projection;
   }
 
   // src/core/html/shell.js
@@ -32751,6 +32761,7 @@ ${text2}</tr>
         collapsed: !!raw.collapsed,
         status: raw.status || "answered",
         _order: 0,
+        extensions: raw.extensions || {},
         _startTs: raw.status === "pending" ? Date.now() : 0
       };
       refreshNodeHtml(node);

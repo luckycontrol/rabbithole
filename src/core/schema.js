@@ -4,8 +4,9 @@ import { normalizePosition, normalizeSize, normalizeViewState } from "./model.js
 /** @typedef {import("./contracts/artifact.js").PersistedHole} PersistedHole */
 /** @typedef {import("./contracts/artifact.js").PersistedNode} PersistedNode */
 
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 export const SCHEMA_VERSION = CURRENT_SCHEMA_VERSION;
+export const NEWER_SCHEMA_MESSAGE = "This Rabbithole was saved by a newer version of Rabbithole — update to open it.";
 
 /** @template T @param {T} value @returns {T} */
 export function cloneJson(value) {
@@ -48,6 +49,7 @@ export function toPersistedNode(node) {
     status: node?.status === "pending" ? "pending" : "answered",
     read: !!node?.read,
     created_at: node?.created_at ?? null,
+    extensions: node?.extensions === undefined ? {} : cloneJson(node.extensions),
   };
 }
 
@@ -61,13 +63,17 @@ export function migratePersistedHole(raw) {
   const fromVersion = hole.schema_version == null ? 0 : Number(hole.schema_version);
   let changed = false;
 
-  if (hole.schema_version == null) {
+  if (hole.schema_version == null || fromVersion === 1) {
     hole.schema_version = CURRENT_SCHEMA_VERSION;
     backfillLegacyShapeDefaults(hole);
     changed = true;
+  } else if (fromVersion > CURRENT_SCHEMA_VERSION) {
+    throw new Error(NEWER_SCHEMA_MESSAGE);
   } else if (fromVersion !== CURRENT_SCHEMA_VERSION) {
     throw new Error(`Unsupported Rabbithole schema_version ${JSON.stringify(hole.schema_version)}`);
   }
+
+  changed = backfillNodeExtensions(hole) || changed;
 
   changed = backfillLegacyHoleBaseUrls(hole) || changed;
   validatePersistedHole(hole);
@@ -91,7 +97,22 @@ function backfillLegacyShapeDefaults(hole) {
     if (!Object.prototype.hasOwnProperty.call(node, "status")) node.status = "answered";
     if (!Object.prototype.hasOwnProperty.call(node, "read")) node.read = false;
     if (!Object.prototype.hasOwnProperty.call(node, "created_at")) node.created_at = null;
+    if (!Object.prototype.hasOwnProperty.call(node, "extensions")) node.extensions = {};
   }
+}
+
+/** Snapshot projections deliberately omit extensions and are normalized here on import. @param {Record<string, any>} hole */
+function backfillNodeExtensions(hole) {
+  if (!Array.isArray(hole.nodes)) return false;
+  let changed = false;
+  for (const node of hole.nodes) {
+    if (!node || typeof node !== "object" || Array.isArray(node)) continue;
+    if (!Object.prototype.hasOwnProperty.call(node, "extensions")) {
+      node.extensions = {};
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 /** @param {any} hole @returns {hole is PersistedHole} */
@@ -120,5 +141,8 @@ export function validatePersistedNode(node) {
   if (!node.position || typeof node.position !== "object") throw new Error(`Persisted node ${node.id} position must be an object`);
   if (node.size !== null && typeof node.size !== "object") throw new Error(`Persisted node ${node.id} size must be object or null`);
   if (node.status !== "pending" && node.status !== "answered") throw new Error(`Persisted node ${node.id} status is invalid`);
+  if (!node.extensions || typeof node.extensions !== "object" || Array.isArray(node.extensions)) {
+    throw new Error(`Persisted node ${node.id} extensions must be a JSON object`);
+  }
   return true;
 }

@@ -92,6 +92,26 @@ for (const name of fixtureNames) {
 console.log(`ok stage13: all ${fixtureNames.length} corpus fixtures are normalized three-projection fixed points and export-idempotent`);
 
 {
+  const source = JSON.parse(await fs.readFile(new URL("01-empty-root.rabbithole", corpusDir), "utf8"));
+  const bag = { future_primitive: { attempts: [0, null, "雪", { correct: false }] } };
+  source.hole.nodes[0].extensions = bag;
+  const portableStore = await storeAt("extensions-portable");
+  const imported = await importRabbitholeFile(portableStore.store, JSON.stringify(source));
+  const exported = await buildRabbitholeExport(portableStore.store, imported.hole_id);
+  assert.deepEqual(exported.hole.nodes[0].extensions, bag, "portable backup carries learner progress with structural JSON fidelity");
+
+  selectDir(portableStore.dir);
+  const persisted = await portableStore.store.loadHole(imported.hole_id);
+  const snapshot = await exporterSnapshot(portableStore.store, persisted);
+  const payload = JSON.parse(snapshot.html.match(/<script type="application\/vnd\.rabbithole\+json" id="rabbithole-portable">([\s\S]*?)<\/script>/)[1]);
+  assert.equal(Object.hasOwn(payload.hole.nodes[0], "extensions"), false, "snapshot normalization strips the personal extension bag");
+  const snapshotStore = await storeAt("extensions-snapshot");
+  const snapshotImported = await importSnapshotFile(snapshotStore.store, snapshot.html);
+  assert.deepEqual((await snapshotStore.store.loadHole(snapshotImported.hole_id)).nodes[0].extensions, {}, "snapshot import re-normalizes the omitted bag to empty");
+}
+console.log("ok stage13: extension bags survive portable round trips and are stripped from snapshots");
+
+{
   const text = await fs.readFile(new URL("04-assets-png-svg.rabbithole", corpusDir), "utf8");
   const target = await storeAt("collision");
   const original = await importRabbitholeFile(target.store, text);

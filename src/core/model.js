@@ -137,6 +137,7 @@ export function createPendingBranchNode(payload, parent, { now = new Date().toIS
     status: "pending",
     read: false,
     created_at: now,
+    extensions: {},
   });
 }
 

@@ -521,11 +521,12 @@ async function verifyAskKeyUxAndRail() {
   const normalizedPortable = structuredClone(portableProjection);
   normalizedPortable.hole.view_state = snapshotProjection.hole.view_state;
   normalizedPortable.hole.updated_at = snapshotProjection.hole.updated_at;
+  for (const node of normalizedPortable.hole.nodes) delete node.extensions;
   normalizedPortable.assets = Object.fromEntries(Object.entries(normalizedPortable.assets).filter(([name]) => referencedAssets.has(name)));
   assert.deepEqual(
     snapshotProjection,
     normalizedPortable,
-    "snapshot payload should equal buildRabbitholeExport modulo the live view_state write (including updated_at) and referenced-only assets"
+    "snapshot payload should equal buildRabbitholeExport modulo live view_state, referenced-only assets, and the documented extension-bag stripping normalization"
   );
   assert.equal(snapshotProjection.hole.created_at, portableProjection.hole.created_at, "hole timestamps must survive the portable snapshot projection");
   assert.deepEqual(

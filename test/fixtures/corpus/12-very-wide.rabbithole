@@ -2,7 +2,7 @@
   "format": "rabbithole",
   "format_version": 1,
   "hole": {
-    "schema_version": 1,
+    "schema_version": 2,
     "hole_id": "corpus-wide",
     "title": "Wide tree",
     "root_id": "root",
@@ -27,7 +27,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-01",
@@ -46,7 +47,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-02",
@@ -65,7 +67,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-03",
@@ -84,7 +87,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-04",
@@ -103,7 +107,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-05",
@@ -122,7 +127,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-06",
@@ -141,7 +147,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-07",
@@ -160,7 +167,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-08",
@@ -179,7 +187,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-09",
@@ -198,7 +207,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-10",
@@ -217,7 +227,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-11",
@@ -236,7 +247,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-12",
@@ -255,7 +267,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-13",
@@ -274,7 +287,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-14",
@@ -293,7 +307,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-15",
@@ -312,7 +327,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-16",
@@ -331,7 +347,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-17",
@@ -350,7 +367,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-18",
@@ -369,7 +387,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-19",
@@ -388,7 +407,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-20",
@@ -407,7 +427,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-21",
@@ -426,7 +447,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-22",
@@ -445,7 +467,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-23",
@@ -464,7 +487,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-24",
@@ -483,7 +507,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-25",
@@ -502,7 +527,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-26",
@@ -521,7 +547,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-27",
@@ -540,7 +567,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-28",
@@ -559,7 +587,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-29",
@@ -578,7 +607,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-30",
@@ -597,7 +627,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-31",
@@ -616,7 +647,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "sibling-32",
@@ -635,7 +667,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       }
     ]
   },

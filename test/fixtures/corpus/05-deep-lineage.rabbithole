@@ -2,7 +2,7 @@
   "format": "rabbithole",
   "format_version": 1,
   "hole": {
-    "schema_version": 1,
+    "schema_version": 2,
     "hole_id": "corpus-deep",
     "title": "Deep lineage",
     "root_id": "depth-0",
@@ -27,7 +27,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "depth-1",
@@ -46,7 +47,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "depth-2",
@@ -65,7 +67,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "depth-3",
@@ -84,7 +87,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "depth-4",
@@ -103,7 +107,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "depth-5",
@@ -122,7 +127,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       },
       {
         "id": "depth-6",
@@ -141,7 +147,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       }
     ]
   },

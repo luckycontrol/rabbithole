@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { CURRENT_SCHEMA_VERSION } from "../../src/core/schema.js";
 
+const NEWER_SCHEMA_MESSAGE = "This Rabbithole was saved by a newer version of Rabbithole — update to open it.";
+
 export const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 9, 9, 9, 9]);
 export const PNG_BYTES_2 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 8, 8, 8, 8]);
 
@@ -20,6 +22,7 @@ export function node(overrides = {}) {
     status: "answered",
     read: true,
     created_at: "2026-01-01T00:00:00.000Z",
+    extensions: { future_primitive: { attempts: [0, null, "雪", { correct: false }] } },
     ...overrides,
   };
 }
@@ -51,9 +54,11 @@ export async function runHoleContract(store, hooks) {
   assert.equal(loaded.schema_version, CURRENT_SCHEMA_VERSION);
   assert.equal(loaded.hole_id, "contract-hole");
   assert.equal(loaded.nodes.length, 1);
+  assert.deepEqual(loaded.nodes[0].extensions, node().extensions, "extension bag should survive save/load structurally");
 
   const raw = await hooks.readRawHole("contract-hole");
   assert.equal(raw.schema_version, CURRENT_SCHEMA_VERSION, "saveHole should stamp schema_version");
+  assert.deepEqual(raw.nodes[0].extensions, node().extensions, "raw persisted record should carry the extension bag");
 
   const listed = await store.listHoles();
   assert(listed.some((entry) => entry.hole_id === "contract-hole" && entry.node_count === 1));
@@ -61,6 +66,13 @@ export async function runHoleContract(store, hooks) {
   await store.deleteHole("contract-hole");
   assert.equal(await store.loadHole("contract-hole"), null);
   console.log("ok stage9: hole save/load/list/delete and schema stamping");
+}
+
+export async function runNewerSchemaRefusalContract(store, hooks) {
+  const future = { ...hole({ hole_id: "future-hole" }), schema_version: 3, updated_at: "2026-01-01T00:00:00.000Z" };
+  await hooks.writeRawHole("future-hole", future);
+  await assert.rejects(() => store.loadHole("future-hole"), (error) => error?.message === NEWER_SCHEMA_MESSAGE);
+  console.log("ok stage9: newer schema is refused with the update-to-open message");
 }
 
 export async function runMigrationContract(store, hooks) {
@@ -83,7 +95,7 @@ export async function runMigrationContract(store, hooks) {
         read: false,
       }),
     ].map((entry) => {
-      const { base_url, base_url_source, ...withoutBase } = entry;
+      const { base_url, base_url_source, extensions, ...withoutBase } = entry;
       return withoutBase;
     }),
   };
@@ -95,12 +107,13 @@ export async function runMigrationContract(store, hooks) {
   assert.equal(migrated.nodes[0].base_url_source, "frontmatter");
   assert.equal(migrated.nodes[1].base_url, "https://example.com/docs/root.md");
   assert.equal(migrated.nodes[1].base_url_source, "inherited");
+  assert.deepEqual(migrated.nodes.map((entry) => entry.extensions), [{}, {}], "legacy nodes should receive empty extension bags");
 
   const saved = await hooks.readRawHole("legacy-hole");
   assert.equal(saved.schema_version, CURRENT_SCHEMA_VERSION, "loadHole should save migrated v0 files");
   await store.saveHole(migrated);
   assert.equal((await store.loadHole("legacy-hole")).schema_version, CURRENT_SCHEMA_VERSION);
-  console.log("ok stage9: v0.2 fixture migrates, saves, and reloads as schema v1");
+  console.log("ok stage9: v0.2 fixture migrates, saves, and reloads as schema v2");
 }
 
 export async function runAssetContract(store) {
@@ -170,6 +183,7 @@ export async function runAssetGcFixture(store, makeDeleteHost) {
 export async function runStoreContract(store, hooks) {
   await runHoleContract(store, hooks);
   await runMigrationContract(store, hooks);
+  await runNewerSchemaRefusalContract(store, hooks);
   await runAssetContract(store);
   await runStagingContract(store);
   await runSafetyContract(store);

@@ -26,6 +26,8 @@ export interface HoleNode {
   status?: "pending" | "answered";
   read?: boolean;
   created_at?: string | null;
+  /** Opaque JSON extension bag; reducer operations preserve it structurally. */
+  extensions?: Record<string, unknown>;
   [field: string]: unknown;
 }
 

@@ -26,7 +26,7 @@ export interface SaveHoleOptions {
 
 /** In-memory document accepted for canonicalization by both store backends. */
 export type HoleForPersistence = Omit<PersistedHole, "schema_version" | "updated_at"> & {
-  schema_version?: 1;
+  schema_version?: 2;
   updated_at?: string | null;
 };
 

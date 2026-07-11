@@ -2,7 +2,7 @@
   "format": "rabbithole",
   "format_version": 1,
   "hole": {
-    "schema_version": 1,
+    "schema_version": 2,
     "hole_id": "corpus-rtl",
     "title": "مرحبا بالعالم",
     "root_id": "root",
@@ -27,7 +27,8 @@
         "collapsed": false,
         "status": "answered",
         "read": true,
-        "created_at": "2026-01-01T00:00:00.000Z"
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "extensions": {}
       }
     ]
   },

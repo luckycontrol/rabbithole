@@ -49,6 +49,7 @@ export async function openRabbithole({ title, content, filePath, holeId, baseUrl
     status: "answered",
     read: true, // the human lands on the root immediately
     created_at: new Date().toISOString(),
+    extensions: {},
   };
 
   const session = await createSession({
@@ -109,6 +110,7 @@ async function resumeRabbithole(holeId, signal, assets) {
       status: pending ? "pending" : "answered",
       read: !!raw.read,
       created_at: raw.created_at ?? null,
+      extensions: raw.extensions ?? {},
     });
   }
 

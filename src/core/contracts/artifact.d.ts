@@ -11,7 +11,7 @@
  * `validatePortableProjection`).
  */
 
-export type SchemaVersion = 1;
+export type SchemaVersion = 2;
 export type BaseUrlSource = "explicit" | "frontmatter" | "inherited";
 export type NodeStatus = "pending" | "answered";
 
@@ -55,9 +55,11 @@ export interface PersistedNode {
   status: NodeStatus;
   read: boolean;
   created_at: string | null;
+  /** Opaque learner/application state, preserved with structural JSON fidelity. */
+  extensions: Record<string, unknown>;
 }
 
-/** Canonical schema-v1 document accepted by `validatePersistedHole`. */
+/** Canonical schema-v2 document accepted by `validatePersistedHole`. */
 export interface PersistedHole {
   schema_version: SchemaVersion;
   hole_id: string;
@@ -71,7 +73,7 @@ export interface PersistedHole {
 
 /**
  * Legacy schema-less input accepted by `migratePersistedHole`.
- * `null` and omission both mean schema version 0 today. Migration stamps v1
+ * `null` and omission both mean schema version 0 today. Migration stamps v2
  * and backfills the optional node/view fields before validation.
  */
 export interface LegacyPersistedHole extends Omit<Partial<PersistedHole>, "schema_version" | "nodes"> {

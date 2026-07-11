@@ -88,13 +88,15 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | MCP tool response shapes and late-answer closure | C1 | Protects public MCP response/event shapes. | Migration/deploy: CLI version skew |
 | partial-to-final streaming accumulation | C2 | Protects observable streaming completion. | Generation: durable streaming happy path |
 | canonical MCP export, renderer capabilities, and web-import round trip | C1 | Protects the public inert snapshot shape, portable bootstrap, offline math/code/show/asset rendering, and MCP-authored snapshot → web import compatibility. Reclassified from C2 because the route now emits the public portable artifact format rather than a product-only frozen hydration. | Data: snapshot external format and cross-host portability; Rendering: frozen viewing fully offline (structural evidence only) |
+| MCP resume refuses a newer schema with exact recovery copy | C1 | Prevents an older MCP host from opening and later truncating a newer document. | Data: future schema version; Migration/deploy: CLI version skew |
 
 ## `stage9-store-contract.mjs` (filesystem store)
 
 | Case | Category | Rationale | Scenario-ledger entries covered |
 |---|---|---|---|
 | hole save/load/list/delete and schema stamping | C1 | Defines the filesystem store contract. | — |
-| v0.2 fixture migrates, saves, reloads as schema v1 | C1 | Protects persisted legacy migration. | Migration/deploy: new code, old storage/idempotent migrations (filesystem) |
+| v0.2 fixture migrates, saves, reloads as schema v2 | C1 | Protects persisted legacy migration. | Migration/deploy: new code, old storage/idempotent migrations (filesystem) |
+| newer schema load is refused with exact recovery copy | C1 | Pins filesystem/startup refusal before reconstruction can drop fields. | Data: future schema version |
 | asset put/get/list/delete | C1 | Defines persisted asset operations. | — |
 | staging create/put/adopt | C1 | Defines PDF staging operations. | — |
 | bad IDs/names/traversal rejected | C1 | Protects storage trust boundaries. | — |
@@ -105,13 +107,14 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | Case | Category | Rationale | Scenario-ledger entries covered |
 |---|---|---|---|
 | hole save/load/list/delete and schema stamping | C1 | Defines the browser store contract. | — |
-| v0.2 fixture migrates, saves, reloads as schema v1 | C1 | Protects old IndexedDB data under new code. | Migration/deploy: new code, old IndexedDB/idempotent migrations |
+| v0.2 fixture migrates, saves, reloads as schema v2 | C1 | Protects old IndexedDB data under new code. | Migration/deploy: new code, old IndexedDB/idempotent migrations |
+| newer schema load is refused with exact recovery copy | C1 | Pins IndexedDB startup refusal before reconstruction can drop fields. | Data: future schema version |
 | asset put/get/list/delete | C1 | Defines browser binary-asset operations. | — |
 | staging create/put/adopt | C1 | Defines browser PDF staging operations. | — |
 | bad IDs/names/traversal rejected | C1 | Protects browser storage trust boundaries. | — |
 | shared asset GC and final-reference deletion | C2 | Protects deletion asset semantics. | — |
 
-`support/store-contract.mjs` is an unwired helper, not an independently executed suite; its six exported cases are the six rows instantiated for each Stage 9 backend above.
+`support/store-contract.mjs` is an unwired helper, not an independently executed suite; its seven exported cases are the seven rows instantiated for each Stage 9 backend above.
 
 ## `stage10-web-verify.mjs`
 
@@ -203,6 +206,7 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | arXiv direct-fetch failure falls back to configured proxy | C2 | Protects URL/arXiv recovery behavior. | — |
 | dead proxy produces actionable recovery copy | C2 | Protects designed ingest failure recovery. | — |
 | relay rejection produces arXiv-specific guidance | C2 | Protects designed unsupported-host recovery. | — |
+| newer-schema file import shows exact update-to-open refusal | C1 | Pins the recoverable user-visible refusal in the existing ingest-status surface. | Data: future schema version |
 
 ## `stage12-portability-verify.mjs`
 
@@ -223,7 +227,9 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | typed artifact fixtures validate and invalid persisted/portable shapes are rejected | C1 | Couples the persisted and portable declarations to their runtime validators at the trust boundary, including canonical construction and Blob/Uint8Array binary codec parity. | Data: malformed JSON/base64; hand-edited payload types |
 | typed generation fixture distinguishes the two-event vocabulary from malformed events | C2 | Exercises both Phase 6 generation variants and rejects wrong fields, wrong value types, and the speculative usage discriminator. | Generation: durable streaming vocabulary; title never arrives |
 | typed content fixtures distinguish extension, hydratable-block, and primitive shapes from malformed values | C2 | Couples today's fence-dispatch vocabulary to its runtime authority while exercising explicitly revisable Phase 8 block and primitive names without freezing a serialized format. | Rendering: content extension and hydration vocabulary |
-| typed persisted, legacy, and portable artifacts round-trip with defined normalization | C1 | Proves canonical schema-v1 fixed points, null-schema backfill stability, and portable envelope preservation through validate/migrate/re-persist. | Data: portable compatibility; `schema_version: null` |
+| typed persisted, legacy, and portable artifacts round-trip with defined normalization | C1 | Proves canonical schema-v2 fixed points, null/v1 backfill stability, and portable envelope preservation through validate/migrate/re-persist. | Data: portable compatibility; `schema_version: null` |
+| non-object node extensions are legibly rejected | C1 | Couples the typed JSON-object extension contract to runtime validation. | Data: hand-edited payload types |
+| v1 open-modify-save-reopen preserves the schema-v2 extension bag | C1 | Proves the THESEUS forward-safety bridge across migration and an unrelated update. | Data: new-format document modify-save-reopen |
 | future format_version is clearly refused | C1 | Protects the public portable-file version boundary and its recoverable refusal. | Data: future `format_version` clear refusal |
 | future schema_version is legibly refused | C1 | Ensures old builds refuse unknown persisted schemas instead of silently dropping fields. | Data: new-format document through an old build refuses; future schema version |
 | schema_version null backfills, persists, and reloads | C1 | Protects forever-readable legacy files and idempotent migration through the filesystem store. | Data: `schema_version: null` legacy backfill; Migration/deploy: old storage/idempotent migrations |
@@ -237,6 +243,7 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | Case | Category | Rationale | Scenario-ledger entries covered |
 |---|---|---|---|
 | all corpus fixtures are normalized three-projection fixed points and export-idempotent | C1 | Protects portable migration, assets, durable asks, and filesystem persistence across portable → real FsStore → canonical snapshot HTML → web snapshot import → portable cycles for all 20 fixtures. Referenced assets remain byte-exact and unreferenced assets intentionally drop at the snapshot hop. Exports remain anchored to source except for the two deliberately migrated legacy fixtures. | Data: portable compatibility; `schema_version: null`; unicode/emoji/RTL; very wide holes; durable asks per host semantics; referenced-only snapshot assets |
+| extension bags survive portable round trips and are stripped from snapshots | C1 | Proves backups carry structurally faithful learner progress while share artifacts omit it and imports normalize the omission to `{}`. | Data: portable compatibility; snapshot personal-state exclusion |
 | portable and snapshot import collisions mint a fresh hole_id and preserve content | C1 | Protects collision-safe identity generation without content or asset loss and pins snapshot → import → `.rabbithole` as a canonical fixed point. | Data: import ID collision; portable compatibility |
 
 ## `stage14-reducer-conformance.mjs`
@@ -347,20 +354,20 @@ These live-provider eval cases run only through `npm run eval`; their regex/heur
 
 ## Counts
 
-Current inventory arithmetic: `52 + 154 + 11 + 1 + 0 = 218` total cases.
+Current inventory arithmetic: `59 + 154 + 11 + 1 + 0 = 225` total cases.
 
-Phase 7 closure widened the existing corpus round-trip, credential-exclusion, and export-timing rows across all three projections; no cases were added or reclassified, so the exact arithmetic remains `52 + 154 + 11 + 1 + 0 = 218`.
+Phase 8 Slice 1 adds seven C1 cases: MCP resume refusal, filesystem and IndexedDB load refusal, web import refusal, non-object bag validation, the v1 forward-safety cycle, and portable/snapshot bag projection: `52 + 7 = 59` and `218 + 7 = 225`, yielding `59 + 154 + 11 + 1 + 0 = 225`.
 
 Counts treat each row above as one case; the shared Stage 9 contract counts once per backend because `npm test` executes it against both. Phase 5 Slice 2 added three C1 rows (`41 + 3 = 44`, `184 + 3 = 187`). Slice 3 added three C2 rows and reclassified the reducer mutation probe from C3 to C2: `129 + 3 + 1 = 133`, `10 - 1 = 9`, and `187 + 3 = 190` total. Slice 4 retires the stale-progress C4 as a C2 and adds four ordering goldens: `133 + 1 + 4 = 138`, `4 - 1 = 3`, and `190 + 4 = 194` total. Slice 5 adds one generation-vocabulary C2 case: `138 + 1 = 139` and `194 + 1 = 195` total. Slice 7 adds one content-vocabulary C2 case: `139 + 1 = 140` and `195 + 1 = 196` total. Slice 8 adds one hydration-wire C1 golden: `44 + 1 = 45` and `196 + 1 = 197` total. Slice 9 adds one packaging C1 case and one installed-launch C2 case: `45 + 1 = 46`, `140 + 1 = 141`, and `197 + 2 = 199` total. Phase 6 Slice 1 adds four C2 adapter/parser/error cases and two C3 SSE framing cases: `141 + 4 = 145`, `9 + 2 = 11`, and `199 + 6 = 205` total. Phase 6 Slice 2 adds two C2 cases: `145 + 2 = 147` and `205 + 2 = 207` total. Phase 6 Slice 3 adds three C2 browser-branch wiring cases: `147 + 3 = 150` and `207 + 3 = 210` total. Phase 6 Slice 4 adds three C2 root/authoring/seam-retirement cases: `150 + 3 = 153` and `210 + 3 = 213` total. Phase 7 Slice 1 reclassifies the portable-import MIME fossil from C4 to C1: `46 + 1 = 47`, `3 - 1 = 2`, and the total remains `214`. Phase 7 Slice 2 adds three C1 snapshot-format cases (canonical inert projection, escaping fidelity, and legacy viewing compatibility): `47 + 3 = 50` and `214 + 3 = 217` total. Phase 7 Slice 3 extends the existing frozen-styles C2 case, so the arithmetic remains `50 + 154 + 11 + 2 + 0 = 217`. Phase 7 Slice 4 retires the hand-edited snapshot C4 as an executable C1 boundary case: `50 + 1 = 51`, `2 - 1 = 1`, and the total remains `217`, yielding `51 + 154 + 11 + 1 + 0 = 217`. The MCP snapshot regression fix adds one C2 live-product download case: `154 + 1 = 155` and `217 + 1 = 218`, yielding `51 + 155 + 11 + 1 + 0 = 218`. Phase 7 Slice 5a reclassifies one legacy frozen-export C2 row as a canonical cross-host artifact C1 row: `51 + 1 = 52`, `155 - 1 = 154`, and the total remains `218`, yielding `52 + 154 + 11 + 1 + 0 = 218`.
 
 | Category | Count |
 |---|---:|
-| C1 compatibility contract | 52 |
+| C1 compatibility contract | 59 |
 | C2 behavioral product contract | 154 |
 | C3 implementation snapshot | 11 |
 | C4 known defect | 1 |
 | C5 design target | 0 |
-| **Total** | **218** |
+| **Total** | **225** |
 
 ## Known-defect fossils
 

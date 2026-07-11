@@ -39,10 +39,10 @@ const validNode = (overrides = {}) => ({
   id: "root", parent_id: null, title: "Root", markdown: "Body",
   base_url: null, base_url_source: null, origin: null,
   position: { x: 0, y: 0 }, size: null, font_scale: 1, collapsed: false,
-  status: "answered", read: true, created_at: stamp, ...overrides,
+  status: "answered", read: true, created_at: stamp, extensions: {}, ...overrides,
 });
 const validHole = (overrides = {}) => ({
-  schema_version: 1, hole_id: "edge-hole", title: "Edge Hole", root_id: "root",
+  schema_version: 2, hole_id: "edge-hole", title: "Edge Hole", root_id: "root",
   created_at: stamp, updated_at: stamp, view_state: null, nodes: [validNode()], ...overrides,
 });
 const portable = (hole = validHole(), assets = {}) => JSON.stringify({
@@ -141,14 +141,37 @@ console.log("ok stage13: typed content fixtures distinguish extension, hydratabl
 console.log("ok stage13: typed persisted, legacy, and portable artifacts round-trip with defined normalization");
 
 assert.throws(
+  () => validatePersistedHole(validHole({ nodes: [validNode({ extensions: [] })] })),
+  /extensions must be a JSON object/,
+);
+console.log("ok stage13: non-object node extensions are legibly rejected");
+
+{
+  const bag = { future_primitive: { attempts: [0, null, "雪", { correct: false }] } };
+  const v1 = validHole({ schema_version: 1, nodes: [{ ...validNode(), extensions: undefined }] });
+  delete v1.nodes[0].extensions;
+  const migrated = migratePersistedHole(v1).hole;
+  assert.equal(migrated.schema_version, 2);
+  assert.deepEqual(migrated.nodes[0].extensions, {});
+  migrated.nodes[0].extensions = bag;
+  migrated.nodes[0].read = false;
+  const store = await newStore();
+  await store.saveHole(migrated, { updatedAt: migrated.updated_at });
+  const reopened = await store.loadHole(migrated.hole_id);
+  assert.equal(reopened.schema_version, 2);
+  assert.deepEqual(reopened.nodes[0].extensions, bag);
+}
+console.log("ok stage13: v1 open-modify-save-reopen preserves the schema-v2 extension bag");
+
+assert.throws(
   () => parseRabbitholeFile(JSON.stringify({ format: "rabbithole", format_version: 2, hole: {}, assets: {} })),
   /unsupported Rabbithole file format/i,
 );
 console.log("ok stage13: future format_version is clearly refused");
 
 await assert.rejects(
-  () => importRabbitholeFile(new FsStore(), portable(validHole({ schema_version: 2 }))),
-  /Unsupported Rabbithole schema_version 2/,
+  () => importRabbitholeFile(new FsStore(), portable(validHole({ schema_version: 3 }))),
+  /This Rabbithole was saved by a newer version of Rabbithole — update to open it\./,
 );
 console.log("ok stage13: future schema_version is legibly refused");
 
@@ -157,10 +180,10 @@ console.log("ok stage13: future schema_version is legibly refused");
   const legacyText = await fs.readFile(new URL("./fixtures/corpus/10-schema-null-legacy.rabbithole", import.meta.url), "utf8");
   const result = await importRabbitholeFile(store, legacyText);
   const loaded = await store.loadHole(result.hole_id);
-  assert.equal(loaded.schema_version, 1);
+  assert.equal(loaded.schema_version, 2);
   assert.equal(loaded.nodes[0].title, "");
   assert.equal(loaded.nodes[0].status, "answered");
-  assert.equal((await store.loadHole(result.hole_id)).schema_version, 1, "reload remains migrated");
+  assert.equal((await store.loadHole(result.hole_id)).schema_version, 2, "reload remains migrated");
 }
 console.log("ok stage13: schema_version null backfills, persists, and reloads");
 

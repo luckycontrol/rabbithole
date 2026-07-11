@@ -14,13 +14,13 @@ const hydrationState = createHoleState({
   title: "Hydration golden",
   root_id: "root",
   nodes: [
-    { id: "root", origin: { private: "web-root" }, extra: "must-not-leak" },
+    { id: "root", origin: { private: "web-root" }, extra: "must-not-leak", extensions: { progress: ["雪", { score: 2 }] } },
     { id: "child", parent_id: "root", title: "Child", markdown: "Body", origin: { lens: "deeper" } },
   ],
 });
 const hydrationGolden = [
-  { id: "root", parent_id: null, title: "", markdown: "", base_url: null, base_url_source: null, origin: { private: "web-root" }, position: { x: 0, y: 0 }, size: null, font_scale: 1, collapsed: false, status: "answered", read: false },
-  { id: "child", parent_id: "root", title: "Child", markdown: "Body", base_url: null, base_url_source: null, origin: { lens: "deeper" }, position: { x: 0, y: 0 }, size: null, font_scale: 1, collapsed: false, status: "answered", read: false },
+  { id: "root", parent_id: null, title: "", markdown: "", base_url: null, base_url_source: null, origin: { private: "web-root" }, position: { x: 0, y: 0 }, size: null, font_scale: 1, collapsed: false, status: "answered", read: false, extensions: { progress: ["雪", { score: 2 }] } },
+  { id: "child", parent_id: "root", title: "Child", markdown: "Body", base_url: null, base_url_source: null, origin: { lens: "deeper" }, position: { x: 0, y: 0 }, size: null, font_scale: 1, collapsed: false, status: "answered", read: false, extensions: {} },
 ];
 assert.deepEqual(holeStateToHydrationNodes(hydrationState), hydrationGolden, "MCP hydration uses the canonical exact-key node projection");
 assert.deepEqual(

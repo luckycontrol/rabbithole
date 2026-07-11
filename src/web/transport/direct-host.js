@@ -570,6 +570,7 @@ export function createHoleFromMarkdown({ title, markdown, baseUrl = null } = {})
       status: "answered",
       read: true,
       created_at: now,
+      extensions: {},
     }],
   };
 }

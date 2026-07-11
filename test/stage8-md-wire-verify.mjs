@@ -288,6 +288,12 @@ async function runMarkdownWireFixture() {
 try {
   await runRendererGoldenFixtures();
   await runMarkdownWireFixture();
+  await fs.writeFile(path.join(process.env.RABBITHOLE_DIR, "future-mcp.json"), JSON.stringify({ schema_version: 3 }));
+  await assert.rejects(
+    () => openRabbithole({ holeId: "future-mcp" }),
+    (error) => error?.message === "This Rabbithole was saved by a newer version of Rabbithole — update to open it.",
+  );
+  console.log("ok stage8: MCP resume refuses newer schemas with the update-to-open message");
 } finally {
   await closeAllSessions("stage8_test_complete");
 }

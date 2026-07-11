@@ -4,7 +4,7 @@
 
 /** @type {PersistedHole} */
 export const persistedHoleFixture = {
-  schema_version: 1,
+  schema_version: 2,
   hole_id: "typed-artifact",
   title: "Typed artifact",
   root_id: "root",
@@ -17,6 +17,7 @@ export const persistedHoleFixture = {
     position: { x: 0, y: 0 }, size: { w: 420, h: 240 }, font_scale: 1,
     collapsed: false, status: "answered", read: true,
     created_at: "2026-01-01T00:00:00.000Z",
+    extensions: { fixture: { nested: [true, null, "雪"] } },
   }],
 };
 
@@ -38,4 +39,3 @@ export const portableArtifactFixture = {
   hole: persistedHoleFixture,
   assets: { "pixel.png": "iVBORw==" },
 };
-
