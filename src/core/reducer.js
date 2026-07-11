@@ -14,6 +14,7 @@ export function createHoleState({ hole_id, title, root_id, created_at = null, vi
     created_at,
     view_state,
     nodes: nodes instanceof Map ? new Map(nodes) : new Map((nodes || []).map((node) => [node.id, { ...node }])),
+    progressRuns: new Map(),
   };
 }
 
@@ -78,6 +79,10 @@ function reduceNodeProgress(state, event) {
   const nodeId = String(event.node_id || "");
   const node = state.nodes.get(nodeId);
   if (!node) return withState(state);
+  const run = event.run;
+  const tagged = run && typeof run.id === "string" && typeof run.seq === "number";
+  const recorded = tagged ? state.progressRuns.get(nodeId) : null;
+  if (recorded && recorded.id === run.id && run.seq <= recorded.seq) return withState(state);
   const nodes = cloneNodes(state);
   const next = {
     ...node,
@@ -86,7 +91,10 @@ function reduceNodeProgress(state, event) {
     base_url_source: event.base_url_source ?? node.base_url_source ?? null,
   };
   nodes.set(nodeId, next);
-  return withState({ ...state, nodes }, { node_id: nodeId });
+  const progressRuns = tagged
+    ? new Map(state.progressRuns).set(nodeId, { id: run.id, seq: run.seq })
+    : state.progressRuns;
+  return withState({ ...state, nodes, progressRuns }, { node_id: nodeId });
 }
 
 function reduceNodeAnswered(state, event) {
@@ -128,7 +136,12 @@ function reduceNodeAnswered(state, event) {
   maybeUpgradeBaseUrlFromFrontmatter(next);
   const nodes = cloneNodes(state);
   nodes.set(nodeId, next);
-  return withState({ ...state, nodes }, { answeredNode: next });
+  let progressRuns = state.progressRuns;
+  if (progressRuns.has(nodeId)) {
+    progressRuns = new Map(progressRuns);
+    progressRuns.delete(nodeId);
+  }
+  return withState({ ...state, nodes, progressRuns }, { answeredNode: next });
 }
 
 function reduceNodeDeleted(state, event) {
@@ -144,7 +157,12 @@ function reduceNodeDeleted(state, event) {
     if (node) deletedNodes.push(node);
     nodes.delete(id);
   }
-  return withState({ ...state, nodes }, { deletedNodeIds: ids, deletedNodes });
+  let progressRuns = state.progressRuns;
+  if (ids.some((id) => progressRuns.has(id))) {
+    progressRuns = new Map(progressRuns);
+    for (const id of ids) progressRuns.delete(id);
+  }
+  return withState({ ...state, nodes, progressRuns }, { deletedNodeIds: ids, deletedNodes });
 }
 
 function reduceNodeUpdate(state, event) {

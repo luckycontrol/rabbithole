@@ -241,7 +241,11 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | branch_request missing parent throws | C2 | Invalid branch requests must fail rather than create detached nodes. | — |
 | branch_request missing node_id throws | C2 | Branch nodes require stable identity. | — |
 | node_progress grows then idempotently replays | C2 | Full-markdown replacement and same-text replay define current streaming behavior. | Generation: durable streaming (reducer side) |
-| stale node_progress currently wins | C4 | Records the acknowledged lack of `{id, seq}` ordering without blessing it as product behavior; retired by the Phase 5/6 order guard. | Generation: stale progress after newer progress |
+| stale same-run node_progress is discarded | C2 | The reducer is the single ordering authority for tagged progress and rejects non-increasing sequence numbers without changing state. | Generation: stale progress after newer progress |
+| higher same-run node_progress is accepted | C2 | Increasing sequence numbers advance both markdown and the ephemeral per-node run record. | Generation: stale progress after newer progress |
+| new node_progress run id supersedes | C2 | A retry is a new run and supersedes the prior run regardless of its sequence number. | Generation: stale progress after newer progress |
+| node_answered clears progress ordering record | C2 | Completion ends the recorded run, so later tagged progress follows the no-record acceptance path. | Generation: stale progress after newer progress |
+| delete_node clears progress ordering record | C2 | Removed node identities retain no ephemeral run history if an id is later reused. | Generation: delete-while-streaming; stale progress after newer progress |
 | node_answered updates existing pending node | C2 | Completing an existing pending node is core generation behavior. | — |
 | node_answered synthesizes unknown node | C2 | Final answers may materialize a node when no pending node exists. | — |
 | delete_node subtree collection and effects | C2 | Deletion must remove descendants and return sufficient effect data for consumers. | — |
@@ -307,23 +311,22 @@ These live-provider eval cases run only through `npm run eval`; their regex/heur
 
 ## Counts
 
-Counts treat each row above as one case; the shared Stage 9 contract counts once per backend because `npm test` executes it against both. Phase 5 Slice 2 added three C1 rows (`41 + 3 = 44`, `184 + 3 = 187`). Slice 3 adds three C2 rows and reclassifies the reducer mutation probe from C3 to C2: `129 + 3 + 1 = 133`, `10 - 1 = 9`, and `187 + 3 = 190` total.
+Counts treat each row above as one case; the shared Stage 9 contract counts once per backend because `npm test` executes it against both. Phase 5 Slice 2 added three C1 rows (`41 + 3 = 44`, `184 + 3 = 187`). Slice 3 added three C2 rows and reclassified the reducer mutation probe from C3 to C2: `129 + 3 + 1 = 133`, `10 - 1 = 9`, and `187 + 3 = 190` total. Slice 4 retires the stale-progress C4 as a C2 and adds four ordering goldens: `133 + 1 + 4 = 138`, `4 - 1 = 3`, and `190 + 4 = 194` total.
 
 | Category | Count |
 |---|---:|
 | C1 compatibility contract | 44 |
-| C2 behavioral product contract | 133 |
+| C2 behavioral product contract | 138 |
 | C3 implementation snapshot | 9 |
-| C4 known defect | 4 |
+| C4 known defect | 3 |
 | C5 design target | 0 |
-| **Total** | **190** |
+| **Total** | **194** |
 
 ## Known-defect fossils
 
 - `stage10-web-verify.mjs:179-224` pins rail padding (`12px`, `7px`, `8px`), bottom gap (`14px`), and width (`<=226px`): per-screen magic design values Phase 2 intends to centralize.
 - `stage10-web-verify.mjs:421-442` retains settings surface equality and the optical gear offset; `stage10-web-verify.mjs:486-521` retains share surface equality and exact shell/item padding. Anchoring itself is now a C2 engine contract rather than a bespoke-geometry fossil.
 - No assertion requires settings `innerHTML` rebuilding or focus-hunting. `stage2-verify.mjs:253-271` does rebuild a synthetic content container via `innerHTML`, but its asserted contract is visual mount identity/cache behavior, not that settings/chrome must rebuild. No current case asserts focus restoration after settings close, so the bespoke focus-hunting debt is unprotected rather than fossilized.
-- `stage14-reducer-conformance.mjs` "stale node_progress currently wins" pins last-write-wins progress ordering — the gap the `{id, seq}` order guard (Phases 5/6) closes.
 - `stage13-data-edges-verify.mjs` "hand-edited snapshot payload validation" is a skip-with-reason: snapshots currently have no inert import boundary, validator, or size cap (built in Phase 7).
 
 ## Baseline defects on record (found by instruments, not fixed)

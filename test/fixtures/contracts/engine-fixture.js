@@ -9,6 +9,7 @@ export const holeStateFixture = {
   created_at: null,
   view_state: null,
   nodes: new Map([["root", { id: "root", markdown: "Body" }]]),
+  progressRuns: new Map(),
 };
 
 /** @type {DocEvent[]} */

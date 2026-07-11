@@ -89,6 +89,24 @@ assert.equal(priorState.nodes.get("root").markdown, "before");
 assert.notStrictEqual(mutationResult.state.nodes.get("root"), priorNode);
 assert.equal(mutationResult.state.nodes.get("root").markdown, "after");
 
+// The ephemeral ordering ledger obeys the same frozen-input/copy-on-write
+// contract, and stale progress preserves the entire state identity.
+const taggedState = createHoleState({ root_id: "root", nodes: [{ id: "root", markdown: "before" }] });
+const acceptedTagged = reduceHoleEvent(taggedState, {
+  type: "node_progress", node_id: "root", markdown: "newer", run: { id: "run", seq: 2 },
+});
+const priorRuns = acceptedTagged.state.progressRuns;
+deepFreeze(acceptedTagged.state);
+const staleTagged = reduceHoleEvent(acceptedTagged.state, {
+  type: "node_progress", node_id: "root", markdown: "older", run: { id: "run", seq: 1 },
+});
+assert.notStrictEqual(priorRuns, taggedState.progressRuns);
+assert.deepEqual(priorRuns.get("root"), { id: "run", seq: 2 });
+assert.strictEqual(staleTagged.state, acceptedTagged.state);
+assert.strictEqual(staleTagged.state.progressRuns, priorRuns);
+assert.equal(Object.hasOwn(holeStateToHole(acceptedTagged.state), "progressRuns"), false);
+assert.equal(JSON.stringify(holeStateToHole(acceptedTagged.state)).includes("progressRuns"), false);
+
 const bundle = await esbuild.build({
   stdin: {
     contents: `import { createHoleState, holeStateToHole, reduceHoleEvent } from "./src/core/reducer.js";
@@ -120,6 +138,4 @@ try {
 assertGoldens(browserResults, "browser");
 assert.deepEqual(browserResults, nodeResults, "Node and browser must produce identical reducer projections");
 
-// The stale-progress golden intentionally records today's last-write-wins gap.
-// Phase 5/6's {id, seq} order guard should replace and retire that known-defect expectation.
 console.log(`ok stage14: ${cases.length} reducer goldens conform in node and browser; frozen-input immutability enforced`);

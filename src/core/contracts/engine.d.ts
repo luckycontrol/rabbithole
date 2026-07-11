@@ -36,7 +36,15 @@ export interface HoleState {
   created_at: unknown;
   view_state: PersistedViewState | null | unknown;
   nodes: Map<string, HoleNode>;
+  /**
+   * Ephemeral per-node progress ordering records. This reducer-only ledger is
+   * never persisted or emitted by `holeStateToHole` and starts empty after
+   * every hydration.
+   */
+  progressRuns: Map<string, ProgressRun>;
 }
+
+export interface ProgressRun { id: string; seq: number; }
 
 interface NodeTarget { node_id?: unknown; }
 interface BaseUrlFields { base_url?: unknown; base_url_source?: unknown; }
@@ -62,8 +70,12 @@ export interface BranchRequestEvent extends NodePresentationFields {
 export interface NodeProgressEvent extends NodeTarget, BaseUrlFields {
   type: "node_progress";
   markdown?: unknown;
-  /** Accepted but currently ignored; ordering remains last-write-wins. */
-  run?: unknown;
+  /**
+   * Optional ordering tag. For the same run id, sequence numbers at or below
+   * the recorded value are discarded; a higher sequence or different id is
+   * accepted. Untagged progress is always accepted without changing records.
+   */
+  run?: ProgressRun;
 }
 export interface NodeAnsweredEvent extends NodeTarget, BaseUrlFields, NodePresentationFields {
   type: "node_answered";
@@ -99,6 +111,6 @@ export interface ReduceEffects {
 export interface ReduceResult { state: HoleState; effects: ReduceEffects; }
 export interface ReduceOptions { now?: string; }
 
-export declare function createHoleState(input?: Partial<Omit<HoleState, "nodes">> & { nodes?: Map<string, HoleNode> | HoleNode[] }): HoleState;
-export declare function holeStateToHole(state: HoleState): Omit<HoleState, "nodes"> & { nodes: HoleNode[] };
+export declare function createHoleState(input?: Partial<Omit<HoleState, "nodes" | "progressRuns">> & { nodes?: Map<string, HoleNode> | HoleNode[] }): HoleState;
+export declare function holeStateToHole(state: HoleState): Omit<HoleState, "nodes" | "progressRuns"> & { nodes: HoleNode[] };
 export declare function reduceHoleEvent(state: HoleState, event: DocEvent, options?: ReduceOptions): ReduceResult;

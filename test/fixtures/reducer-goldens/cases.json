@@ -16,12 +16,39 @@
     "expected_effects": { "node_id": "root" }
   },
   {
-    "name": "node_progress stale shorter text currently wins",
-    "classification": "known defect",
+    "name": "node_progress discards stale same-run sequence",
     "initial": { "root_id": "root", "nodes": [{ "id": "root", "markdown": "" }] },
     "events": [{ "event": { "type": "node_progress", "node_id": "root", "markdown": "newer and longer", "run": { "id": "run-1", "seq": 2 } } }, { "event": { "type": "node_progress", "node_id": "root", "markdown": "older", "run": { "id": "run-1", "seq": 1 } } }],
-    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "markdown": "older", "base_url": null, "base_url_source": null }] },
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "markdown": "newer and longer", "base_url": null, "base_url_source": null }] },
+    "expected_effects": {}
+  },
+  {
+    "name": "node_progress accepts higher same-run sequence",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root", "markdown": "" }] },
+    "events": [{ "event": { "type": "node_progress", "node_id": "root", "markdown": "first", "run": { "id": "run-1", "seq": 1 } } }, { "event": { "type": "node_progress", "node_id": "root", "markdown": "second", "run": { "id": "run-1", "seq": 2 } } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "markdown": "second", "base_url": null, "base_url_source": null }] },
     "expected_effects": { "node_id": "root" }
+  },
+  {
+    "name": "node_progress new run id supersedes recorded run",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root", "markdown": "" }] },
+    "events": [{ "event": { "type": "node_progress", "node_id": "root", "markdown": "old run", "run": { "id": "run-1", "seq": 8 } } }, { "event": { "type": "node_progress", "node_id": "root", "markdown": "retry", "run": { "id": "run-2", "seq": 1 } } }, { "event": { "type": "node_progress", "node_id": "root", "markdown": "retry stale", "run": { "id": "run-2", "seq": 0 } } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "markdown": "retry", "base_url": null, "base_url_source": null }] },
+    "expected_effects": {}
+  },
+  {
+    "name": "node_answered clears progress run before later tagged progress",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root", "markdown": "" }] },
+    "events": [{ "event": { "type": "node_progress", "node_id": "root", "markdown": "partial", "run": { "id": "run-1", "seq": 2 } } }, { "event": { "type": "node_answered", "node_id": "root", "markdown": "complete" } }, { "event": { "type": "node_progress", "node_id": "root", "markdown": "accepted after clear", "run": { "id": "run-1", "seq": 1 } } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "markdown": "accepted after clear", "base_url": null, "base_url_source": null, "parent_id": null, "title": "Untitled", "origin": null, "position": { "x": 0, "y": 0 }, "size": null, "font_scale": 1, "collapsed": false, "status": "answered", "read": false }] },
+    "expected_effects": { "node_id": "root" }
+  },
+  {
+    "name": "delete_node clears progress run before node id reuse",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root" }, { "id": "child", "parent_id": "root", "markdown": "" }] },
+    "events": [{ "event": { "type": "node_progress", "node_id": "child", "markdown": "partial", "run": { "id": "run-1", "seq": 2 } } }, { "event": { "type": "delete_node", "node_id": "child" } }, { "event": { "type": "branch_request", "parent_id": "root", "node_id": "child", "question": "Again" }, "options": { "now": "fixed" } }, { "event": { "type": "node_progress", "node_id": "child", "markdown": "accepted after reuse", "run": { "id": "run-1", "seq": 1 } } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root" }, { "id": "child", "parent_id": "root", "title": "Again", "markdown": "accepted after reuse", "base_url": null, "base_url_source": null, "origin": { "selected_text": "", "question": "Again", "lens": null, "synthesis": false, "anchor": null, "branch_type": "followup" }, "position": { "x": 0, "y": 0 }, "size": null, "font_scale": 1, "collapsed": false, "status": "pending", "read": false, "created_at": "fixed" }] },
+    "expected_effects": { "node_id": "child" }
   },
   {
     "name": "node_answered updates an existing pending node",
