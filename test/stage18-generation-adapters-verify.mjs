@@ -7,6 +7,8 @@ import { ProviderError, normalizeProviderError } from "../src/web/brain/errors.j
 import { adaptBranchGeneration, adaptTextGeneration } from "../src/web/brain/generation-events.js";
 import { OpenAICompatibleBrain, parseOpenAISseEvent, streamOpenAICompatible } from "../src/web/brain/openai-compatible.js";
 import { TitleSentinelParser } from "../src/web/brain/title-sentinel.js";
+import { GenerationIngress } from "../src/node/transport/generation-ingress.js";
+import { RabbitHoleSession } from "../src/node/transport/session.js";
 import { DirectRabbitholeHost, createHoleFromMarkdown, generationDocEvents } from "../src/web/transport/direct-host.js";
 
 async function collect(iterable) {
@@ -203,6 +205,30 @@ const manual = wiringEvents.flatMap((event) => {
 manual.push(manualRun.complete({ nodeId: "wired-node", answeredFields: { parent_id: "root", read: false } }));
 assert.deepEqual(wired, manual);
 console.log("ok stage18: browser branch wiring matches hand-driven GenerationRun DocEvents");
+
+const mcpIngress = new GenerationIngress({ id: "mcp-run", nodeId: "mcp-node", fallbackTitle: "Fallback" });
+assert.deepEqual(mcpIngress.acceptChunk("one"), {
+  type: "node_progress", node_id: "mcp-node", markdown: "one", run: { id: "mcp-run", seq: 1 },
+});
+assert.deepEqual(mcpIngress.acceptChunk(" two"), {
+  type: "node_progress", node_id: "mcp-node", markdown: "one two", run: { id: "mcp-run", seq: 2 },
+});
+assert.deepEqual(mcpIngress.acceptChunk("one two three", { final: true, title: "Agent title" }), {
+  type: "node_answered", node_id: "mcp-node", title: "Agent title", markdown: "one two three",
+});
+const tailIngress = new GenerationIngress({ id: "tail-run", nodeId: "tail-node" });
+tailIngress.acceptChunk("one");
+assert.equal(tailIngress.acceptChunk(" two", { final: true, title: "Tail" }).markdown, "one two");
+let mcpMinted = 0;
+const mcpSession = new RabbitHoleSession({
+  nodes: [],
+  mintGenerationRunId: () => `fresh-${++mcpMinted}`,
+});
+assert.notEqual(
+  mcpSession.createGenerationIngress({ id: "node", title: "Fallback" }).run.id,
+  mcpSession.createGenerationIngress({ id: "node", title: "Fallback" }).run.id,
+);
+console.log("ok stage18: MCP ingress normalizes tail/repeat chunks, tags progress, carries title, and isolates fresh runs");
 
 let minted = 0;
 const mintHost = new DirectRabbitholeHost({

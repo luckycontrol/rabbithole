@@ -333,25 +333,28 @@ These live-provider eval cases run only through `npm run eval`; their regex/heur
 | authoring GenerationEvent adapters are text-only | C2 | Requires both provider brains' explainer/document surfaces to emit only text events while preserving provider bytes exactly. | Generation: durable streaming vocabulary |
 | pure GenerationRun accumulator and DocEvent goldens | C2 | Pins full-text accumulation, monotonic run tags, late/fallback titles, empty completion, deterministic repeat completion, and rejection of non-generation/error input without host lifecycle ownership. | Generation: shared accumulation and transition construction |
 | browser branch GenerationRun wiring | C2 | Requires browser branch GenerationEvents to produce the same progress/completion DocEvents as direct GenerationRun consumption. | Generation: shared accumulation and transition construction |
+| MCP GenerationIngress normalization | C2 | Pins tail and repeated-full-answer normalization before GenerationEvents, tagged progress through GenerationRun, final title flow, and fresh run identity. | Generation: MCP durable streaming; shared accumulation and transition construction |
 | browser branch retry run guard | C2 | Requires each retry to mint a new run id and rejects late progress from its superseded aborted run. | Generation: stale progress after newer progress; real stream abort |
 | browser branch empty-stream completion | C2 | Preserves the intentional branch/root asymmetry: an empty branch stream completes with fallback title and empty markdown. | Generation: title never arrives (empty-stream side) |
 | browser root GenerationRun wiring and empty rejection | C2 | Requires root explainer GenerationEvents to flow through GenerationRun while preserving rejection of empty and whitespace-only streams. | Generation: empty provider answer; shared accumulation and transition construction |
-| document authoring through host lifecycle | C2 | Requires authoring to use host-owned run ids, abort ownership, reducer transitions, and the existing save pipeline. | Generation: durable streaming vocabulary; real stream abort |
+| document authoring through host lifecycle | C2 | Requires authoring to use host-owned run ids, abort ownership, reducer transitions, and save exactly on completion. | Generation: durable streaming vocabulary; real stream abort |
 | retired text-delta seam absence | C2 | Prevents browser generation surfaces from bypassing GenerationRun through the temporary event-to-text helper. | Generation: shared accumulation and transition construction |
 | browser lifecycle save flush | C2 | Requires hidden visibility and pagehide to invoke the existing host flush seam, closing the final debounce window without changing save policy. | Generation: browser durable partial markdown on tab close |
 
 ## Counts
+
+Phase 6 Slice 5 adds one MCP ingress C2 case: `153 + 1 = 154` and `213 + 1 = 214` total.
 
 Counts treat each row above as one case; the shared Stage 9 contract counts once per backend because `npm test` executes it against both. Phase 5 Slice 2 added three C1 rows (`41 + 3 = 44`, `184 + 3 = 187`). Slice 3 added three C2 rows and reclassified the reducer mutation probe from C3 to C2: `129 + 3 + 1 = 133`, `10 - 1 = 9`, and `187 + 3 = 190` total. Slice 4 retires the stale-progress C4 as a C2 and adds four ordering goldens: `133 + 1 + 4 = 138`, `4 - 1 = 3`, and `190 + 4 = 194` total. Slice 5 adds one generation-vocabulary C2 case: `138 + 1 = 139` and `194 + 1 = 195` total. Slice 7 adds one content-vocabulary C2 case: `139 + 1 = 140` and `195 + 1 = 196` total. Slice 8 adds one hydration-wire C1 golden: `44 + 1 = 45` and `196 + 1 = 197` total. Slice 9 adds one packaging C1 case and one installed-launch C2 case: `45 + 1 = 46`, `140 + 1 = 141`, and `197 + 2 = 199` total. Phase 6 Slice 1 adds four C2 adapter/parser/error cases and two C3 SSE framing cases: `141 + 4 = 145`, `9 + 2 = 11`, and `199 + 6 = 205` total. Phase 6 Slice 2 adds two C2 cases: `145 + 2 = 147` and `205 + 2 = 207` total. Phase 6 Slice 3 adds three C2 browser-branch wiring cases: `147 + 3 = 150` and `207 + 3 = 210` total. Phase 6 Slice 4 adds three C2 root/authoring/seam-retirement cases: `150 + 3 = 153` and `210 + 3 = 213` total.
 
 | Category | Count |
 |---|---:|
 | C1 compatibility contract | 46 |
-| C2 behavioral product contract | 153 |
+| C2 behavioral product contract | 154 |
 | C3 implementation snapshot | 11 |
 | C4 known defect | 3 |
 | C5 design target | 0 |
-| **Total** | **213** |
+| **Total** | **214** |
 
 ## Known-defect fossils
 

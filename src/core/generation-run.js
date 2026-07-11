@@ -1,8 +1,7 @@
 /**
  * Pure GenerationEvent accumulator and DocEvent builder.
  *
- * Phase 6 Slice 2 intentionally leaves this module unwired. Slices 3/4/5
- * adopt it in the browser branch/root/authoring and MCP hosts respectively.
+ * Browser branch/root/authoring and MCP generation hosts share this unit.
  * Hosts continue to own lifecycle, retries, aborts, timers, persistence, and
  * run-id minting.
  */

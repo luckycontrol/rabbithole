@@ -10,6 +10,7 @@ import { createHoleState, holeStateToHole, holeStateToHydrationNodes, reduceHole
 import { lineageTitlesFromMap } from "../../core/model.js";
 import { buildJsonError, parseRequestBody, closeServerGracefully, CLOSE_TIMEOUT_MS } from "./http.js";
 import { writeSseEvent } from "./sse.js";
+import { GenerationIngress } from "./generation-ingress.js";
 
 const SESSION_TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2 hours
 const SAVE_DEBOUNCE_MS = 400;
@@ -42,7 +43,7 @@ function maxBlockMs() {
  * drives the canvas and posts branch requests / node updates.
  */
 export class RabbitHoleSession {
-  constructor({ holeId, title, rootId, createdAt, nodes, assetNames, viewState, isResume, renderPage, onClose }) {
+  constructor({ holeId, title, rootId, createdAt, nodes, assetNames, viewState, isResume, renderPage, onClose, mintGenerationRunId = randomUUID }) {
     this.id = randomUUID();
     this.holeId = holeId || randomUUID();
     this.title = title || "Untitled";
@@ -51,6 +52,7 @@ export class RabbitHoleSession {
     this.assetNames = new Set(assetNames || []);
     this.renderPage = renderPage;
     this.onClose = onClose;
+    this.mintGenerationRunId = mintGenerationRunId;
 
     this.state = createHoleState({
       hole_id: this.holeId,
@@ -64,6 +66,7 @@ export class RabbitHoleSession {
     this.viewState = this.state.view_state;
 
     this.pendingByRequest = new Map(); // request_id -> node_id
+    this.generationByRequest = new Map(); // request_id -> active MCP generation ingress
     // Requests whose node was deleted mid-answer: a late answer_branch for one
     // of these is absorbed gracefully instead of erroring at the agent.
     this.cancelledRequests = new Set();
@@ -185,6 +188,7 @@ export class RabbitHoleSession {
     // blocked agent call with session_closed.
     this.queue.length = 0;
     this.inFlightBranchRequests.clear();
+    this.generationByRequest.clear();
     const waiters = this.waiters.splice(0);
     for (const waiter of waiters) {
       waiter.cleanup?.();
@@ -464,6 +468,14 @@ export class RabbitHoleSession {
 
   // ---- the answer path (agent -> server -> browser) -----------------------
 
+  createGenerationIngress(node) {
+    return new GenerationIngress({
+      id: this.mintGenerationRunId(),
+      nodeId: node.id,
+      fallbackTitle: node.title || "Untitled",
+    });
+  }
+
   async answerBranch({ requestId, title, content, partial, baseUrl, assets, signal }) {
     this.touch();
     if (this.closed) throw new Error("Rabbithole session is already closed");
@@ -483,6 +495,11 @@ export class RabbitHoleSession {
     if (!nodeId) throw buildJsonError(`No pending branch request ${requestId}`, 404);
     const node = this.nodes.get(nodeId);
     if (!node) throw buildJsonError(`Node ${nodeId} not found`, 404);
+    let ingress = this.generationByRequest.get(requestId);
+    if (!ingress) {
+      ingress = this.createGenerationIngress(node);
+      this.generationByRequest.set(requestId, ingress);
+    }
 
     const addedAssets = await addAssetsToHole(this.holeId, assets);
     for (const asset of addedAssets) this.assetNames.add(asset.name);
@@ -496,13 +513,8 @@ export class RabbitHoleSession {
     // away — the request stays claimable, the watchdog stays armed (a death
     // mid-stream should still surface as stalled), and nothing persists yet.
     if (partial) {
-      const markdown = (node.markdown || "") + String(content ?? "");
-      this.dispatchHoleEvent({
-        type: "node_progress",
-        node_id: node.id,
-        markdown,
-        ...baseUrlFields,
-      });
+      const progress = ingress.acceptChunk(content, { progressFields: baseUrlFields });
+      this.dispatchHoleEvent(progress);
       const updated = this.nodes.get(node.id);
       this.startAnswerWatchdog();
       this.broadcast({
@@ -519,37 +531,24 @@ export class RabbitHoleSession {
     // duplicate answer for the same request_id is rejected (404) rather than
     // both rendering and double-broadcasting the node.
     this.pendingByRequest.delete(requestId);
+    this.generationByRequest.delete(requestId);
 
-    // A final call after partials may carry just the remaining tail (or repeat
-    // the whole answer — accept both: if the buffer already starts what content
-    // finishes, append; if content restates everything, replace).
-    const tail = String(content ?? "");
-    const buffered = node.markdown || "";
-    const answered = {
-      ...node,
+    // GenerationIngress accepts both final tails and repeated full answers;
+    // the session remains responsible only for node metadata and lifecycle.
+    const answeredFields = {
+      parent_id: node.parent_id,
       ...baseUrlFields,
-      markdown: buffered && !tail.startsWith(buffered) ? buffered + tail : tail,
-      title: String(title ?? node.title ?? "Untitled").trim() || "Untitled",
-      status: "answered",
+      origin: node.origin,
+      position: node.position,
+      size: node.size,
+      font_scale: node.font_scale,
       // Fresh answers land unread; the client flips this the moment the human
       // actually opens them (and immediately if they're watching it stream).
       read: false,
     };
+    const answered = ingress.acceptChunk(content, { final: true, title, answeredFields });
     if (!explicitBaseUrl) maybeUpgradeBaseUrlFromFrontmatter(answered);
-    this.dispatchHoleEvent({
-      type: "node_answered",
-      node_id: answered.id,
-      parent_id: answered.parent_id,
-      title: answered.title,
-      markdown: answered.markdown,
-      base_url: answered.base_url,
-      base_url_source: answered.base_url_source,
-      origin: answered.origin,
-      position: answered.position,
-      size: answered.size,
-      font_scale: answered.font_scale,
-      read: answered.read,
-    });
+    this.dispatchHoleEvent(answered);
     const finalNode = this.nodes.get(nodeId);
 
     this.broadcast({
@@ -678,6 +677,7 @@ export class RabbitHoleSession {
     for (const [reqId, nodeId] of [...this.pendingByRequest]) {
       if (doomed.has(nodeId)) {
         this.pendingByRequest.delete(reqId);
+        this.generationByRequest.delete(reqId);
         this.cancelledRequests.add(reqId);
         this.inFlightBranchRequests.delete(reqId);
       }

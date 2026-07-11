@@ -7,13 +7,14 @@
  * {@link ../../web/brain/index.js}. Current consumers and title extraction are
  * {@link ../../web/transport/direct-host.js},
  * {@link ../../web/brain/title-sentinel.js}, and {@link ../../web/app.js}.
- * The passive MCP ingress is {@link ../../node/transport/session.js}
- * (`answerBranch`); it has no browser-style `Brain` and receives partial/final
+ * The MCP path is normalized by
+ * {@link ../../node/transport/generation-ingress.js} before entering the same
+ * `GenerationRun`; it has no browser-style `Brain` and receives partial/final
  * tool calls carrying `content`, `partial`, and `title` instead.
  *
  * Browser brains emit this vocabulary: branch adapters contain sentinel
  * parsing and authoring adapters emit text events only. The MCP host remains a
- * separate ingress with its own persistence policy.
+ * separate wire ingress with its own persistence policy.
  * Transport-level run tagging uses `ProgressRun` from {@link ./engine.js} and
  * begins in Phase 6; it is intentionally not redeclared here.
  * `GenerationRun` runtime behavior is authoritative in
