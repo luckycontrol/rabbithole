@@ -2,8 +2,8 @@
 
 body.web-app {
   min-height: 100vh;
-  background: var(--color-bg);
-  color: var(--color-text);
+  background: var(--bg);
+  color: var(--fg);
   font: var(--text-base)/var(--leading-body) var(--font-ui);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -111,10 +111,10 @@ body.rail-open .blank-start {
   gap: var(--space-4);
   border: var(--border-default);
   border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--color-chrome) 88%, transparent);
+  background: color-mix(in srgb, var(--bar-bg) 88%, transparent);
   -webkit-backdrop-filter: blur(16px) saturate(1.3);
   backdrop-filter: blur(16px) saturate(1.3);
-  color: var(--color-text);
+  color: var(--fg);
   padding: var(--space-5) var(--space-8);
   font: var(--weight-semibold) var(--text-body)/1 var(--font-ui);
   box-shadow: var(--shadow-card);
@@ -215,7 +215,7 @@ body.blank-dragging #viewport::after {
    emphasis must not impersonate the keyboard ring. */
 .web-rail:focus-visible {
   outline: none;
-  border-color: var(--color-border-strong);
+  border-color: var(--border-focus);
 }
 
 .rail-inner {
@@ -250,7 +250,7 @@ body.blank-dragging #viewport::after {
 
 .rail-row:hover,
 .rail-row:focus-within {
-  background: var(--color-hover);
+  background: var(--hl);
 }
 
 .rail-row.current {
@@ -657,7 +657,7 @@ body.blank-dragging .composer-card {
   position: fixed;
   inset: 0;
   z-index: calc(var(--layer-settings) - 1);
-  background: color-mix(in srgb, var(--color-bg) 55%, transparent);
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
   -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
   animation: settings-scrim-in var(--duration-fast) var(--ease-out) both;
@@ -1276,7 +1276,7 @@ body.blank-dragging .composer-card {
 }
 
 .key-status.valid {
-  color: color-mix(in srgb, var(--color-success) 86%, var(--fg));
+  color: color-mix(in srgb, var(--success) 86%, var(--fg));
 }
 
 .key-status.invalid {

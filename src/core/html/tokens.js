@@ -1,6 +1,5 @@
 /*
- * Shared, self-contained design-token payload. Compatibility names are retained
- * for stylesheet stability.
+ * Shared, self-contained design-token payload.
  */
 export const DESIGN_TOKENS = `:root {
   /* Type */
@@ -26,11 +25,11 @@ export const DESIGN_TOKENS = `:root {
   --radius-popover: 12px; --radius-conversation: 16px; --radius-pill: 999px;
 
   /* Borders and focus */
-  --border-default: 1px solid var(--color-border);
-  --border-strong: 1px solid var(--color-border-strong);
-  --focus-ring: 2px solid var(--color-accent);
+  --border-default: 1px solid var(--border);
+  --border-strong: 1px solid var(--border-focus);
+  --focus-ring: 2px solid var(--accent);
   --focus-offset: 2px;
-  --focus-field-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 14%, transparent);
+  --focus-field-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
 
   /* Layout */
   --reader-column: 680px; --reader-sidebar: 300px; --rail-width: 224px;
@@ -53,7 +52,7 @@ export const DESIGN_TOKENS = `:root {
   --shadow-modal: 0 20px 70px rgba(0, 0, 0, .48);
 
   /* Anchored surface */
-  --surface-popover-bg: color-mix(in srgb, var(--color-chrome) 96%, transparent);
+  --surface-popover-bg: color-mix(in srgb, var(--bar-bg) 96%, transparent);
   --surface-popover-border: var(--border-default); --surface-popover-radius: var(--radius-popover);
   --surface-popover-blur: blur(16px) saturate(1.3); --surface-popover-shadow: var(--shadow-popover);
 
@@ -68,21 +67,13 @@ export const DESIGN_TOKENS = `:root {
   --doc-list-indent: 1.35em; --doc-block-radius: var(--radius-control-lg);
 
   /* Dark is the no-attribute default. */
-  --color-bg: #1a1918; --color-grid: #262422; --color-text: #cfccc4; --color-text-strong: #efece5;
-  --color-text-muted: #94908a; --color-text-faint: #6d6963; --color-border: #2e2c29; --color-border-strong: #4c4945;
-  --color-document: #201f1d; --color-document-head: #262523; --color-chrome: #1e1d1b; --color-code: #151412;
-  --color-accent: #8faaf0; --color-on-accent: #12141c; --color-edge: #3d3b37;
-  --color-hover: rgba(143, 170, 240, .16); --color-selection: rgba(143, 170, 240, .30);
-  --color-warning: #d9a866; --color-success: #5fbd8d; --color-skeleton: rgba(255, 255, 255, .06);
-  --color-scrim: rgba(26, 25, 24, .62);
-
-  /* Compatibility aliases */
-  --bg: var(--color-bg); --grid: var(--color-grid); --fg: var(--color-text); --fg-bold: var(--color-text-strong);
-  --fg-dim: var(--color-text-muted); --fg-faint: var(--color-text-faint); --border: var(--color-border);
-  --border-focus: var(--color-border-strong); --node-bg: var(--color-document); --node-head: var(--color-document-head);
-  --bar-bg: var(--color-chrome); --code-bg: var(--color-code); --accent: var(--color-accent);
-  --accent-contrast: var(--color-on-accent); --edge: var(--color-edge); --hl: var(--color-hover);
-  --hl-strong: var(--color-selection); --warn: var(--color-warning); --sk-base: var(--color-skeleton);
+  --bg: #1a1918; --grid: #262422; --fg: #cfccc4; --fg-bold: #efece5;
+  --fg-dim: #94908a; --fg-faint: #6d6963; --border: #2e2c29; --border-focus: #4c4945;
+  --node-bg: #201f1d; --node-head: #262523; --bar-bg: #1e1d1b; --code-bg: #151412;
+  --accent: #8faaf0; --accent-contrast: #12141c; --edge: #3d3b37;
+  --hl: rgba(143, 170, 240, .16); --hl-strong: rgba(143, 170, 240, .30);
+  --warn: #d9a866; --success: #5fbd8d; --sk-base: rgba(255, 255, 255, .06);
+  --scrim: rgba(26, 25, 24, .62);
   --shadow: var(--shadow-card);
   --popover-bg: var(--surface-popover-bg); --popover-border: var(--surface-popover-border);
   --popover-radius: var(--surface-popover-radius); --popover-blur: var(--surface-popover-blur);
@@ -90,24 +81,24 @@ export const DESIGN_TOKENS = `:root {
 }
 
 html[data-theme="light"] {
-  --color-bg: #f5f3ee; --color-grid: #e5e2da; --color-text: #3b3833; --color-text-strong: #191713;
-  --color-text-muted: #7c776d; --color-text-faint: #a9a498; --color-border: #e4e1d8; --color-border-strong: #b9b4a8;
-  --color-document: #fdfcfa; --color-document-head: #f7f5f0; --color-chrome: #faf9f5; --color-code: #f1eee7;
-  --color-accent: #3b5bcc; --color-on-accent: #fff; --color-edge: #cdc9be;
-  --color-hover: rgba(59, 91, 204, .10); --color-selection: rgba(59, 91, 204, .22);
-  --color-warning: #a3690e; --color-success: #268c60; --color-skeleton: rgba(59, 55, 45, .08);
-  --color-scrim: rgba(245, 243, 238, .62);
+  --bg: #f5f3ee; --grid: #e5e2da; --fg: #3b3833; --fg-bold: #191713;
+  --fg-dim: #7c776d; --fg-faint: #a9a498; --border: #e4e1d8; --border-focus: #b9b4a8;
+  --node-bg: #fdfcfa; --node-head: #f7f5f0; --bar-bg: #faf9f5; --code-bg: #f1eee7;
+  --accent: #3b5bcc; --accent-contrast: #fff; --edge: #cdc9be;
+  --hl: rgba(59, 91, 204, .10); --hl-strong: rgba(59, 91, 204, .22);
+  --warn: #a3690e; --success: #268c60; --sk-base: rgba(59, 55, 45, .08);
+  --scrim: rgba(245, 243, 238, .62);
   --shadow-card: 0 4px 18px rgba(28, 25, 18, .08); --shadow-modal: 0 20px 70px rgba(0, 0, 0, .24);
 }
 
 html[data-theme="dark"] {
-  --color-bg: #1a1918; --color-grid: #262422; --color-text: #cfccc4; --color-text-strong: #efece5;
-  --color-text-muted: #94908a; --color-text-faint: #6d6963; --color-border: #2e2c29; --color-border-strong: #4c4945;
-  --color-document: #201f1d; --color-document-head: #262523; --color-chrome: #1e1d1b; --color-code: #151412;
-  --color-accent: #8faaf0; --color-on-accent: #12141c; --color-edge: #3d3b37;
-  --color-hover: rgba(143, 170, 240, .16); --color-selection: rgba(143, 170, 240, .30);
-  --color-warning: #d9a866; --color-success: #5fbd8d; --color-skeleton: rgba(255, 255, 255, .06);
-  --color-scrim: rgba(26, 25, 24, .62);
+  --bg: #1a1918; --grid: #262422; --fg: #cfccc4; --fg-bold: #efece5;
+  --fg-dim: #94908a; --fg-faint: #6d6963; --border: #2e2c29; --border-focus: #4c4945;
+  --node-bg: #201f1d; --node-head: #262523; --bar-bg: #1e1d1b; --code-bg: #151412;
+  --accent: #8faaf0; --accent-contrast: #12141c; --edge: #3d3b37;
+  --hl: rgba(143, 170, 240, .16); --hl-strong: rgba(143, 170, 240, .30);
+  --warn: #d9a866; --success: #5fbd8d; --sk-base: rgba(255, 255, 255, .06);
+  --scrim: rgba(26, 25, 24, .62);
   --shadow-card: 0 6px 24px rgba(0, 0, 0, .45); --shadow-modal: 0 20px 70px rgba(0, 0, 0, .48);
 }
 
