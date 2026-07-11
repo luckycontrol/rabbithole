@@ -69,15 +69,8 @@ async function verifyLiveAndBuildSnapshot() {
   await page.waitForFunction(() => document.querySelector(".doc-content img[alt='offline asset']")?.complete);
   await assertSafeRender(page, "live");
   assert.deepEqual(external, [], "live hostile content must not initiate external requests");
-  // Portable base64 intentionally carries bytes, not MIME metadata. Give the
-  // asset-bearing offline corpus the same typed Blob produced by real ingest.
   const importedAssetType = await page.evaluate((name) => window.__rabbitholeTest.inspectAssetType(name), ASSET);
-  assert.equal(importedAssetType, "", "known defect tripwire: portable import currently loses asset MIME metadata");
-  await page.evaluate(async ({ name, encoded }) => {
-    const bin = atob(encoded);
-    const bytes = Uint8Array.from(bin, (char) => char.charCodeAt(0));
-    await window.__rabbitholeTest.seedTypedAsset(name, bytes, "image/gif");
-  }, { name: ASSET, encoded: ASSET_BASE64 });
+  assert.equal(importedAssetType, "image/gif", "portable import derives asset MIME metadata from its validated filename");
 
   await page.evaluate((secret) => {
     localStorage.setItem("rh-web-api-key", secret);

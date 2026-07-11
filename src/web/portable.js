@@ -1,8 +1,15 @@
-import { MAX_ASSET_BYTES, validateAssetName } from "../core/assets.js";
+import { getAssetContentType, MAX_ASSET_BYTES, validateAssetName } from "../core/assets.js";
+import {
+  base64ToBytes,
+  binaryToBase64,
+  createPortableProjection,
+  RABBITHOLE_FILE_FORMAT,
+  RABBITHOLE_FILE_FORMAT_VERSION,
+  validatePortableProjection,
+} from "../core/portable-projection.js";
 import { migratePersistedHole } from "../core/schema.js";
 
-export const RABBITHOLE_FILE_FORMAT = "rabbithole";
-export const RABBITHOLE_FILE_FORMAT_VERSION = 1;
+export { RABBITHOLE_FILE_FORMAT, RABBITHOLE_FILE_FORMAT_VERSION };
 
 export async function buildRabbitholeExport(store, holeId) {
   if (!store) throw new Error("Export needs a store.");
@@ -13,14 +20,9 @@ export async function buildRabbitholeExport(store, holeId) {
   for (const name of await store.listAssets(persisted.hole_id)) {
     validateAssetName(name);
     const blob = await store.getAsset(persisted.hole_id, name);
-    if (blob) assets[name] = await blobToBase64(blob);
+    if (blob) assets[name] = await binaryToBase64(blob);
   }
-  return {
-    format: RABBITHOLE_FILE_FORMAT,
-    format_version: RABBITHOLE_FILE_FORMAT_VERSION,
-    hole: persisted,
-    assets,
-  };
+  return createPortableProjection(persisted, assets);
 }
 
 export async function downloadRabbitholeExport(store, holeId) {
@@ -70,19 +72,7 @@ export function parseRabbitholeFile(text) {
   } catch {
     throw new Error("Import failed: .rabbithole must be valid JSON.");
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("Import failed: .rabbithole must be a JSON object.");
-  }
-  if (parsed.format !== RABBITHOLE_FILE_FORMAT || parsed.format_version !== RABBITHOLE_FILE_FORMAT_VERSION) {
-    throw new Error("Import failed: unsupported Rabbithole file format.");
-  }
-  if (!parsed.hole || typeof parsed.hole !== "object" || Array.isArray(parsed.hole)) {
-    throw new Error("Import failed: file is missing a hole object.");
-  }
-  if (!parsed.assets || typeof parsed.assets !== "object" || Array.isArray(parsed.assets)) {
-    throw new Error("Import failed: file assets must be an object.");
-  }
-  return parsed;
+  return validatePortableProjection(parsed);
 }
 
 export function rabbitholeFilename(title) {
@@ -98,8 +88,8 @@ async function decodeAssets(rawAssets) {
   const out = [];
   for (const [name, encoded] of Object.entries(rawAssets || {})) {
     const safeName = validateAssetName(name);
-    if (typeof encoded !== "string") throw new Error(`Import failed: asset ${safeName} must be base64.`);
-    const blob = base64ToBlob(encoded);
+    const bytes = base64ToBytes(encoded);
+    const blob = new Blob([bytes], { type: getAssetContentType(safeName) });
     if (blob.size > MAX_ASSET_BYTES) throw new Error(`Import failed: asset ${safeName} exceeds 20 MB.`);
     out.push({ name: safeName, blob });
   }
@@ -117,38 +107,4 @@ async function freshHoleId(store) {
 function newHoleId() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
   return `hole-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-}
-
-function base64ToBlob(value) {
-  const base64 = String(value || "").replace(/\s+/g, "");
-  if (base64.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) {
-    throw new Error("Import failed: asset data is not valid base64.");
-  }
-  const bin = atob(base64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
-  return new Blob([bytes]);
-}
-
-async function blobToBase64(blob) {
-  if (typeof FileReader === "function") {
-    const dataUrl = await blobToDataUrl(blob);
-    const comma = dataUrl.indexOf(",");
-    return comma === -1 ? "" : dataUrl.slice(comma + 1);
-  }
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  let out = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    out += String.fromCharCode(...bytes.slice(i, i + 0x8000));
-  }
-  return btoa(out);
-}
-
-function blobToDataUrl(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || "data:,"));
-    reader.onerror = () => reject(reader.error || new Error("Failed to read asset."));
-    reader.readAsDataURL(blob);
-  });
 }

@@ -19,8 +19,6 @@ export function installTestSeam({ store, currentHoleId, createDocument, exportSn
     },
     // MIME migration fixtures need the stored Blob type, which live rendering hides.
     inspectAssetType: async (name, id = currentHoleId()) => (await store.getAsset(id, name))?.type || "",
-    // Frozen-snapshot security fixtures require a typed binary asset unavailable to document UI.
-    seedTypedAsset: (name, bytes, type, id = currentHoleId()) => store.putAsset(id, name, new Blob([bytes], { type })),
     // Empty-store persistence assertions cannot distinguish zero records from empty rail copy.
     listStoredHoles: () => store.listHoles(),
     // Structured-authoring fixtures have no paste/import UI that requests author-model rewriting.

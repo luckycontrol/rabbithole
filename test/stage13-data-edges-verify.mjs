@@ -3,6 +3,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { MAX_ASSET_BYTES } from "../src/core/assets.js";
+import {
+  base64ToBytes,
+  binaryToBase64,
+  createPortableProjection,
+  validatePortableProjection,
+} from "../src/core/portable-projection.js";
 import { migratePersistedHole, toPersistedHole, validatePersistedHole } from "../src/core/schema.js";
 import { assertRabbitholeStore, RABBITHOLE_STORE_METHODS } from "../src/core/store.js";
 import { FsStore } from "../src/node/fs-store.js";
@@ -56,6 +62,14 @@ assert.throws(
   () => parseRabbitholeFile(JSON.stringify({ ...portableArtifactFixture, assets: [] })),
   /assets must be an object/,
 );
+const projected = createPortableProjection(persistedHoleFixture, portableArtifactFixture.assets);
+assert.deepEqual(projected, portableArtifactFixture);
+assert.equal(validatePortableProjection(projected), projected);
+const binaryFixture = Uint8Array.of(0, 1, 127, 128, 254, 255);
+const encodedFixture = "AAF/gP7/";
+assert.equal(await binaryToBase64(binaryFixture), encodedFixture);
+assert.equal(await binaryToBase64(new Blob([binaryFixture])), encodedFixture);
+assert.deepEqual(base64ToBytes(encodedFixture), binaryFixture);
 console.log("ok stage13: typed artifact fixtures validate and invalid persisted/portable shapes are rejected");
 
 const isGenerationEvent = (event) => event !== null && typeof event === "object" && (

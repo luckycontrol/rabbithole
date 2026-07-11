@@ -216,7 +216,7 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | Case | Category | Rationale | Scenario-ledger entries covered |
 |---|---|---|---|
 | typed store fixture satisfies the port and missing capabilities are rejected | C1 | Couples the compile-time store vocabulary to the runtime capability authority and proves every required method is enforced. | — |
-| typed artifact fixtures validate and invalid persisted/portable shapes are rejected | C1 | Couples the persisted and portable declarations to their runtime validators at the trust boundary. | Data: malformed JSON/base64; hand-edited payload types |
+| typed artifact fixtures validate and invalid persisted/portable shapes are rejected | C1 | Couples the persisted and portable declarations to their runtime validators at the trust boundary, including canonical construction and Blob/Uint8Array binary codec parity. | Data: malformed JSON/base64; hand-edited payload types |
 | typed generation fixture distinguishes the two-event vocabulary from malformed events | C2 | Exercises both Phase 6 generation variants and rejects wrong fields, wrong value types, and the speculative usage discriminator. | Generation: durable streaming vocabulary; title never arrives |
 | typed content fixtures distinguish extension, hydratable-block, and primitive shapes from malformed values | C2 | Couples today's fence-dispatch vocabulary to its runtime authority while exercising explicitly revisable Phase 8 block and primitive names without freezing a serialized format. | Rendering: content extension and hydration vocabulary |
 | typed persisted, legacy, and portable artifacts round-trip with defined normalization | C1 | Proves canonical schema-v1 fixed points, null-schema backfill stability, and portable envelope preservation through validate/migrate/re-persist. | Data: portable compatibility; `schema_version: null` |
@@ -278,7 +278,7 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | malformed settings and credential-map normalization (`stage15-security-migrations-verify.mjs:180-187`) | C1 | Invalid settings JSON loads canonical defaults and an array key map normalizes to empty without throwing. | Data: malformed JSON/hand-edited preference storage; Migration/deploy: idempotent migrations |
 | preference migration/load idempotence | C1 | Repeated application loads must not drift settings, credential keys, theme, or last-hole state. | Migration/deploy: new code opening old storage, idempotent migrations |
 | credential exclusion from frozen exports | C1 | Device credentials and settings must never enter exported artifacts. | Data: preference/credential storage through every migration; artifact credential non-leakage |
-| portable-import asset MIME metadata loss | C4 | Pins the known defect where base64 import creates an untyped Blob, preventing direct frozen reuse without a typed ingest asset. | Rendering: frozen viewing fully offline; Data: portable asset migration |
+| portable-import asset MIME derivation | C1 | Requires portable import to derive the Blob MIME type from the validated asset filename without serializing MIME metadata. | Rendering: frozen viewing fully offline; Data: portable asset migration |
 
 ## `stage16-budget-gauges.mjs`
 
@@ -343,16 +343,16 @@ These live-provider eval cases run only through `npm run eval`; their regex/heur
 
 ## Counts
 
-Current inventory arithmetic: `46 + 154 + 11 + 3 + 0 = 214` total cases.
+Current inventory arithmetic: `47 + 154 + 11 + 2 + 0 = 214` total cases.
 
-Counts treat each row above as one case; the shared Stage 9 contract counts once per backend because `npm test` executes it against both. Phase 5 Slice 2 added three C1 rows (`41 + 3 = 44`, `184 + 3 = 187`). Slice 3 added three C2 rows and reclassified the reducer mutation probe from C3 to C2: `129 + 3 + 1 = 133`, `10 - 1 = 9`, and `187 + 3 = 190` total. Slice 4 retires the stale-progress C4 as a C2 and adds four ordering goldens: `133 + 1 + 4 = 138`, `4 - 1 = 3`, and `190 + 4 = 194` total. Slice 5 adds one generation-vocabulary C2 case: `138 + 1 = 139` and `194 + 1 = 195` total. Slice 7 adds one content-vocabulary C2 case: `139 + 1 = 140` and `195 + 1 = 196` total. Slice 8 adds one hydration-wire C1 golden: `44 + 1 = 45` and `196 + 1 = 197` total. Slice 9 adds one packaging C1 case and one installed-launch C2 case: `45 + 1 = 46`, `140 + 1 = 141`, and `197 + 2 = 199` total. Phase 6 Slice 1 adds four C2 adapter/parser/error cases and two C3 SSE framing cases: `141 + 4 = 145`, `9 + 2 = 11`, and `199 + 6 = 205` total. Phase 6 Slice 2 adds two C2 cases: `145 + 2 = 147` and `205 + 2 = 207` total. Phase 6 Slice 3 adds three C2 browser-branch wiring cases: `147 + 3 = 150` and `207 + 3 = 210` total. Phase 6 Slice 4 adds three C2 root/authoring/seam-retirement cases: `150 + 3 = 153` and `210 + 3 = 213` total.
+Counts treat each row above as one case; the shared Stage 9 contract counts once per backend because `npm test` executes it against both. Phase 5 Slice 2 added three C1 rows (`41 + 3 = 44`, `184 + 3 = 187`). Slice 3 added three C2 rows and reclassified the reducer mutation probe from C3 to C2: `129 + 3 + 1 = 133`, `10 - 1 = 9`, and `187 + 3 = 190` total. Slice 4 retires the stale-progress C4 as a C2 and adds four ordering goldens: `133 + 1 + 4 = 138`, `4 - 1 = 3`, and `190 + 4 = 194` total. Slice 5 adds one generation-vocabulary C2 case: `138 + 1 = 139` and `194 + 1 = 195` total. Slice 7 adds one content-vocabulary C2 case: `139 + 1 = 140` and `195 + 1 = 196` total. Slice 8 adds one hydration-wire C1 golden: `44 + 1 = 45` and `196 + 1 = 197` total. Slice 9 adds one packaging C1 case and one installed-launch C2 case: `45 + 1 = 46`, `140 + 1 = 141`, and `197 + 2 = 199` total. Phase 6 Slice 1 adds four C2 adapter/parser/error cases and two C3 SSE framing cases: `141 + 4 = 145`, `9 + 2 = 11`, and `199 + 6 = 205` total. Phase 6 Slice 2 adds two C2 cases: `145 + 2 = 147` and `205 + 2 = 207` total. Phase 6 Slice 3 adds three C2 browser-branch wiring cases: `147 + 3 = 150` and `207 + 3 = 210` total. Phase 6 Slice 4 adds three C2 root/authoring/seam-retirement cases: `150 + 3 = 153` and `210 + 3 = 213` total. Phase 7 Slice 1 reclassifies the portable-import MIME fossil from C4 to C1: `46 + 1 = 47`, `3 - 1 = 2`, and the total remains `214`.
 
 | Category | Count |
 |---|---:|
-| C1 compatibility contract | 46 |
+| C1 compatibility contract | 47 |
 | C2 behavioral product contract | 154 |
 | C3 implementation snapshot | 11 |
-| C4 known defect | 3 |
+| C4 known defect | 2 |
 | C5 design target | 0 |
 | **Total** | **214** |
 
@@ -363,10 +363,9 @@ Counts treat each row above as one case; the shared Stage 9 contract counts once
 - No assertion requires settings `innerHTML` rebuilding or focus-hunting. `stage2-verify.mjs:253-271` does rebuild a synthetic content container via `innerHTML`, but its asserted contract is visual mount identity/cache behavior, not that settings/chrome must rebuild. No current case asserts focus restoration after settings close, so the bespoke focus-hunting debt is unprotected rather than fossilized.
 - `stage13-data-edges-verify.mjs` "hand-edited snapshot payload validation" is a skip-with-reason: snapshots currently have no inert import boundary, validator, or size cap (built in Phase 7).
 
-## Baseline defects on record (found by instruments, not fixed)
+## Baseline defects on record
 
-- `FsStore.getAsset()` returns a `Buffer`, but `buildRabbitholeExport()` assumes Blob and calls `blob.arrayBuffer()` (`src/web/portable.js:139`) — exporting an asset-bearing hole directly from the filesystem store throws. Unreachable in today's product (web export runs against the IDB store, which returns Blobs), but it is a store-port contract violation; the typed store port (Phase 5) and artifact unification (Phase 7) must resolve it. stage13's round-trip test documents this with a test-local Blob-converting subclass.
-- `base64ToBlob()` (`src/web/portable.js`) creates an untyped Blob, so a directly imported asset snapshots to an `application/octet-stream` data URL that the frozen image sanitizer rejects. Typed asset handling lands with the store port (Phase 5) / artifact unification (Phase 7). Pinned as C4 in stage15.
+Phase 7 Slice 1 retired both portable-projection baseline defects: stage13 now exports asset-bearing corpus fixtures through the real `FsStore` Buffer return, and stage15 requires extension-derived MIME on imported asset Blobs.
 
 ## Smoke-detector proof (Phase 1 exit criterion)
 

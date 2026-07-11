@@ -9,23 +9,12 @@ const corpusDir = new URL("./fixtures/corpus/", import.meta.url);
 const fixtureNames = (await fs.readdir(corpusDir)).filter((name) => name.endsWith(".rabbithole")).sort();
 assert.equal(fixtureNames.length, 20, "the curated corpus must contain exactly 20 portable fixtures");
 
-// KNOWN DEFECT adapter: FsStore correctly returns an allowed Uint8Array/Buffer,
-// while portable.js's Node export path currently calls blob.arrayBuffer(). Wrap
-// only that return value so every fixture can still exercise real filesystem
-// persistence. The unadapted failure is recorded in the stage13 report.
-class PortableFsStore extends FsStore {
-  async getAsset(holeId, name) {
-    const bytes = await super.getAsset(holeId, name);
-    return bytes == null ? null : new Blob([bytes]);
-  }
-}
-
 async function storeAt(label) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), `rabbithole-stage13-${label}-`));
   // FsStore deliberately reads RABBITHOLE_DIR at operation time, so each store
   // round trip is completed before selecting the next isolated directory.
   process.env.RABBITHOLE_DIR = dir;
-  return { store: new PortableFsStore(), dir };
+  return { store: new FsStore(), dir };
 }
 function selectDir(dir) {
   process.env.RABBITHOLE_DIR = dir;

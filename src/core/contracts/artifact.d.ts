@@ -7,8 +7,8 @@
  * still required for every value crossing a trust boundary.
  *
  * Runtime authority for the portable envelope:
- * {@link ../../web/portable.js} (`buildRabbitholeExport` and
- * `parseRabbitholeFile`).
+ * {@link ../portable-projection.js} (`createPortableProjection` and
+ * `validatePortableProjection`).
  */
 
 export type SchemaVersion = 1;
@@ -91,4 +91,3 @@ export interface PortableArtifact {
   /** Validated asset name to base64-encoded bytes. */
   assets: Record<string, string>;
 }
-
