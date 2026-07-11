@@ -455,6 +455,10 @@ async function createFromFile(file) {
     setIngestStatus("Choose a markdown, PDF, .rabbithole, or snapshot HTML file.", "error");
     return;
   }
+  if (file.size > 16 * 1024 * 1024) {
+    setIngestStatus("Import failed: file exceeds 16 MB.", "error");
+    return;
+  }
   try {
     setIngestStatus("Reading markdown file...", "busy");
     const markdown = await file.text();
@@ -1057,7 +1061,9 @@ function toggleBlankTheme() {
 }
 
 function isPdfFile(file) {
-  return /(\.pdf$|application\/pdf)/i.test(`${file?.name || ""} ${file?.type || ""}`);
+  const name = String(file?.name || "").toLowerCase();
+  const type = String(file?.type || "").toLowerCase();
+  return /\.pdf$/.test(name) || type === "application/pdf";
 }
 
 function isRabbitholeFile(file) {
@@ -1065,11 +1071,16 @@ function isRabbitholeFile(file) {
 }
 
 function isSnapshotFile(file) {
-  return /(\.html?$|text\/html)/i.test(`${file?.name || ""} ${file?.type || ""}`);
+  const name = String(file?.name || "").toLowerCase();
+  const type = String(file?.type || "").toLowerCase();
+  return /\.html?$/.test(name) || type === "text/html";
 }
 
 function isMarkdownFile(file) {
-  return /(\.md$|\.markdown$|markdown|text\/plain|application\/json)/i.test(`${file?.name || ""} ${file?.type || ""}`);
+  const name = String(file?.name || "").toLowerCase();
+  const type = String(file?.type || "").toLowerCase();
+  return /\.(md|markdown)$/.test(name) ||
+    type === "text/markdown" || type === "text/plain" || type === "application/json";
 }
 
 function isSingleHttpUrl(value) {

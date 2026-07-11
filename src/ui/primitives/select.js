@@ -1,6 +1,8 @@
 import { escapeHtml } from "../../core/utils.js";
 import { openPopover } from "./popover.js";
 
+const FALLBACK_SETTLE_MS = 180;
+
 export function selectMarkup(options) {
   var selected = options.options.find(function(option) { return option.value === options.value; }) || options.options[0];
   return '<button id="' + escapeHtml(options.id) + '" class="' + escapeHtml(options.className || "settings-select") + '" type="button" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="' + escapeHtml(options.labelledBy + " " + options.id + "-value") + '" data-value="' + escapeHtml(selected?.value || "") + '">' +
@@ -8,7 +10,7 @@ export function selectMarkup(options) {
 }
 
 export function wireSelect(root, options) {
-  var trigger = root?.querySelector("#" + options.id), surface = null, popover = null, settleTimer = 0;
+  var trigger = root?.querySelector("#" + options.id), surface = null, popover = null, settleTimer = 0, disposeSettle = null;
   if (!trigger) return { trigger: null, close: function() {} };
 
   function selectedIndex() {
@@ -26,6 +28,8 @@ export function wireSelect(root, options) {
     if (!surface) return;
     var oldSurface = surface;
     surface = null;
+    disposeSettle?.();
+    disposeSettle = null;
     window.clearTimeout(settleTimer);
     popover?.close(settings);
     popover = null;
@@ -70,7 +74,25 @@ export function wireSelect(root, options) {
     });
     popover = openPopover({ trigger: trigger, surface: surface, placement: options.placement || "bottom-end",
       initialFocus: surface.querySelector('[tabindex="0"]'), onClose: function() { close(); } });
-    settleTimer = window.setTimeout(function() { popover?.update(); }, 180);
+    var disposed = false, openedSurface = surface;
+    disposeSettle = function() { disposed = true; };
+    if (typeof trigger.getAnimations !== "function") {
+      settleTimer = window.setTimeout(function() {
+        if (!disposed && surface === openedSurface) popover?.update();
+      }, FALLBACK_SETTLE_MS);
+    } else {
+      var animations = [];
+      for (var scope = trigger; scope; scope = scope.parentElement) {
+        var scopeAnimations = scope.getAnimations?.({ subtree: false }) || [];
+        if (scopeAnimations.length) {
+          animations = scopeAnimations;
+          break;
+        }
+      }
+      Promise.allSettled(animations.map(function(animation) { return animation.finished; })).then(function() {
+        if (!disposed && surface === openedSurface) popover?.update();
+      });
+    }
   }
 
   trigger.addEventListener("keydown", function(event) {

@@ -55,7 +55,7 @@ try {
     "Browser PDF page one: Euler math e^(i*pi)+1=0",
     "Browser PDF page two: Integral int_0^1 x dx = 1/2",
   ]);
-  await dropPdf(page, pdfBytes);
+  await dropPdf(page, pdfBytes, "MaTh-FiXtUrE.PdF", "");
   await page.waitForSelector(".node .doc-content[data-node-id] img");
   await waitForCanvasText(page, "Euler math");
   await waitForCanvasText(page, "Integral int_0^1");
@@ -130,6 +130,35 @@ try {
 
   await page.goto(baseUrl, { waitUntil: "networkidle" });
   await page.click("#t-new");
+  await page.setInputFiles("#file-md", { name: "broken.HtMl", mimeType: "", buffer: Buffer.from("not a snapshot") });
+  await page.waitForSelector("#ingest-status.error");
+  assert.match(await page.textContent("#ingest-status"), /Snapshot import failed/i);
+
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.click("#t-new");
+  await page.setInputFiles("#file-md", { name: "Notes.Md", mimeType: "", buffer: Buffer.from("# Mixed-case markdown\n\nEmpty MIME markdown classified.") });
+  await waitForCanvasText(page, "Empty MIME markdown classified.");
+
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.click("#t-new");
+  await page.setInputFiles("#file-md", { name: "evil.html.txt", mimeType: "text/plain", buffer: Buffer.from("evil suffix remains text") });
+  await waitForCanvasText(page, "evil suffix remains text");
+
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.click("#t-new");
+  await page.evaluate(() => {
+    const file = new File([new Uint8Array(16 * 1024 * 1024 + 1)], "oversized.md", { type: "text/markdown" });
+    const data = new DataTransfer();
+    data.items.add(file);
+    const input = document.querySelector("#file-md");
+    input.files = data.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await page.waitForSelector("#ingest-status.error");
+  assert.equal(await page.textContent("#ingest-status"), "Import failed: file exceeds 16 MB.");
+
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.click("#t-new");
   const futurePortable = JSON.stringify({
     format: "rabbithole",
     format_version: 1,
@@ -188,15 +217,15 @@ function buildTinyPdf(pageTexts) {
   return [...Buffer.from(pdf, "latin1")];
 }
 
-async function dropPdf(page, bytes) {
-  await page.evaluate((pdfBytes) => {
-    const file = new File([new Uint8Array(pdfBytes)], "math-fixture.pdf", { type: "application/pdf" });
+async function dropPdf(page, bytes, name = "math-fixture.pdf", type = "application/pdf") {
+  await page.evaluate(({ pdfBytes, name, type }) => {
+    const file = new File([new Uint8Array(pdfBytes)], name, { type });
     const data = new DataTransfer();
     data.items.add(file);
     const target = document.querySelector("#composer-card");
     target.dispatchEvent(new DragEvent("dragenter", { bubbles: true, cancelable: true, dataTransfer: data }));
     target.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data }));
-  }, bytes);
+  }, { pdfBytes: bytes, name, type });
 }
 
 async function openAdvancedSettings(page) {

@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { z } from "zod";
 import { renderMarkdownToHtml } from "../src/core/markdown.js";
 import { extractSnapshotPayload, SNAPSHOT_PAYLOAD_OPEN } from "../src/core/portable-import.js";
 import { validatePortableProjection } from "../src/core/portable-projection.js";
@@ -16,6 +17,7 @@ import {
   resolveAsset,
 } from "../src/node/fs-store.js";
 import { toolDefinitions } from "../src/node/tools/manifest.js";
+import { buildMcpInputSchema } from "../src/node/mcp/schema.js";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-stage4-"));
@@ -151,6 +153,28 @@ function runToolValidationFixture(source) {
   console.log("ok assets: tool manifest accepts assets and reports offending entries");
 }
 
+function runToolInputCapFixture() {
+  const open = toolDefinitions.find((tool) => tool.name === "open_rabbithole");
+  const answer = toolDefinitions.find((tool) => tool.name === "answer_branch");
+  assert(open);
+  assert(answer);
+  const openSchema = z.object(buildMcpInputSchema(open.input));
+  const answerSchema = z.object(buildMcpInputSchema(answer.input));
+
+  assert.throws(
+    () => openSchema.parse({ title: "T".repeat(2001), content: "Body" }),
+    (error) => error?.issues?.some((issue) => issue.path.join(".") === "title" && /2000/.test(issue.message)),
+    "over-cap title should identify title and its 2000-character maximum",
+  );
+  assert.throws(
+    () => answerSchema.parse({ session_id: "session", request_id: "request", content: "x".repeat(10485761) }),
+    (error) => error?.issues?.some((issue) => issue.path.join(".") === "content" && /10485760/.test(issue.message)),
+    "over-cap content should identify content and its 10 MB maximum",
+  );
+
+  console.log("ok assets: MCP string caps reject oversized title and content legibly");
+}
+
 async function runSessionFixtures(source, source2) {
   await addAssetsToHole("session-hole", [
     { name: "diagram-1.png", file_path: source },
@@ -256,5 +280,6 @@ async function runSessionFixtures(source, source2) {
 const { source, source2 } = await runStorageFixtures();
 await runMarkdownFixtures();
 runToolValidationFixture(source);
+runToolInputCapFixture();
 await runSessionFixtures(source, source2);
 console.log("stage4 assets verification passed");

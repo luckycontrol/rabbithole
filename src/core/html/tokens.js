@@ -1,6 +1,6 @@
 /*
- * Shared, self-contained design-token payload. Consumers intentionally keep
- * using the compatibility names until the visible convergence slices land.
+ * Shared, self-contained design-token payload. Compatibility names are retained
+ * for stylesheet stability.
  */
 export const DESIGN_TOKENS = `:root {
   /* Type */

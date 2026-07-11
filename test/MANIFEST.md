@@ -53,6 +53,7 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | asset storage copy/overwrite/delete and validation | C1 | Protects persisted asset operations and the 20 MB limit. | Data: 20MB asset boundary (over-limit side only); malformed JSON/base64 (asset-name/path subset only) |
 | markdown asset images/link rejection/base isolation | C2 | Defines visible asset-reference rendering. | Data: missing asset (rejection behavior, not frozen `data:,` fallback) |
 | MCP asset manifest validation | C1 | Protects public tool shapes and validation. | Migration/deploy: CLI version skew (additive-wire subset) |
+| MCP string input caps | C1 | Protects the public MCP boundary by rejecting oversized title and content fields with field-specific Zod errors. | Data: very large holes (input-boundary subset); Migration/deploy: CLI version skew |
 | asset route safety, canonical referenced-only export, and SSE progress | C1 | Spans live routes, canonical inert snapshot extraction with referenced-only assets, and MCP event payloads. | Data: snapshot external format and asset normalization; Rendering: frozen viewing fully offline (structural); Generation: durable streaming wire (happy path) |
 
 ## `stage5-pdf-verify.mjs`
@@ -218,6 +219,8 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | dead proxy produces actionable recovery copy | C2 | Protects designed ingest failure recovery. | — |
 | relay rejection produces arXiv-specific guidance | C2 | Protects designed unsupported-host recovery. | — |
 | newer-schema file import shows exact update-to-open refusal | C1 | Pins the recoverable user-visible refusal in the existing ingest-status surface. | Data: future schema version |
+| empty-MIME and exact-suffix file classification | C2 | Requires mixed-case HTML, PDF, and Markdown extensions to classify without MIME while preventing `.html.txt` from becoming a snapshot. | Data: malformed/imported input routing |
+| markdown import enforces 16 MB pre-read cap | C2 | Requires the real file-input surface to reject oversized text imports with the designed ingest-status error before parsing. | Data: very large holes (input-boundary subset) |
 
 ## `stage12-portability-verify.mjs`
 

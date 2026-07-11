@@ -17,8 +17,8 @@ function bool(description, extra = {}) {
 }
 
 const assetInput = obj({
-  name: str("Filename to use in markdown asset: references, e.g. diagram-1.png"),
-  file_path: str("Local path to the image file to copy into this Rabbithole"),
+  name: str("Filename to use in markdown asset: references, e.g. diagram-1.png", { maxLength: 300 }),
+  file_path: str("Local path to the image file to copy into this Rabbithole", { maxLength: 4096 }),
 });
 
 function validateOpen(params) {
@@ -65,11 +65,12 @@ export const toolDefinitions = [
       "nothing is lost and asks are saved. " +
       "It returns status='session_closed' when the human clicks Done or closes the tab.",
     input: obj({
-      title: str("Document title (required for a new hole)", { optional: true }),
-      content: str("Raw markdown for the starting document", { optional: true }),
-      file_path: str("Path to a .md file (alternative to content)", { optional: true }),
+      title: str("Document title (required for a new hole)", { optional: true, maxLength: 2000 }),
+      content: str("Raw markdown for the starting document", { optional: true, maxLength: 10485760 }),
+      file_path: str("Path to a .md file (alternative to content)", { optional: true, maxLength: 4096 }),
       base_url: str("Document URL used to resolve relative markdown links/images; absolute http(s) only", {
         optional: true,
+        maxLength: 2000,
       }),
       assets: arr(assetInput, {
         optional: true,
@@ -77,8 +78,8 @@ export const toolDefinitions = [
         description:
           "Local image files to attach to this hole; reference them in markdown as asset:name.png images",
       }),
-      ingest_id: str("Staged PDF assets returned by ingest_pdf; only valid when starting a new hole", { optional: true }),
-      hole_id: str("Resume a saved hole instead of starting a new one", { optional: true }),
+      ingest_id: str("Staged PDF assets returned by ingest_pdf; only valid when starting a new hole", { optional: true, maxLength: 200 }),
+      hole_id: str("Resume a saved hole instead of starting a new one", { optional: true, maxLength: 200 }),
     }),
     resultKind: "json",
     validateInput: validateOpen,
@@ -103,11 +104,13 @@ export const toolDefinitions = [
       "as the dependable figure source and embedded rasters when they are cleaner, then call open_rabbithole " +
       "with the returned ingest_id (or pass hole_id here to attach assets directly to an existing hole). " +
       "For arXiv links, prefer fetching the HTML version and opening that markdown with base_url instead of " +
-      "ingesting the PDF.",
+      "ingesting the PDF. The file_path inputs on ingest_pdf and open_rabbithole deliberately grant the local " +
+      "MCP caller filesystem-read authority because that caller is a local agent that already has that authority.",
     input: obj({
-      file_path: str("Local path to a PDF file"),
+      file_path: str("Local path to a PDF file", { maxLength: 4096 }),
       hole_id: str("Existing hole id to attach assets to directly; omit to stage assets for open_rabbithole", {
         optional: true,
+        maxLength: 200,
       }),
       pages: str('Optional page or range such as "3" or "1-20"; default processes the first 40 pages', {
         optional: true,
@@ -131,12 +134,13 @@ export const toolDefinitions = [
       "Finish streaming by sending the remaining final chunk in a normal call with a short 'title'. Partial chunks concatenate verbatim: include your own spacing/newlines and never repeat text already sent. The final call blocks and returns the next event. If it returns status='keep_listening', immediately call open_rabbithole { hole_id }; if the host reports a tool timeout (e.g. timed out awaiting tools/call), do the same. Do not re-send content; asks are saved.",
     ].join("\n"),
     input: obj({
-      session_id: str("Active session ID from open_rabbithole"),
-      request_id: str("The request_id of the branch_request being answered"),
-      title: str("Short label for the new node (a few words; required on the final call)", { optional: true }),
-      content: str("Markdown chunk (partial) or the remaining markdown (final call)"),
+      session_id: str("Active session ID from open_rabbithole", { maxLength: 200 }),
+      request_id: str("The request_id of the branch_request being answered", { maxLength: 200 }),
+      title: str("Short label for the new node (a few words; required on the final call)", { optional: true, maxLength: 2000 }),
+      content: str("Markdown chunk (partial) or the remaining markdown (final call)", { maxLength: 10485760 }),
       base_url: str("Document URL used to resolve relative markdown links/images; absolute http(s) only", {
         optional: true,
+        maxLength: 2000,
       }),
       assets: arr(assetInput, {
         optional: true,
