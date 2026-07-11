@@ -31,6 +31,7 @@ import {
   registerBranchHooks
 } from "./branch-surfaces.js";
 import { initChrome } from "./chrome-init.js";
+import { snapshotProjectionToFrozenHydration } from "../core/snapshot-projection.js";
 
 function post() {
   return Promise.resolve({ ok: true });
@@ -91,4 +92,8 @@ export function startRabbithole(hydration) {
   initPalette();
   initBranchSurfaces();
   initChrome({ post: post, refreshStatus: refreshStatus });
+}
+
+export function startPortableSnapshot(projection) {
+  startRabbithole(snapshotProjectionToFrozenHydration(projection));
 }

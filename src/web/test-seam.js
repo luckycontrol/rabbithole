@@ -3,7 +3,7 @@
  * exists only for state or artifact inspection that cannot be observed through
  * the product UI; product actions themselves must be driven through real UI.
  */
-export function installTestSeam({ store, currentHoleId, createDocument, exportSnapshot }) {
+export function installTestSeam({ store, currentHoleId, createDocument, exportSnapshot, exportPortable }) {
   window.__rabbitholeTest = Object.freeze({
     version: 1,
     // Routing/reload fixtures need the active storage identity, which is not rendered.
@@ -25,6 +25,8 @@ export function installTestSeam({ store, currentHoleId, createDocument, exportSn
     createDocument,
     // Byte/content gauges require the generated snapshot string before a browser download.
     exportSnapshot,
+    // Snapshot projection tests compare the HTML carrier with the canonical portable export.
+    exportPortable,
   });
 }
 

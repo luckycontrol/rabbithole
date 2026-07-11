@@ -11,9 +11,9 @@ import { openDialog } from "../ui/primitives/dialog.js";
 import { fieldMarkup, wireField } from "../ui/primitives/field.js";
 import { buttonMarkup } from "../ui/primitives/button.js";
 import { wireNotice } from "../ui/primitives/notice.js";
-import { setSnapshotHooks, buildSnapshotHydration, buildSnapshotHtml } from "../ui/snapshot.js";
+import { setSnapshotHooks, buildSnapshotProjection, buildSnapshotHtml } from "../ui/snapshot.js";
 import { openUrlToStoredHole } from "./ingest/url.js";
-import { downloadRabbitholeExport, importRabbitholeFile, rabbitholeFilename } from "./portable.js";
+import { buildRabbitholeExport, downloadRabbitholeExport, importRabbitholeFile, rabbitholeFilename } from "./portable.js";
 
 const LAST_HOLE_KEY = "rh-last-hole";
 const OPENROUTER_KEYS_URL = "https://openrouter.ai/keys";
@@ -58,7 +58,8 @@ async function boot() {
     store,
     currentHoleId: () => currentHoleId,
     createDocument: createFromComposerDocument,
-    exportSnapshot: async () => buildSnapshotHtml(await buildSnapshotHydration()),
+    exportSnapshot: async () => buildSnapshotHtml(await buildSnapshotProjection()),
+    exportPortable: () => buildRabbitholeExport(store, currentHoleId),
   });
 }
 
@@ -578,7 +579,11 @@ async function startHole(hole, { replace = false } = {}) {
   else history.pushState(null, "", `#hole=${encodeURIComponent(hole.hole_id)}`);
 
   setSnapshotHooks({
-    fetchAssetData: async (name) => blobToDataUrl(await store.getAsset(currentHoleId, name)),
+    fetchAssetBinary: async (name) => store.getAsset(currentHoleId, name),
+    getSnapshotHole: async () => {
+      await currentHost.flushSave();
+      return store.loadHole(currentHoleId);
+    },
     getFrozenClientSource: () => window.__RABBITHOLE_FROZEN_CLIENT__ || "",
     getDompurifySource: () => window.__RABBITHOLE_DOMPURIFY_SOURCE__ || "",
   });
@@ -1079,16 +1084,6 @@ function formatRelativeDate(value, { compact = false } = {}) {
   } catch {
     return date.toLocaleString(undefined, { month: "short", day: "numeric" });
   }
-}
-
-function blobToDataUrl(blob) {
-  if (!blob) return Promise.resolve("data:,");
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || "data:,"));
-    reader.onerror = () => resolve("data:,");
-    reader.readAsDataURL(blob);
-  });
 }
 
 function isAuthLikeError(err) {

@@ -4,6 +4,7 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
+import { serializeForInlineScript } from "../src/core/utils.js";
 
 const ROOT = path.resolve(new URL("..", import.meta.url).pathname);
 const WEB_DIST = path.join(ROOT, "web/dist");
@@ -15,6 +16,11 @@ const MODEL_URL = "https://openrouter.ai/api/v1/models";
 const LOCAL_MODEL_URL = "http://localhost:11434/v1/models";
 const NOTICE_SOURCE = (await fs.readFile(path.join(ROOT, "src/ui/primitives/notice.js"), "utf8"))
   .replace("export function wireNotice", "window.wireNotice = function wireNotice");
+
+const hostilePayloadValue = { text: "</script><>&\u2028\u2029" };
+const hostilePayloadJson = serializeForInlineScript(hostilePayloadValue);
+assert(!/[<>&\u2028\u2029]/u.test(hostilePayloadJson), "portable payload escaping must neutralize HTML delimiters and JavaScript line separators");
+assert.deepEqual(JSON.parse(hostilePayloadJson), hostilePayloadValue, "escaped inert payload text must JSON.parse byte-exactly");
 
 try {
   await fs.access(path.join(WEB_DIST, "index.html"));
@@ -478,6 +484,29 @@ async function verifyAskKeyUxAndRail() {
   assert.equal(await page.evaluate(() => localStorage.getItem("rh-web-api-key")), null, "legacy single-key storage should stay retired");
   const snapshotHtml = await page.evaluate(() => window.__rabbitholeTest.exportSnapshot());
   assert(!snapshotHtml.includes(MOCK_KEY), "snapshot export must not contain provider key");
+  const payloadMatches = [...snapshotHtml.matchAll(/<script type="application\/vnd\.rabbithole\+json" id="rabbithole-portable">([\s\S]*?)<\/script>/g)];
+  assert.equal(payloadMatches.length, 1, "snapshot HTML should contain exactly one self-identifying inert portable payload");
+  const snapshotProjection = JSON.parse(payloadMatches[0][1]);
+  const portableProjection = await page.evaluate(() => window.__rabbitholeTest.exportPortable());
+  const referencedAssets = new Set(portableProjection.hole.nodes.flatMap((node) =>
+    [...String(node.markdown || "").matchAll(/\basset:([a-z0-9][a-z0-9_-]*\.[a-z0-9]+)/gi)].map((match) => match[1])
+  ));
+  const normalizedPortable = structuredClone(portableProjection);
+  normalizedPortable.hole.view_state = snapshotProjection.hole.view_state;
+  normalizedPortable.assets = Object.fromEntries(Object.entries(normalizedPortable.assets).filter(([name]) => referencedAssets.has(name)));
+  assert.deepEqual(
+    snapshotProjection,
+    normalizedPortable,
+    "snapshot payload should equal buildRabbitholeExport modulo one live view_state substitution and referenced-only assets"
+  );
+  assert.equal(snapshotProjection.hole.created_at, portableProjection.hole.created_at, "hole timestamps must survive the portable snapshot projection");
+  assert.deepEqual(
+    snapshotProjection.hole.nodes.map((node) => node.created_at),
+    portableProjection.hole.nodes.map((node) => node.created_at),
+    "canonical node timestamps must survive instead of passing through the retired hydration allowlist"
+  );
+  assert(!snapshotHtml.includes('var hydration = {"session_id"'), "new snapshots must not execute an embedded document hydration object");
+  assert.match(snapshotHtml, /startPortableSnapshot\(JSON\.parse\(payload\.textContent\)\)/, "bootstrap should derive hydration from inert DOM text");
   const rawJson = JSON.stringify(hole);
   assert(!rawJson.includes(MOCK_KEY), "IndexedDB hole record must not contain provider key");
 
@@ -957,6 +986,28 @@ async function verifyCanvasBranching() {
   await frozenPage.keyboard.press("Escape");
   assert.equal(await frozenPage.evaluate(() => document.activeElement?.id), "t-share", "Frozen Share Escape should restore its trigger");
   await frozenPage.close();
+
+  const legacyProjection = JSON.parse(frozenHtml.match(/<script type="application\/vnd\.rabbithole\+json" id="rabbithole-portable">([\s\S]*?)<\/script>/)[1]);
+  const legacyHole = legacyProjection.hole;
+  const legacyHydration = {
+    session_id: `legacy-${legacyHole.hole_id}`,
+    hole_id: legacyHole.hole_id,
+    title: legacyHole.title,
+    root_id: legacyHole.root_id,
+    last_event_id: 0,
+    agent_attached: false,
+    view_state: legacyHole.view_state,
+    frozen: true,
+    asset_data: {},
+    nodes: legacyHole.nodes,
+  };
+  const legacyHtml = frozenHtml
+    .replace(/<script type="application\/vnd\.rabbithole\+json" id="rabbithole-portable">[\s\S]*?<\/script>\n/, "")
+    .replace(/  var payload = document\.getElementById\("rabbithole-portable"\);\n  RabbitholeFrozenClient\.startPortableSnapshot\(JSON\.parse\(payload\.textContent\)\);/, `  RabbitholeFrozenClient.startRabbithole(${JSON.stringify(legacyHydration)});`);
+  const legacyPage = await context.newPage();
+  await legacyPage.setContent(legacyHtml, { waitUntil: "load" });
+  assert.equal(await legacyPage.locator(".doc-content[data-node-id]").count() > 0, true, "legacy direct-hydration snapshots should still boot the frozen client");
+  await legacyPage.close();
 
   await page.evaluate(() => {
     window.__askFocusBefore = document.activeElement;
