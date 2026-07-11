@@ -17,6 +17,7 @@ import { lineageTitlesFromMap } from "../../core/model.js";
 import { buildJsonError, parseRequestBody, closeServerGracefully, CLOSE_TIMEOUT_MS } from "./http.js";
 import { writeSseEvent } from "./sse.js";
 import { GenerationIngress } from "./generation-ingress.js";
+import { applyPersistedBrowserEvent, assetsOrphanedByDeletion, buildNodeAnsweredEvent, createSaveChain, dispatchBrowserEvent } from "../../core/hole-host.js";
 
 const SESSION_TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2 hours
 const SAVE_DEBOUNCE_MS = 400;
@@ -97,6 +98,14 @@ export class RabbitHoleSession {
 
     this.timeoutHandle = null;
     this.saveTimer = null;
+    this.saveChain = createSaveChain({
+      debounceMs: SAVE_DEBOUNCE_MS,
+      onTimerChange: (timer) => { this.saveTimer = timer; },
+      save: () => {
+        const snapshot = this.toHole();
+        return () => defaultFsStore.saveHole(snapshot).catch((err) => logError(`Save failed: ${err.message}`));
+      },
+    });
     this.savingChain = Promise.resolve();
     this.shutdownScheduled = false;
 
@@ -459,22 +468,11 @@ export class RabbitHoleSession {
   }
 
   scheduleSave() {
-    if (this.saveTimer) clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => this.flushSave(), SAVE_DEBOUNCE_MS);
+    this.saveChain.schedule();
   }
 
   flushSave() {
-    if (this.saveTimer) {
-      clearTimeout(this.saveTimer);
-      this.saveTimer = null;
-    }
-    // Snapshot now (synchronously) but serialize the actual writes so overlapping
-    // saves can't race; each save persists the state as of when it was requested.
-    const snapshot = this.toHole();
-    this.savingChain = this.savingChain
-      .catch(() => {})
-      .then(() => defaultFsStore.saveHole(snapshot))
-      .catch((err) => logError(`Save failed: ${err.message}`));
+    this.savingChain = this.saveChain.flush();
     return this.savingChain;
   }
 
@@ -566,19 +564,7 @@ export class RabbitHoleSession {
     this.dispatchHoleEvent(answered);
     const finalNode = this.nodes.get(nodeId);
 
-    this.broadcast({
-      type: "node_answered",
-      node_id: finalNode.id,
-      parent_id: finalNode.parent_id,
-      title: finalNode.title,
-      markdown: finalNode.markdown,
-      base_url: finalNode.base_url,
-      base_url_source: finalNode.base_url_source,
-      origin: finalNode.origin,
-      position: finalNode.position,
-      size: finalNode.size,
-      font_scale: finalNode.font_scale,
-    });
+    this.broadcast(buildNodeAnsweredEvent(finalNode));
     this.flushSave();
 
     return this.waitForEvent(signal);
@@ -706,19 +692,8 @@ export class RabbitHoleSession {
   }
 
   async gcAssetsForDeletedNodes(deletedNodes) {
-    const deletedRefs = new Set();
-    for (const node of deletedNodes) {
-      for (const name of extractAssetRefsFromMarkdown(node.markdown)) deletedRefs.add(name);
-    }
-    if (!deletedRefs.size) return;
-
-    const remainingRefs = new Set();
-    for (const node of this.nodes.values()) {
-      for (const name of extractAssetRefsFromMarkdown(node.markdown)) remainingRefs.add(name);
-    }
-
-    for (const name of deletedRefs) {
-      if (remainingRefs.has(name)) continue;
+    const orphaned = assetsOrphanedByDeletion({ deletedNodes, remainingNodes: this.nodes.values(), extractRefs: extractAssetRefsFromMarkdown });
+    for (const name of orphaned) {
       try {
         await defaultFsStore.deleteAsset(this.holeId, name);
         this.assetNames.delete(name);
@@ -730,43 +705,34 @@ export class RabbitHoleSession {
 
   handleNodeUpdate(payload) {
     if (!this.nodes.has(String(payload.node_id || ""))) return { ok: true }; // tolerate updates for transient nodes
-    this.dispatchHoleEvent({ ...payload, type: "node_update" });
-    this.scheduleSave();
-    return { ok: true };
+    return this.applyPersistedBrowserEvent(payload);
   }
 
   // Batched layout update (e.g. Tidy) — one request, one debounced save.
   handleNodesUpdate(payload) {
-    this.dispatchHoleEvent({ ...payload, type: "nodes_update" });
-    this.scheduleSave();
-    return { ok: true };
+    return this.applyPersistedBrowserEvent(payload);
+  }
+
+  applyPersistedBrowserEvent(payload) {
+    return applyPersistedBrowserEvent(payload, {
+      dispatch: (event) => this.dispatchHoleEvent(event),
+      scheduleSave: () => this.scheduleSave(),
+    });
   }
 
   async handleBrowserEvent(payload) {
-    const type = String(payload?.type ?? "");
-    switch (type) {
-      case "branch_request":
-        return this.handleBranchRequest(payload);
-      case "node_update":
-        return this.handleNodeUpdate(payload);
-      case "nodes_update":
-        return this.handleNodesUpdate(payload);
-      case "block_state":
-        this.dispatchHoleEvent({ ...payload, type: "block_state" });
-        this.scheduleSave();
-        return { ok: true };
-      case "delete_node":
-        return this.handleDeleteNode(payload);
-      case "view_state":
-        this.dispatchHoleEvent({ ...payload, type: "view_state" });
-        this.scheduleSave();
-        return { ok: true };
-      case "done":
-        this.close("done");
-        return { ok: true };
-      default:
-        throw buildJsonError(`Unsupported browser event: ${type}`, 400);
-    }
+    return dispatchBrowserEvent(payload, {
+      handlers: {
+        branch_request: (event) => this.handleBranchRequest(event),
+        node_update: (event) => this.handleNodeUpdate(event),
+        nodes_update: (event) => this.handleNodesUpdate(event),
+        block_state: (event) => this.applyPersistedBrowserEvent(event),
+        delete_node: (event) => this.handleDeleteNode(event),
+        view_state: (event) => this.applyPersistedBrowserEvent(event),
+        done: () => { this.close("done"); return { ok: true }; },
+      },
+      unsupported: (type) => { throw buildJsonError(`Unsupported browser event: ${type}`, 400); },
+    });
   }
 
   // ---- HTTP routing -------------------------------------------------------

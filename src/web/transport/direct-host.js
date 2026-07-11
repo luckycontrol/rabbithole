@@ -3,6 +3,7 @@ import { normalizeBlockIds } from "../../core/blocks.js";
 import { lineageNodesFromMap, truncate } from "../../core/model.js";
 import { extractAssetRefsFromMarkdown } from "../../core/assets.js";
 import { GenerationRun } from "../../core/generation-run.js";
+import { applyPersistedBrowserEvent, assetsOrphanedByDeletion, buildNodeAnsweredEvent, createSaveChain, dispatchBrowserEvent } from "../../core/hole-host.js";
 import { randomId } from "../../core/utils.js";
 import { ProviderError, fallbackTitleForNode, normalizeProviderError } from "../brain/index.js";
 
@@ -24,6 +25,14 @@ export class DirectRabbitholeHost {
     this.holeId = this.state.hole_id;
     this.title = this.state.title;
     this.saveTimer = 0;
+    this.saveChain = createSaveChain({
+      debounceMs: SAVE_DEBOUNCE_MS,
+      onTimerChange: (timer) => { this.saveTimer = timer || 0; },
+      save: () => {
+        const snapshot = holeStateToHole(this.state);
+        return () => this.store.saveHole(snapshot);
+      },
+    });
     this.savingChain = Promise.resolve();
     this.abortByNode = new Map();
     this.lastEventId = 0;
@@ -80,38 +89,20 @@ export class DirectRabbitholeHost {
 
   async handleBrowserEvent(payload) {
     if (this.disposed) return { ok: false, error: "This Rabbithole is no longer active." };
-    const type = String(payload?.type ?? "");
     try {
-      switch (type) {
-        case "branch_request":
-          return await this.handleBranchRequest(payload);
-        case "retry_branch":
-          return this.handleRetry(payload);
-        case "node_update":
-          this.dispatch({ ...payload, type: "node_update" });
-          this.scheduleSave();
-          return { ok: true };
-        case "nodes_update":
-          this.dispatch({ ...payload, type: "nodes_update" });
-          this.scheduleSave();
-          return { ok: true };
-        case "block_state":
-          this.dispatch({ ...payload, type: "block_state" });
-          this.scheduleSave();
-          return { ok: true };
-        case "delete_node":
-          return await this.handleDeleteNode(payload);
-        case "view_state":
-          this.dispatch({ ...payload, type: "view_state" });
-          this.scheduleSave();
-          return { ok: true };
-        case "done":
-          await this.flushSave();
-          this.onDone?.();
-          return { ok: true };
-        default:
-          throw new Error(`Unsupported browser event: ${type}`);
-      }
+      return await dispatchBrowserEvent(payload, {
+        handlers: {
+          branch_request: (event) => this.handleBranchRequest(event),
+          retry_branch: (event) => this.handleRetry(event),
+          node_update: (event) => this.applyPersistedBrowserEvent(event),
+          nodes_update: (event) => this.applyPersistedBrowserEvent(event),
+          block_state: (event) => this.applyPersistedBrowserEvent(event),
+          delete_node: (event) => this.handleDeleteNode(event),
+          view_state: (event) => this.applyPersistedBrowserEvent(event),
+          done: async () => { await this.flushSave(); this.onDone?.(); return { ok: true }; },
+        },
+        unsupported: (eventType) => { throw new Error(`Unsupported browser event: ${eventType}`); },
+      });
     } catch (err) {
       return { ok: false, error: err?.message || String(err) };
     }
@@ -197,17 +188,8 @@ export class DirectRabbitholeHost {
   }
 
   async gcAssetsForDeletedNodes(deletedNodes) {
-    const deletedRefs = new Set();
-    for (const node of deletedNodes) {
-      for (const name of extractAssetRefsFromMarkdown(node.markdown)) deletedRefs.add(name);
-    }
-    if (!deletedRefs.size) return;
-    const remainingRefs = new Set();
-    for (const node of this.state.nodes.values()) {
-      for (const name of extractAssetRefsFromMarkdown(node.markdown)) remainingRefs.add(name);
-    }
-    for (const name of deletedRefs) {
-      if (remainingRefs.has(name)) continue;
+    const orphaned = assetsOrphanedByDeletion({ deletedNodes, remainingNodes: this.state.nodes.values(), extractRefs: extractAssetRefsFromMarkdown });
+    for (const name of orphaned) {
       try { await this.store.deleteAsset(this.holeId, name); } catch {}
     }
   }
@@ -216,6 +198,13 @@ export class DirectRabbitholeHost {
     const reduced = reduceHoleEvent(this.state, event, options);
     this.state = reduced.state;
     return reduced.effects || {};
+  }
+
+  applyPersistedBrowserEvent(payload) {
+    return applyPersistedBrowserEvent(payload, {
+      dispatch: (event) => this.dispatch(event),
+      scheduleSave: () => this.scheduleSave(),
+    });
   }
 
   startAnswer(nodeId, { reset = false } = {}) {
@@ -299,19 +288,7 @@ export class DirectRabbitholeHost {
     this.title = title;
     const finalNode = this.state.nodes.get(nodeId);
     this.abortByNode.delete(nodeId);
-    this.emit({
-      type: "node_answered",
-      node_id: finalNode.id,
-      parent_id: null,
-      title: finalNode.title,
-      markdown: finalNode.markdown,
-      base_url: finalNode.base_url,
-      base_url_source: finalNode.base_url_source,
-      origin: null,
-      position: finalNode.position,
-      size: finalNode.size,
-      font_scale: finalNode.font_scale,
-    });
+    this.emit(buildNodeAnsweredEvent(finalNode, { parent_id: null, origin: null }));
     await this.flushSave();
     await this.onRootAnswered?.(finalNode);
   }
@@ -355,19 +332,7 @@ export class DirectRabbitholeHost {
     // the fallback title and empty/reset markdown. Root generation still rejects.
     const finalNode = this.state.nodes.get(nodeId);
     this.abortByNode.delete(nodeId);
-    this.emit({
-      type: "node_answered",
-      node_id: finalNode.id,
-      parent_id: finalNode.parent_id,
-      title: finalNode.title,
-      markdown: finalNode.markdown,
-      base_url: finalNode.base_url,
-      base_url_source: finalNode.base_url_source,
-      origin: finalNode.origin,
-      position: finalNode.position,
-      size: finalNode.size,
-      font_scale: finalNode.font_scale,
-    });
+    this.emit(buildNodeAnsweredEvent(finalNode));
     await this.flushSave();
   }
 
@@ -414,10 +379,7 @@ export class DirectRabbitholeHost {
       await this.flushSave();
       return holeStateToHole(this.state);
     } finally {
-      if (this.saveTimer) {
-        clearTimeout(this.saveTimer);
-        this.saveTimer = 0;
-      }
+      this.saveChain.cancel();
       if (this.abortByNode.get(nodeId) === controller) this.abortByNode.delete(nodeId);
     }
   }
@@ -501,30 +463,19 @@ export class DirectRabbitholeHost {
 
   scheduleSave() {
     if (this.disposed) return;
-    if (this.saveTimer) clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => this.flushSave(), SAVE_DEBOUNCE_MS);
+    this.saveChain.schedule();
   }
 
   async flushSave() {
     if (this.disposed) return this.savingChain;
-    if (this.saveTimer) {
-      clearTimeout(this.saveTimer);
-      this.saveTimer = 0;
-    }
-    const snapshot = holeStateToHole(this.state);
-    this.savingChain = this.savingChain
-      .catch(() => {})
-      .then(() => this.store.saveHole(snapshot));
+    this.savingChain = this.saveChain.flush();
     return this.savingChain;
   }
 
   dispose() {
     if (this.disposed) return this.savingChain;
     this.disposed = true;
-    if (this.saveTimer) {
-      clearTimeout(this.saveTimer);
-      this.saveTimer = 0;
-    }
+    this.saveChain.cancel();
     for (const controller of this.abortByNode.values()) {
       try { controller.abort(); } catch {}
     }
