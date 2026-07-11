@@ -55,6 +55,9 @@ export function registerReaderHooks(hooks) {
   Object.assign(readerHooks, hooks || {});
 }
 
+var breadcrumbNodes = {};
+var sidebarNodes = {};
+
   // ===========================================================================
   // READER
   // ===========================================================================
@@ -81,18 +84,47 @@ export function openNode(id){
   }
 
 export function renderBreadcrumb(){
-    var path = lineageNodes(currentNodeId), html = "";
+    var path = lineageNodes(currentNodeId);
+    var fragment = document.createDocumentFragment();
     path.forEach(function(n, i){
-      if (i > 0) html += '<span class="crumb-sep">›</span>';
+      var crumb = breadcrumbNodes[n.id];
+      if (!crumb){
+        crumb = document.createElement("span");
+        crumb.className = "crumb";
+        crumb.dataset.id = n.id;
+        crumb._sep = document.createElement("span");
+        crumb._sep.className = "crumb-sep";
+        crumb._sep.textContent = "›";
+        breadcrumbNodes[n.id] = crumb;
+      }
       var cur = i === path.length - 1;
-      html += '<span class="crumb' + (cur ? ' current' : '') + '" data-id="' + n.id + '">' + esc(n.title || "Untitled") + '</span>';
+      crumb.textContent = n.title || "Untitled";
+      crumb.classList.toggle("current", cur);
+      if (cur){
+        crumb.removeAttribute("role");
+        crumb.removeAttribute("tabindex");
+        crumb.setAttribute("aria-current", "page");
+      } else {
+        crumb.setAttribute("role", "link");
+        crumb.tabIndex = 0;
+        crumb.removeAttribute("aria-current");
+      }
+      if (i > 0) fragment.appendChild(crumb._sep);
+      fragment.appendChild(crumb);
     });
-    breadcrumbEl.innerHTML = html;
+    breadcrumbEl.replaceChildren(fragment);
   }
 export function initReader(){
     breadcrumbEl.addEventListener("click", function(e){
       var c = e.target.closest(".crumb");
       if (!c || c.classList.contains("current")) return;
+      openNode(c.dataset.id);
+    });
+    breadcrumbEl.addEventListener("keydown", function(e){
+      if (e.key !== "Enter") return;
+      var c = e.target.closest && e.target.closest('.crumb[role="link"]');
+      if (!c) return;
+      e.preventDefault();
       openNode(c.dataset.id);
     });
     readerMain.addEventListener("scroll", onReaderScroll, { passive: true });
@@ -101,6 +133,7 @@ export function initReader(){
     readerMain.addEventListener("keydown", onMarkKeydown);
     world.addEventListener("keydown", onMarkKeydown);
     sideEl.addEventListener("click", onSidebarClick);
+    sideEl.addEventListener("keydown", onSidebarKeydown);
     document.getElementById("r-textdown").addEventListener("click", function(){ setReaderFontScale(-0.1); });
     document.getElementById("r-textup").addEventListener("click", function(){ setReaderFontScale(0.1); });
     document.getElementById("r-canvas").addEventListener("click", function(){ readerHooks.setMode("canvas"); });
@@ -132,7 +165,15 @@ export function renderReaderBody(){
       if (node.parent_id && nodes[node.parent_id] && !node.origin.synthesis){
         ctx.classList.add("linked");
         ctx.title = "See this in its original context";
+        ctx.setAttribute("role", "link");
+        ctx.tabIndex = 0;
+        ctx.setAttribute("aria-label", "See this in its original context");
         ctx.addEventListener("click", function(e){ jumpToOrigin(node, motionSourceFromEvent(e)); });
+        ctx.addEventListener("keydown", function(e){
+          if (e.key !== "Enter") return;
+          e.preventDefault();
+          jumpToOrigin(node, "keyboard");
+        });
       }
       col.appendChild(ctx);
     }
@@ -301,10 +342,20 @@ export function renderSidebar(){
       return (anchorStart(a) - anchorStart(b)) || ((a._order||0) - (b._order||0));
     });
     if (!kids.length){
-      sideEl.innerHTML = '<h3>Branches</h3><div class="side-empty">Select any text in the document and ask about it — the answer opens as a branch here. Or ask a follow-up in the box below the document.</div>';
+      var emptyHeading = document.createElement("h3");
+      emptyHeading.textContent = "Branches";
+      var empty = document.createElement("div");
+      empty.className = "side-empty";
+      empty.textContent = "Select any text in the document and ask about it — the answer opens as a branch here. Or ask a follow-up in the box below the document.";
+      sideEl.replaceChildren(emptyHeading, empty);
       return;
     }
-    var html = '<h3>Branches (' + kids.length + ')</h3>';
+    var heading = sideEl.querySelector(":scope > h3");
+    if (!heading) heading = document.createElement("h3");
+    heading.textContent = "Branches (" + kids.length + ")";
+    var fragment = document.createDocumentFragment();
+    fragment.appendChild(heading);
+    var newLivePanes = [];
     kids.forEach(function(k, i){
       var pending = k.status !== "answered";
       var qHtml = (k.origin && k.origin.synthesis) ? '<span class="lens-badge">✦ Synthesis</span>'
@@ -314,26 +365,58 @@ export function renderSidebar(){
       var status = pending ? pendingStatusHtml(k)
         : isUnread(k) ? '<span class="si-new">new — open →</span>'
         : 'open →';
-      html += '<div class="side-item' + (pending ? ' pending' : '') + '" data-child="' + k.id + '">';
-      html += '<div class="si-q"><span class="si-num">' + (i+1) + '</span><span>' + qHtml + '</span></div>';
-      if (quote) html += '<div class="si-quote">“' + esc(truncate(quote, 80)) + '”</div>';
-      html += '<div class="si-status">' + status + '</div>';
+      var tile = sidebarNodes[k.id];
+      if (!tile){
+        tile = document.createElement("div");
+        tile.className = "side-item";
+        tile.dataset.child = k.id;
+        tile.setAttribute("role", "link");
+        tile.tabIndex = 0;
+        tile._question = document.createElement("div"); tile._question.className = "si-q";
+        tile._num = document.createElement("span"); tile._num.className = "si-num";
+        tile._questionText = document.createElement("span");
+        tile._question.append(tile._num, tile._questionText);
+        tile._quote = document.createElement("div"); tile._quote.className = "si-quote";
+        tile._status = document.createElement("div"); tile._status.className = "si-status";
+        tile.append(tile._question, tile._quote, tile._status);
+        sidebarNodes[k.id] = tile;
+      }
+      tile.classList.toggle("pending", pending);
+      tile._num.textContent = i + 1;
+      tile._questionText.innerHTML = qHtml;
+      tile._quote.textContent = quote ? "“" + truncate(quote, 80) + "”" : "";
+      tile._quote.hidden = !quote;
+      tile._status.innerHTML = status;
+      var name = (k.origin && k.origin.synthesis) ? "Synthesis"
+        : ((k.origin && k.origin.question) || k.title || "Untitled");
+      tile.setAttribute("aria-label", "Open branch: " + name + (pending ? ", pending" : isUnread(k) ? ", new" : ""));
       // A streaming answer is watchable right here: its last lines render live
       // inside the tile (and the whole tile opens the full streaming view).
-      if (pending && k.html) html += '<div class="si-live"><div class="md">' + k.html + '</div></div>';
-      html += '</div>';
+      if (pending && k.html){
+        if (!tile._live){
+          tile._live = document.createElement("div"); tile._live.className = "si-live";
+          tile._livePane = document.createElement("div"); tile._livePane.className = "md";
+          tile._live.appendChild(tile._livePane);
+          tile.appendChild(tile._live);
+          newLivePanes.push({ pane: tile._livePane, node: k });
+        }
+        tile._livePane.innerHTML = k.html;
+      } else if (tile._live){
+        tile._live.remove();
+        tile._live = null;
+        tile._livePane = null;
+      }
+      fragment.appendChild(tile);
     });
-    sideEl.innerHTML = html;
-    mountSidebarVisuals();
+    sideEl.replaceChildren(fragment);
+    mountSidebarVisuals(newLivePanes);
   }
-export function mountSidebarVisuals(){
+export function mountSidebarVisuals(panes){
     if (typeof readerHooks.mountVisuals !== "function") return;
-    var panes = sideEl.querySelectorAll(".side-item[data-child] .si-live .md");
     for (var i = 0; i < panes.length; i++){
-      var item = panes[i].closest(".side-item[data-child]");
-      var key = "reader-side:" + (item ? item.dataset.child : i);
-      readerHooks.mountVisuals(panes[i], key);
-      if (typeof readerHooks.mountDocImages === "function") readerHooks.mountDocImages(panes[i], nodes[item ? item.dataset.child : ""], null, key);
+      var key = "reader-side:" + panes[i].node.id;
+      readerHooks.mountVisuals(panes[i].pane, key);
+      if (typeof readerHooks.mountDocImages === "function") readerHooks.mountDocImages(panes[i].pane, panes[i].node, null, key);
     }
   }
 export function pendingStatusHtml(k){
@@ -347,6 +430,13 @@ export function pendingStatusHtml(k){
     var it = e.target.closest(".side-item");
     if (!it) return;
     openNode(it.dataset.child); // pending items open too — the answer streams there
+  }
+  function onSidebarKeydown(e){
+    if (e.key !== "Enter") return;
+    var it = e.target.closest && e.target.closest('.side-item[role="link"]');
+    if (!it) return;
+    e.preventDefault();
+    openNode(it.dataset.child);
   }
 
 export function setReaderFontScale(delta){

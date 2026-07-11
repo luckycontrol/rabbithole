@@ -153,6 +153,10 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | frozen share menu suppression and traversal | C2 | Requires frozen snapshots to omit export/portable/synthesis from both presentation and the keyboard traversal set. | Rendering: frozen viewing control parity; Chrome: keyboard-only completion |
 | delete confirmation Popover anchor and dismissal contract | C2 | Requires token-gap anchoring, Keep initial focus, layer-owned Escape/outside-pointer dismissal with delete-control focus restoration, and keyboard Remove activation. | Chrome: anchored transient surfaces; keyboard-only completion; focus restoration after transient surfaces |
 | branch-mark link semantics and keyboard navigation | C2 | Requires shared reader/canvas marks to be Tab-reachable links named from the settled branch title, with Enter opening the branch. | Chrome: keyboard-only completion; Rendering: shared live/frozen controls |
+| breadcrumb landmark, keyboard navigation, and node reuse | C2 | Requires ancestor crumbs to be Enter-operable links, the current crumb to be non-focusable and current, and lineage rerenders to preserve crumb identity. | Chrome: keyboard-only completion; Rendering: shared live/frozen controls |
+| sidebar branch link semantics, streaming patch, and node reuse | C2 | Requires named tabbable branch links, Enter navigation, and streamed pending-to-settled updates without replacing reusable tiles. | Chrome: keyboard-only completion; Generation: durable streaming; Rendering: shared live/frozen controls |
+| linked reader-context keyboard jump | C2 | Requires the original-context strip to expose named link semantics and Enter to retain the existing origin jump and flash. | Chrome: keyboard-only completion; focus visibility |
+| frozen reader breadcrumb and sidebar keyboard parity | C2 | Requires frozen pages to retain breadcrumb and sidebar Enter navigation without adding snapshot-only affordances. | Rendering: frozen viewing control parity; Chrome: keyboard-only completion |
 | branch peek non-modal Popover behavior | C2 | Requires hover/focus delayed opening, blur/mouseout dismissal, isolated Escape, stable-shell content patching, token flip/clamp anchoring, no focus theft, and frozen parity. | Chrome: anchored transient surfaces; keyboard-only completion; Rendering: frozen viewing control parity |
 | selection-bar virtual anchor placement | C2 | Requires token-gap flip/clamp placement from a live Range at viewport edges and a non-focus-stealing open. | Chrome: anchored surfaces at viewport edges |
 | selection-bar Escape isolation | C2 | Requires layer-owned Escape to preserve the live selection, focus the owning card/reader container, and prevent propagation to canvas shortcuts. | Chrome: keyboard-only completion; focus restoration after transient surfaces |
@@ -288,11 +292,11 @@ Counts treat each row above as one case; the shared Stage 9 contract counts once
 | Category | Count |
 |---|---:|
 | C1 compatibility contract | 41 |
-| C2 behavioral product contract | 115 |
+| C2 behavioral product contract | 119 |
 | C3 implementation snapshot | 10 |
 | C4 known defect | 5 |
 | C5 design target | 0 |
-| **Total** | **171** |
+| **Total** | **175** |
 
 ## Known-defect fossils
 

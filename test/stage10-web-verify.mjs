@@ -613,6 +613,7 @@ async function verifyCanvasBranching() {
         "Second branch explains the geometric view: multiplication by $e^{i\\theta}$ rotates a point on the complex plane.",
       ],
     ],
+    providerDelayMs: 220,
   });
 
   await page.goto(baseUrl, { waitUntil: "networkidle" });
@@ -985,10 +986,73 @@ async function verifyCanvasBranching() {
   await page.waitForFunction(() => document.activeElement?.id === "ask-text");
   await page.keyboard.type("Why does this matter?");
   await page.keyboard.press("Enter");
-  await waitForCanvasText(page, "Euler identity connects rotation");
+  await page.click("#t-reader");
+  await page.waitForSelector('.side-item.pending[role="link"]');
+  const pendingSidebarContract = await page.locator('.side-item.pending[role="link"]').evaluate((tile) => {
+    tile.__s9Identity = "pending-stream-tile";
+    return { id: tile.dataset.child, tabIndex: tile.tabIndex, name: tile.getAttribute("aria-label") };
+  });
+  assert.equal(pendingSidebarContract.tabIndex, 0, "pending sidebar branches should be tabbable links");
+  assert.match(pendingSidebarContract.name, /^Open branch: .+, pending$/, "pending sidebar links should name the branch and pending state");
+  const streamedSidebarTile = page.locator(`.side-item[data-child="${pendingSidebarContract.id}"][role="link"]`);
+  await page.waitForFunction((id) => !document.querySelector(`.side-item[data-child="${id}"]`)?.classList.contains("pending"), pendingSidebarContract.id);
+  assert.equal(await streamedSidebarTile.evaluate((tile) => tile.__s9Identity),
+    "pending-stream-tile", "stream updates should patch the pending sidebar tile without replacing it");
+  assert.equal(await page.locator('.side-item[role="link"] .si-live').count(), 0, "settling a streamed sidebar branch should remove its one live pane");
   assert.equal(providerCalls, 2);
 
-  const branchMark = page.locator('mark[data-child].mark-ready').first();
+  const sidebarTile = streamedSidebarTile;
+  assert.deepEqual(await sidebarTile.evaluate((tile) => ({ role: tile.getAttribute("role"), tabIndex: tile.tabIndex, name: tile.getAttribute("aria-label") })),
+    { role: "link", tabIndex: 0, name: "Open branch: Why does this matter?, new" }, "settled sidebar tiles should expose named link semantics and new state");
+  await sidebarTile.focus();
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.querySelector('.crumb[aria-current="page"]')?.textContent === "Euler branch");
+
+  const breadcrumbContract = await page.locator("#breadcrumb").evaluate((nav) => {
+    const crumbs = [...nav.querySelectorAll(".crumb")];
+    crumbs[0].__s9Identity = "root-crumb";
+    crumbs[1].__s9Identity = "child-crumb";
+    return {
+      tag: nav.tagName,
+      label: nav.getAttribute("aria-label"),
+      prior: { role: crumbs[0].getAttribute("role"), tabIndex: crumbs[0].tabIndex },
+      current: { current: crumbs[1].getAttribute("aria-current"), tabIndex: crumbs[1].getAttribute("tabindex") },
+    };
+  });
+  assert.deepEqual(breadcrumbContract, {
+    tag: "NAV", label: "Breadcrumb", prior: { role: "link", tabIndex: 0 }, current: { current: "page", tabIndex: null },
+  }, "breadcrumbs should expose a landmark, linked ancestors, and a non-focusable current page");
+  await page.locator('.crumb[role="link"]').focus();
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.querySelector('.crumb[aria-current="page"]')?.textContent === "Web Smoke");
+  assert.equal(await page.locator('.crumb[aria-current="page"]').evaluate((crumb) => crumb.__s9Identity), "root-crumb", "breadcrumb nodes should be reused when their state changes");
+  assert.equal(await streamedSidebarTile.evaluate((tile) => tile.__s9Identity),
+    "pending-stream-tile", "sidebar nodes should be reused after navigating away and back");
+  await streamedSidebarTile.focus();
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.querySelector('.crumb[aria-current="page"]')?.textContent === "Euler branch");
+  assert.equal(await page.locator('.crumb[aria-current="page"]').evaluate((crumb) => crumb.__s9Identity), "child-crumb", "breadcrumb child identity should survive lineage removal and restoration");
+
+  const contextStrip = page.locator('.reader-context[role="link"]');
+  assert.deepEqual(await contextStrip.evaluate((strip) => ({ tabIndex: strip.tabIndex, name: strip.getAttribute("aria-label") })),
+    { tabIndex: 0, name: "See this in its original context" }, "linked reader context should be a named tabbable link");
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", { configurable: true, value: false });
+    window.__s9OriginFlashObserver = new MutationObserver(() => {
+      if (document.querySelector('mark[data-child].mark-flash')) window.__s9OriginFlashed = true;
+    });
+    window.__s9OriginFlashObserver.observe(document.getElementById("reader-main"), { subtree: true, attributes: true, attributeFilter: ["class"] });
+  });
+  await contextStrip.focus();
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.querySelector('.crumb[aria-current="page"]')?.textContent === "Web Smoke");
+  await page.waitForFunction(() => window.__s9OriginFlashed === true);
+  assert.equal(await page.evaluate(() => { window.__s9OriginFlashObserver.disconnect(); return window.__s9OriginFlashed; }), true,
+    "reader-context Enter should jump to and flash the origin");
+  await page.click("#r-canvas");
+  await waitForCanvasText(page, "Euler identity connects rotation");
+
+  const branchMark = page.locator('.node mark[data-child].mark-ready').first();
   assert.deepEqual(await branchMark.evaluate((mark) => ({ tabIndex: mark.tabIndex, role: mark.getAttribute("role"), name: mark.getAttribute("aria-label") })),
     { tabIndex: 0, role: "link", name: "Open branch: Euler branch" }, "branch marks should expose keyboard navigation semantics and the branch title");
   await branchMark.hover();
@@ -1029,14 +1093,14 @@ async function verifyCanvasBranching() {
   await branchMark.focus();
   await page.waitForSelector("#peek.visible");
   await page.evaluate(() => {
-    const mark = document.querySelector('mark[data-child].mark-ready');
+    const mark = document.querySelector('.node mark[data-child].mark-ready');
     mark.__probeRect = mark.getBoundingClientRect;
     mark.getBoundingClientRect = () => ({ left: 4, right: 84, top: innerHeight - 22, bottom: innerHeight - 2, width: 80, height: 20, x: 4, y: innerHeight - 22 });
   });
   await page.evaluate(() => window.dispatchEvent(new Event("resize")));
   await page.waitForTimeout(50);
   const peekEdge = await page.evaluate(() => {
-    const mark = document.querySelector('mark[data-child].mark-ready').getBoundingClientRect();
+    const mark = document.querySelector('.node mark[data-child].mark-ready').getBoundingClientRect();
     const peek = document.getElementById("peek").getBoundingClientRect();
     const edge = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--surface-edge"));
     return { placement: document.getElementById("peek").dataset.placement, gap: mark.top - peek.bottom,
@@ -1046,7 +1110,7 @@ async function verifyCanvasBranching() {
   assert(Math.abs(peekEdge.gap - peekEdge.tokenGap) < 1, "flipped peek should preserve the token gap");
   assert(peekEdge.left >= peekEdge.edge - 1 && peekEdge.right <= peekEdge.width - peekEdge.edge + 1, "peek should clamp inside token viewport edges");
   await page.evaluate(() => {
-    const mark = document.querySelector('mark[data-child].mark-ready');
+    const mark = document.querySelector('.node mark[data-child].mark-ready');
     mark.getBoundingClientRect = mark.__probeRect; delete mark.__probeRect;
   });
   await branchMark.focus();
@@ -1084,6 +1148,22 @@ async function verifyCanvasBranching() {
   const branchFrozenHtml = await page.evaluate(() => window.__rabbitholeTest.exportSnapshot());
   const branchFrozenPage = await context.newPage();
   await branchFrozenPage.setContent(branchFrozenHtml, { waitUntil: "load" });
+  await branchFrozenPage.click("#t-reader");
+  assert.deepEqual(await branchFrozenPage.locator("#breadcrumb").evaluate((nav) => ({ tag: nav.tagName, label: nav.getAttribute("aria-label") })),
+    { tag: "NAV", label: "Breadcrumb" }, "frozen reader should preserve breadcrumb landmark semantics");
+  await branchFrozenPage.locator('.crumb[role="link"]').focus();
+  await branchFrozenPage.keyboard.press("Enter");
+  await branchFrozenPage.waitForFunction(() => document.querySelectorAll("#breadcrumb .crumb").length === 1);
+  const frozenSidebar = branchFrozenPage.locator('.side-item[role="link"]').first();
+  assert.equal(await frozenSidebar.evaluate((tile) => tile.tabIndex), 0,
+    "frozen sidebar branches should remain keyboard navigable");
+  await frozenSidebar.focus();
+  await branchFrozenPage.keyboard.press("Enter");
+  await branchFrozenPage.waitForFunction(() => document.querySelectorAll("#breadcrumb .crumb").length > 1);
+  await branchFrozenPage.locator('.crumb[role="link"]').focus();
+  await branchFrozenPage.keyboard.press("Enter");
+  await branchFrozenPage.waitForFunction(() => document.querySelectorAll("#breadcrumb .crumb").length === 1);
+  await branchFrozenPage.click("#r-canvas");
   await branchFrozenPage.click('.node.root .node-acts .node-btn:last-child');
   const frozenMark = branchFrozenPage.locator('mark[data-child].mark-ready').first();
   await frozenMark.focus();

@@ -8,7 +8,7 @@ import { buttonMarkup, iconButtonMarkup } from "./button-markup.js";
 export const CANVAS_SHELL = `
 <div id="reader">
   <div id="reader-top">
-    <div id="breadcrumb"></div>
+    <nav id="breadcrumb" aria-label="Breadcrumb"></nav>
     ${iconButtonMarkup({ bare: true, className: "activity", id: "act-reader", title: "Jump to it", ariaLabel: "Jump to active answer" })}
     ${buttonMarkup({ id: "r-textdown", title: "Smaller text", label: "A−" })}
     ${buttonMarkup({ id: "r-textup", title: "Larger text", label: "A+" })}

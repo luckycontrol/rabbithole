@@ -196,11 +196,7 @@ export function renderStreamSurfaces(node, firstChunk){
         // rebuilds the tile (Thinking… → Writing… + the live pane), later
         // chunks just repaint the pane.
 	        var live = sideEl.querySelector('.side-item[data-child="' + node.id + '"] .si-live .md');
-	        if (live && !firstChunk) {
-	          live.innerHTML = node.html || "";
-	          mountVisuals(live, "reader-side:" + node.id);
-	          mountDocImages(live, node, null, "reader-side:" + node.id);
-	        }
+	        if (live && !firstChunk) live.innerHTML = node.html || "";
         else renderSidebar();
       }
     }
