@@ -1,5 +1,5 @@
 import { MAX_ASSET_BYTES, validateAssetName } from "../core/assets.js";
-import { migratePersistedHole, toPersistedHole } from "../core/schema.js";
+import { migratePersistedHole } from "../core/schema.js";
 
 export const RABBITHOLE_FILE_FORMAT = "rabbithole";
 export const RABBITHOLE_FILE_FORMAT_VERSION = 1;
@@ -8,7 +8,7 @@ export async function buildRabbitholeExport(store, holeId) {
   if (!store) throw new Error("Export needs a store.");
   const hole = await store.loadHole(holeId);
   if (!hole) throw new Error("That Rabbithole no longer exists.");
-  const persisted = toPersistedHole(hole, { updatedAt: hole.updated_at || new Date().toISOString() });
+  const persisted = hole;
   const assets = {};
   for (const name of await store.listAssets(persisted.hole_id)) {
     validateAssetName(name);
@@ -44,7 +44,7 @@ export async function importRabbitholeFile(store, fileOrText) {
   const parsed = parseRabbitholeFile(text);
   const migrated = migratePersistedHole(parsed.hole).hole;
   const assets = await decodeAssets(parsed.assets);
-  let hole = toPersistedHole(migrated, { updatedAt: migrated.updated_at || new Date().toISOString() });
+  let hole = migrated;
   let collision = false;
   if (await store.loadHole(hole.hole_id)) {
     collision = true;

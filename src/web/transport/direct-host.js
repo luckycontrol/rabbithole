@@ -1,4 +1,4 @@
-import { createHoleState, holeStateToHole, reduceHoleEvent } from "../../core/reducer.js";
+import { createHoleState, holeStateToHole, holeStateToHydrationNodes, reduceHoleEvent } from "../../core/reducer.js";
 import { lineageNodesFromMap, truncate } from "../../core/model.js";
 import { extractAssetRefsFromMarkdown } from "../../core/assets.js";
 import { ProviderError, TitleSentinelParser, fallbackTitleForNode, normalizeProviderError } from "../brain/index.js";
@@ -35,7 +35,7 @@ export class DirectRabbitholeHost {
       last_event_id: this.lastEventId,
       agent_attached: true,
       view_state: this.state.view_state,
-      nodes: this.serializeNodes(),
+      nodes: holeStateToHydrationNodes(this.state, { suppressRootOrigin: true }),
     };
   }
 
@@ -50,24 +50,6 @@ export class DirectRabbitholeHost {
       },
       post: (payload) => this.handleBrowserEvent(payload),
     };
-  }
-
-  serializeNodes() {
-    return [...this.state.nodes.values()].map((n) => ({
-      id: n.id,
-      parent_id: n.parent_id ?? null,
-      title: n.title ?? "",
-      markdown: n.markdown ?? "",
-      base_url: n.base_url ?? null,
-      base_url_source: n.base_url_source ?? null,
-      origin: n.id === this.state.root_id ? null : (n.origin ?? null),
-      position: n.position ?? { x: 0, y: 0 },
-      size: n.size ?? null,
-      font_scale: n.font_scale ?? 1,
-      collapsed: !!n.collapsed,
-      status: n.status ?? "answered",
-      read: !!n.read,
-    }));
   }
 
   async handleBrowserEvent(payload) {

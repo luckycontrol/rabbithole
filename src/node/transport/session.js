@@ -6,7 +6,7 @@ import { log, error as logError } from "../logger.js";
 import { addAssetsToHole, defaultFsStore, getAssetContentType, resolveAsset } from "../fs-store.js";
 import { maybeUpgradeBaseUrlFromFrontmatter, normalizeBaseUrl } from "../../core/base-url.js";
 import { extractAssetRefsFromMarkdown } from "../../core/assets.js";
-import { createHoleState, holeStateToHole, reduceHoleEvent } from "../../core/reducer.js";
+import { createHoleState, holeStateToHole, holeStateToHydrationNodes, reduceHoleEvent } from "../../core/reducer.js";
 import { lineageTitlesFromMap } from "../../core/model.js";
 import { buildJsonError, parseRequestBody, closeServerGracefully, CLOSE_TIMEOUT_MS } from "./http.js";
 import { writeSseEvent } from "./sse.js";
@@ -390,26 +390,6 @@ export class RabbitHoleSession {
     return lineageTitlesFromMap(this.nodes, nodeId);
   }
 
-  // For the browser page. Markdown is canonical on the wire; the page derives
-  // safe HTML through the shared browser-bundled renderer.
-  serializeNodes() {
-    return [...this.nodes.values()].map((n) => ({
-      id: n.id,
-      parent_id: n.parent_id ?? null,
-      title: n.title ?? "",
-      markdown: n.markdown ?? "",
-      base_url: n.base_url ?? null,
-      base_url_source: n.base_url_source ?? null,
-      origin: n.origin ?? null,
-      position: n.position ?? { x: 0, y: 0 },
-      size: n.size ?? null,
-      font_scale: n.font_scale ?? 1,
-      collapsed: !!n.collapsed,
-      status: n.status ?? "answered",
-      read: !!n.read,
-    }));
-  }
-
   buildHydration() {
     return {
       session_id: this.id,
@@ -422,7 +402,7 @@ export class RabbitHoleSession {
       last_event_id: this.lastOutboundEventId,
       agent_attached: this.agentAttached,
       view_state: this.viewState,
-      nodes: this.serializeNodes(),
+      nodes: holeStateToHydrationNodes(this.state),
     };
   }
 

@@ -45,6 +45,31 @@ export function holeStateToHole(state) {
   };
 }
 
+/**
+ * Canonical node projection for the live/frozen browser hydration wire.
+ * The web host deliberately suppresses root origin metadata; the MCP host
+ * preserves it.
+ * @param {HoleState} state
+ * @param {{ suppressRootOrigin?: boolean }} [options]
+ */
+export function holeStateToHydrationNodes(state, { suppressRootOrigin = false } = {}) {
+  return [...state.nodes.values()].map((node) => ({
+    id: node.id,
+    parent_id: node.parent_id ?? null,
+    title: node.title ?? "",
+    markdown: node.markdown ?? "",
+    base_url: node.base_url ?? null,
+    base_url_source: node.base_url_source ?? null,
+    origin: suppressRootOrigin && node.id === state.root_id ? null : (node.origin ?? null),
+    position: node.position ?? { x: 0, y: 0 },
+    size: node.size ?? null,
+    font_scale: node.font_scale ?? 1,
+    collapsed: !!node.collapsed,
+    status: node.status ?? "answered",
+    read: !!node.read,
+  }));
+}
+
 /** @param {HoleState} state @param {DocEvent} event @param {ReduceOptions} [options] @returns {ReduceResult} */
 export function reduceHoleEvent(state, event, options = {}) {
   const type = String(event?.type ?? "");

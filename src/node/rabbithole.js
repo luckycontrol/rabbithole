@@ -4,7 +4,7 @@ import { log } from "./logger.js";
 import { buildCanvasHtml } from "./html/canvas.js";
 import { createSession, getSession, getSessionByHole, closeSessionsForHole } from "./sessions.js";
 import { addAssetsToHole, defaultFsStore } from "./fs-store.js";
-import { deriveNodeBaseUrl, normalizeBaseUrl, normalizeStoredBaseUrlFields } from "../core/base-url.js";
+import { deriveNodeBaseUrl, normalizeBaseUrl } from "../core/base-url.js";
 
 async function resolveMarkdown({ content, filePath }) {
   if (content) return content;
@@ -94,14 +94,13 @@ async function resumeRabbithole(holeId, signal, assets) {
     // the agent at construction. Files predating the status field are all
     // answered nodes.
     const pending = raw.status === "pending";
-    const base = normalizeStoredBaseUrlFields(raw);
     nodes.push({
       id: raw.id,
       parent_id: raw.parent_id ?? null,
       title: raw.title ?? "",
       markdown: pending ? "" : (raw.markdown ?? ""),
-      base_url: base.base_url,
-      base_url_source: base.base_url_source,
+      base_url: raw.base_url,
+      base_url_source: raw.base_url_source,
       origin: raw.origin ?? null,
       position: raw.position ?? { x: 0, y: 0 },
       size: raw.size ?? null,

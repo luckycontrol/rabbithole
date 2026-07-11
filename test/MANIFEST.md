@@ -239,6 +239,7 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 
 | Case | Category | Rationale | Scenario-ledger entries covered |
 |---|---|---|---|
+| canonical hydration-node projection preserves both host wire shapes | C1 | Pins the exact shared browser hydration payload while preserving the web host's intentional root-origin suppression and the MCP host's origin metadata. | Migration/deploy: additive wire compatibility |
 | branch_request happy path | C2 | Pending branch construction and URL inheritance are observable document behavior. | — |
 | branch_request missing parent throws | C2 | Invalid branch requests must fail rather than create detached nodes. | — |
 | branch_request missing node_id throws | C2 | Branch nodes require stable identity. | — |
@@ -313,16 +314,16 @@ These live-provider eval cases run only through `npm run eval`; their regex/heur
 
 ## Counts
 
-Counts treat each row above as one case; the shared Stage 9 contract counts once per backend because `npm test` executes it against both. Phase 5 Slice 2 added three C1 rows (`41 + 3 = 44`, `184 + 3 = 187`). Slice 3 added three C2 rows and reclassified the reducer mutation probe from C3 to C2: `129 + 3 + 1 = 133`, `10 - 1 = 9`, and `187 + 3 = 190` total. Slice 4 retires the stale-progress C4 as a C2 and adds four ordering goldens: `133 + 1 + 4 = 138`, `4 - 1 = 3`, and `190 + 4 = 194` total. Slice 5 adds one generation-vocabulary C2 case: `138 + 1 = 139` and `194 + 1 = 195` total. Slice 7 adds one content-vocabulary C2 case: `139 + 1 = 140` and `195 + 1 = 196` total.
+Counts treat each row above as one case; the shared Stage 9 contract counts once per backend because `npm test` executes it against both. Phase 5 Slice 2 added three C1 rows (`41 + 3 = 44`, `184 + 3 = 187`). Slice 3 added three C2 rows and reclassified the reducer mutation probe from C3 to C2: `129 + 3 + 1 = 133`, `10 - 1 = 9`, and `187 + 3 = 190` total. Slice 4 retires the stale-progress C4 as a C2 and adds four ordering goldens: `133 + 1 + 4 = 138`, `4 - 1 = 3`, and `190 + 4 = 194` total. Slice 5 adds one generation-vocabulary C2 case: `138 + 1 = 139` and `194 + 1 = 195` total. Slice 7 adds one content-vocabulary C2 case: `139 + 1 = 140` and `195 + 1 = 196` total. Slice 8 adds one hydration-wire C1 golden: `44 + 1 = 45` and `196 + 1 = 197` total.
 
 | Category | Count |
 |---|---:|
-| C1 compatibility contract | 44 |
+| C1 compatibility contract | 45 |
 | C2 behavioral product contract | 140 |
 | C3 implementation snapshot | 9 |
 | C4 known defect | 3 |
 | C5 design target | 0 |
-| **Total** | **196** |
+| **Total** | **197** |
 
 ## Known-defect fossils
 

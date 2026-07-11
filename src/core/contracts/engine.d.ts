@@ -113,4 +113,5 @@ export interface ReduceOptions { now?: string; }
 
 export declare function createHoleState(input?: Partial<Omit<HoleState, "nodes" | "progressRuns">> & { nodes?: Map<string, HoleNode> | HoleNode[] }): HoleState;
 export declare function holeStateToHole(state: HoleState): Omit<HoleState, "nodes" | "progressRuns"> & { nodes: HoleNode[] };
+export declare function holeStateToHydrationNodes(state: HoleState, options?: { suppressRootOrigin?: boolean }): Array<Omit<Required<HoleNode>, "created_at">>;
 export declare function reduceHoleEvent(state: HoleState, event: DocEvent, options?: ReduceOptions): ReduceResult;
