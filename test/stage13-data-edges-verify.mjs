@@ -13,6 +13,7 @@ import {
   portableArtifactFixture,
 } from "./fixtures/contracts/artifact-fixture.js";
 import { storeFixture } from "./fixtures/contracts/store-fixture.js";
+import { brainFixture, generationEventFixtures } from "./fixtures/contracts/generation-fixture.js";
 
 const stamp = "2026-01-01T00:00:00.000Z";
 const validNode = (overrides = {}) => ({
@@ -51,6 +52,22 @@ assert.throws(
   /assets must be an object/,
 );
 console.log("ok stage13: typed artifact fixtures validate and invalid persisted/portable shapes are rejected");
+
+const isGenerationEvent = (event) => event !== null && typeof event === "object" && (
+  (event.type === "text" && typeof event.delta === "string") ||
+  (event.type === "title" && typeof event.title === "string")
+);
+for (const event of generationEventFixtures) assert.equal(isGenerationEvent(event), true);
+for (const malformed of [
+  { type: "text", delta: 42 },
+  { type: "title", title: null },
+  { type: "usage", input_tokens: 1, output_tokens: 2 },
+  { type: "text", title: "wrong field" },
+]) assert.equal(isGenerationEvent(malformed), false);
+const generated = [];
+for await (const event of brainFixture.answerBranch({}, new AbortController().signal)) generated.push(event);
+assert.deepEqual(generated, generationEventFixtures);
+console.log("ok stage13: typed generation fixture distinguishes the two-event vocabulary from malformed events");
 
 {
   const migrated = migratePersistedHole(JSON.parse(JSON.stringify(persistedHoleFixture)));
