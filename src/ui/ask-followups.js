@@ -53,6 +53,8 @@ import {
   renderSidebar,
   wrapInContainer
 } from "./reader.js";
+import { anchorSurface } from "./overlay/anchor.js";
+import { registerLayer } from "./overlay/layer-stack.js";
 
 var askHooks = {
   post: function(){ return Promise.resolve({ ok: true }); },
@@ -70,8 +72,6 @@ export function initAskFollowups(){
   document.addEventListener("mousedown", function(e){
     var c = e.target && e.target.closest ? function(sel){ return e.target.closest(sel); } : function(){ return null; };
     if (!c("#peek") && !c("mark[data-child]")) askHooks.hidePeek();
-    if (inAsk(e)) return;
-    hideAsk();
   });
   document.addEventListener("mouseup", function(e){ if (inAsk(e)) return; setTimeout(maybeShowAsk, 0); });
   askGo.addEventListener("click", function(e){ submitAsk(null, motionSourceFromEvent(e)); });
@@ -81,6 +81,7 @@ export function initAskFollowups(){
   });
   askText.addEventListener("input", function(){ autoGrowEl(askText, 110); });
   askText.addEventListener("keydown", onAskTextKeydown);
+  ask.addEventListener("transitionend", function(e){ if (e.target === ask && askPosition) askPosition.update(); });
   composerText.addEventListener("input", function(){ autoGrowComposer(); updateComposerState(); });
   composerText.addEventListener("keydown", function(e){
     if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); submitFollowup("keyboard"); }
@@ -94,6 +95,23 @@ export function initAskFollowups(){
 }
 
 function inAsk(e){ return e.target && e.target.closest && e.target.closest("#ask"); }
+
+  var askPosition = null, askLayer = null, askTabOwner = null;
+
+  function selectionOwner(dc){
+    return dc.closest(".node") || readerMain;
+  }
+  function onAskOwnerKeydown(e){
+    if (e.key !== "Tab" || e.shiftKey || !ask.classList.contains("visible")) return;
+    var active = document.activeElement;
+    if (active !== document.body && active !== askTabOwner && !askTabOwner.contains(active)) return;
+    e.preventDefault(); askText.focus();
+  }
+  function focusAskOwner(owner){
+    if (!owner || !owner.isConnected) return;
+    if (!owner.hasAttribute("tabindex")) owner.setAttribute("tabindex", "-1");
+    try { owner.focus({ preventScroll: true }); } catch(e){ owner.focus(); }
+  }
 
   function maybeShowAsk(){
     var sel = window.getSelection();
@@ -123,17 +141,31 @@ function inAsk(e){ return e.target && e.target.closest && e.target.closest("#ask
     paintAskHighlight(pendingAsk.range);
     askText.value = "";
     askText.placeholder = "Ask about this… ↵ = Explain";
-    var rect = range.getBoundingClientRect();
-    ask.style.left = Math.min(window.innerWidth - 392, Math.max(10, rect.left)) + "px";
-    ask.style.top = Math.min(window.innerHeight - 200, rect.bottom + 8) + "px";
     ask.classList.add("visible");
-    setSurfaceOrigin(ask, rect);
+    var owner = selectionOwner(dc);
+    var virtualAnchor = { getBoundingClientRect: function(){ return pendingAsk.range.getBoundingClientRect(); }, contextElement: dc };
+    setSurfaceOrigin(ask, virtualAnchor.getBoundingClientRect());
+    askPosition = anchorSurface(virtualAnchor, ask, { placement: "bottom-start" });
+    askTabOwner = owner;
+    document.addEventListener("keydown", onAskOwnerKeydown);
+    // The selection bar is non-focus-stealing: only an explicit Tab/click enters
+    // it. Escape is layer-owned, preserves the Range, and returns focus here.
+    askLayer = registerLayer({ element: ask, restoreFocus: false,
+      preventOutsidePointerDefault: false, onClose: function(reason){
+        var escapeOwner = reason === "escape" ? owner : null;
+        hideAsk();
+        if (escapeOwner) focusAskOwner(escapeOwner);
+      } });
     // Grow only once visible — scrollHeight reads 0 inside display:none.
     autoGrowEl(askText, 110);
-    askText.focus();
   }
   var pendingAsk = null;
-export function hideAsk(){ ask.classList.remove("visible"); pendingAsk = null; clearAskHighlight(); }
+export function hideAsk(){
+    if (askPosition){ askPosition.dispose(); askPosition = null; }
+    if (askLayer){ var unregister = askLayer; askLayer = null; unregister({ restoreFocus: false }); }
+    if (askTabOwner){ document.removeEventListener("keydown", onAskOwnerKeydown); askTabOwner = null; }
+    ask.classList.remove("visible"); pendingAsk = null; clearAskHighlight();
+  }
   // Custom Highlight API — keeps the selected text visibly marked while the popup
   // has focus. Best-effort: browsers without it just fall back to today's look.
   function paintAskHighlight(range){
@@ -146,7 +178,6 @@ export function hideAsk(){ ask.classList.remove("visible"); pendingAsk = null; c
   var LENS_KEYS = { "1": "explain", "2": "eli5", "3": "example", "4": "deeper" };
   function onAskTextKeydown(e){
     if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); submitAsk(null, "keyboard"); }
-    else if (e.key === "Escape"){ hideAsk(); }
     // Number keys are lens shortcuts only while the box is empty — once the
     // human starts typing a question, digits are just digits.
     else if (askText.value === "" && !e.metaKey && !e.ctrlKey && !e.altKey && LENS_KEYS[e.key]){

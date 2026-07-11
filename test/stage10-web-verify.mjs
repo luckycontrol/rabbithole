@@ -888,10 +888,43 @@ async function verifyCanvasBranching() {
   assert.equal(await frozenPage.evaluate(() => document.activeElement?.id), "t-share", "Frozen Share Escape should restore its trigger");
   await frozenPage.close();
 
+  await page.evaluate(() => {
+    window.__askFocusBefore = document.activeElement;
+    window.__askRangeRect = Range.prototype.getBoundingClientRect;
+    Range.prototype.getBoundingClientRect = function() {
+      return { left: -24, right: 76, top: innerHeight - 24, bottom: innerHeight - 4, width: 100, height: 20, x: -24, y: innerHeight - 24 };
+    };
+  });
   await selectText(page, "Euler identity");
   await page.waitForSelector("#ask.visible");
-  await page.fill("#ask-text", "Why does this matter?");
-  await page.click("#ask-go");
+  await page.waitForTimeout(180);
+  assert.equal(await page.evaluate(() => document.activeElement === window.__askFocusBefore), true, "opening the selection bar must not steal document focus");
+  const askEdge = await page.evaluate(() => {
+    const anchor = window.getSelection().getRangeAt(0).getBoundingClientRect();
+    const bar = document.getElementById("ask").getBoundingClientRect();
+    const styles = getComputedStyle(document.documentElement);
+    return { placement: document.getElementById("ask").dataset.placement, gap: anchor.top - bar.bottom,
+      tokenGap: parseFloat(styles.getPropertyValue("--surface-gap")), left: bar.left,
+      edge: parseFloat(styles.getPropertyValue("--surface-edge")), right: bar.right, width: innerWidth };
+  });
+  assert.equal(askEdge.placement, "top-start", "a virtual selection anchor should flip above at the viewport bottom");
+  assert(Math.abs(askEdge.gap - askEdge.tokenGap) < 1, `a flipped virtual selection anchor should preserve the token gap, got ${askEdge.gap.toFixed(2)}px vs ${askEdge.tokenGap.toFixed(2)}px`);
+  assert(askEdge.left >= askEdge.edge - 1 && askEdge.right <= askEdge.width - askEdge.edge + 1, "the selection bar should clamp inside token viewport edges");
+  await page.evaluate(() => { Range.prototype.getBoundingClientRect = window.__askRangeRect; delete window.__askRangeRect; });
+  await page.keyboard.press("Escape");
+  await page.waitForSelector("#ask:not(.visible)", { state: "attached" });
+  await page.waitForFunction(() => document.activeElement?.matches(".node.root"));
+  assert.equal(await page.evaluate(() => window.getSelection().toString()), "Euler identity", "selection-bar Escape should preserve the live text selection");
+  assert.equal(await page.evaluate(() => document.body.classList.contains("mode-canvas")), true, "selection-bar Escape must not leak to the canvas reader shortcut");
+
+  await page.evaluate(() => { window.__askFocusBefore = document.activeElement; });
+  await selectText(page, "Euler identity");
+  await page.waitForSelector("#ask.visible");
+  assert.equal(await page.evaluate(() => document.activeElement === window.__askFocusBefore), true, "reopening the selection bar should retain selection-context focus");
+  await page.keyboard.press("Tab");
+  await page.waitForFunction(() => document.activeElement?.id === "ask-text");
+  await page.keyboard.type("Why does this matter?");
+  await page.keyboard.press("Enter");
   await waitForCanvasText(page, "Euler identity connects rotation");
   assert.equal(providerCalls, 1);
 
@@ -905,7 +938,23 @@ async function verifyCanvasBranching() {
   await page.waitForSelector("#peek:not(.visible)", { state: "attached" });
 
   await page.focus("#r-theme");
-  for (let i = 0; i < 8 && !await page.evaluate(() => document.activeElement?.matches('mark[data-child]')); i += 1) await page.keyboard.press("Tab");
+  const visitedTabStops = new Set([await page.evaluate(() => {
+    const start = document.querySelector("#r-theme");
+    return start?.id || `${start?.tagName}:${[...document.querySelectorAll(start?.tagName || "*")].indexOf(start)}`;
+  })]);
+  for (let i = 0; i < 40; i += 1) {
+    await page.keyboard.press("Tab");
+    const tabStop = await page.evaluate(() => {
+      const active = document.activeElement;
+      return {
+        isBranchMark: active?.matches('mark[data-child]') || false,
+        key: active?.id || `${active?.tagName}:${[...document.querySelectorAll(active?.tagName || "*")].indexOf(active)}`,
+      };
+    });
+    if (tabStop.isBranchMark) break;
+    if (visitedTabStops.has(tabStop.key)) break;
+    visitedTabStops.add(tabStop.key);
+  }
   assert.equal(await page.evaluate(() => document.activeElement?.matches('mark[data-child]')), true, "branch marks should be reachable in the shared document Tab order");
   await page.waitForSelector("#peek.visible");
   assert.equal(await page.evaluate(() => document.activeElement?.matches('mark[data-child]')), true, "keyboard peek must not steal mark focus");

@@ -16,7 +16,7 @@ function onPointerdown(event) {
   if (!layer || !layer.closeOnOutsidePointer) return;
   var path = typeof event.composedPath === "function" ? event.composedPath() : [];
   if (path.includes(layer.element) || path.includes(layer.trigger) || layer.element.contains(event.target) || layer.trigger?.contains(event.target)) return;
-  event.preventDefault();
+  if (layer.preventOutsidePointerDefault) event.preventDefault();
   layer.onClose("outside-pointer");
   if (layer.restoreFocus) setTimeout(function(){ if (!focus(layer.trigger)) focus(layer.previousFocus); }, 0);
 }
@@ -28,6 +28,7 @@ function syncListeners() {
 export function registerLayer(options) {
   var layer = { element: options.element, trigger: options.trigger || null, onClose: options.onClose,
     closeOnEscape: options.closeOnEscape !== false, closeOnOutsidePointer: options.closeOnOutsidePointer !== false,
+    preventOutsidePointerDefault: options.preventOutsidePointerDefault !== false,
     restoreFocus: options.restoreFocus !== false, previousFocus: document.activeElement };
   layers.push(layer); if (layers.length === 1) syncListeners();
   var active = true;

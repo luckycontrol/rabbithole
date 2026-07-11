@@ -11,12 +11,15 @@ function viewportRect() {
 
 export function anchorSurface(trigger, surface, options) {
   options = options || {};
+  var contextElement = trigger && trigger.contextElement;
+  var observedTrigger = contextElement || trigger;
+  var virtual = !!contextElement || !(trigger instanceof Element);
   var placement = options.placement || "bottom-end", disposed = false, frame = 0, updating = false;
   var lastLeft = null, lastTop = null;
 
   function updateNow() {
     frame = 0;
-    if (disposed || !trigger.isConnected || !surface.isConnected) return;
+    if (disposed || !surface.isConnected || (virtual ? contextElement && !contextElement.isConnected : !trigger.isConnected)) return;
     updating = true;
     var anchor = trigger.getBoundingClientRect(), box = surface.getBoundingClientRect(), viewport = viewportRect();
     var edge = tokenPx(surface, "--surface-edge"), gap = tokenPx(surface, "--surface-gap");
@@ -51,7 +54,8 @@ export function anchorSurface(trigger, surface, options) {
   window.visualViewport?.addEventListener("resize", update, { passive: true });
   window.visualViewport?.addEventListener("scroll", update, { passive: true });
   var resizeObserver = typeof ResizeObserver === "function" ? new ResizeObserver(function(){ if (!updating) update(); }) : null;
-  resizeObserver?.observe(trigger); resizeObserver?.observe(surface);
+  if (!virtual || contextElement) resizeObserver?.observe(observedTrigger);
+  resizeObserver?.observe(surface);
   var mutationObserver = typeof MutationObserver === "function" ? new MutationObserver(update) : null;
   mutationObserver?.observe(surface, { childList: true, subtree: true, characterData: true });
   updateNow();

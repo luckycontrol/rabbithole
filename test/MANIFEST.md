@@ -154,6 +154,9 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | delete confirmation Popover anchor and dismissal contract | C2 | Requires token-gap anchoring, Keep initial focus, layer-owned Escape/outside-pointer dismissal with delete-control focus restoration, and keyboard Remove activation. | Chrome: anchored transient surfaces; keyboard-only completion; focus restoration after transient surfaces |
 | branch-mark link semantics and keyboard navigation | C2 | Requires shared reader/canvas marks to be Tab-reachable links named from the settled branch title, with Enter opening the branch. | Chrome: keyboard-only completion; Rendering: shared live/frozen controls |
 | branch peek non-modal Popover behavior | C2 | Requires hover/focus delayed opening, blur/mouseout dismissal, isolated Escape, stable-shell content patching, token flip/clamp anchoring, no focus theft, and frozen parity. | Chrome: anchored transient surfaces; keyboard-only completion; Rendering: frozen viewing control parity |
+| selection-bar virtual anchor placement | C2 | Requires token-gap flip/clamp placement from a live Range at viewport edges and a non-focus-stealing open. | Chrome: anchored surfaces at viewport edges |
+| selection-bar Escape isolation | C2 | Requires layer-owned Escape to preserve the live selection, focus the owning card/reader container, and prevent propagation to canvas shortcuts. | Chrome: keyboard-only completion; focus restoration after transient surfaces |
+| selection-bar keyboard round trip | C2 | Requires Tab entry into the question box, typed question input, and Enter submission. | Chrome: keyboard-only completion |
 | selection branch streams and titles | C2 | Protects selection-to-branch generation. | Generation: title never arrives (sentinel success only) |
 | reader whole-document follow-up | C2 | Protects document chat branching. | — |
 | streamed branches persist across reload; external request allowlist | C2 | Protects save/re-entry and network scope. | Generation: tab close mid-stream (post-completion reload only) |
@@ -282,11 +285,11 @@ Counts treat each row above as one case; the shared Stage 9 contract counts once
 | Category | Count |
 |---|---:|
 | C1 compatibility contract | 41 |
-| C2 behavioral product contract | 109 |
+| C2 behavioral product contract | 112 |
 | C3 implementation snapshot | 10 |
 | C4 known defect | 5 |
 | C5 design target | 0 |
-| **Total** | **165** |
+| **Total** | **168** |
 
 ## Known-defect fossils
 

@@ -3859,6 +3859,153 @@ var RabbitholeClient = (() => {
     }
   }
 
+  // src/ui/overlay/anchor.js
+  function tokenPx(surface, name) {
+    var value = parseFloat(getComputedStyle(surface).getPropertyValue(name));
+    return Number.isFinite(value) ? value : 0;
+  }
+  function viewportRect() {
+    var viewport2 = window.visualViewport;
+    return {
+      left: viewport2 ? viewport2.offsetLeft : 0,
+      top: viewport2 ? viewport2.offsetTop : 0,
+      width: viewport2 ? viewport2.width : window.innerWidth,
+      height: viewport2 ? viewport2.height : window.innerHeight
+    };
+  }
+  function anchorSurface(trigger, surface, options2) {
+    var _a2, _b;
+    options2 = options2 || {};
+    var contextElement = trigger && trigger.contextElement;
+    var observedTrigger = contextElement || trigger;
+    var virtual = !!contextElement || !(trigger instanceof Element);
+    var placement = options2.placement || "bottom-end", disposed = false, frame = 0, updating = false;
+    var lastLeft = null, lastTop = null;
+    function updateNow() {
+      frame = 0;
+      if (disposed || !surface.isConnected || (virtual ? contextElement && !contextElement.isConnected : !trigger.isConnected)) return;
+      updating = true;
+      var anchor = trigger.getBoundingClientRect(), box = surface.getBoundingClientRect(), viewport2 = viewportRect();
+      var edge = tokenPx(surface, "--surface-edge"), gap = tokenPx(surface, "--surface-gap");
+      var parts = placement.split("-"), side = parts[0], align = parts[1] || "center";
+      var vertical = side === "top" || side === "bottom";
+      var before = vertical ? anchor.top - viewport2.top : anchor.left - viewport2.left;
+      var after = vertical ? viewport2.top + viewport2.height - anchor.bottom : viewport2.left + viewport2.width - anchor.right;
+      var mainSize = vertical ? box.height : box.width;
+      var preferredSpace = side === "top" || side === "left" ? before : after;
+      var alternateSpace = side === "top" || side === "left" ? after : before;
+      if (preferredSpace < mainSize + gap + edge && alternateSpace > preferredSpace) {
+        side = side === "top" ? "bottom" : side === "bottom" ? "top" : side === "left" ? "right" : "left";
+      }
+      var left, top;
+      if (side === "top" || side === "bottom") {
+        top = side === "bottom" ? anchor.bottom + gap : anchor.top - box.height - gap;
+        left = align === "start" ? anchor.left : align === "end" ? anchor.right - box.width : anchor.left + (anchor.width - box.width) / 2;
+      } else {
+        left = side === "right" ? anchor.right + gap : anchor.left - box.width - gap;
+        top = align === "start" ? anchor.top : align === "end" ? anchor.bottom - box.height : anchor.top + (anchor.height - box.height) / 2;
+      }
+      left = Math.min(viewport2.left + viewport2.width - edge - box.width, Math.max(viewport2.left + edge, left));
+      top = Math.min(viewport2.top + viewport2.height - edge - box.height, Math.max(viewport2.top + edge, top));
+      if (left !== lastLeft) surface.style.left = left + "px";
+      if (top !== lastTop) surface.style.top = top + "px";
+      lastLeft = left;
+      lastTop = top;
+      surface.dataset.placement = side + "-" + align;
+      updating = false;
+    }
+    function update() {
+      if (!disposed && !frame) frame = requestAnimationFrame(updateNow);
+    }
+    window.addEventListener("resize", update, { passive: true });
+    (_a2 = window.visualViewport) == null ? void 0 : _a2.addEventListener("resize", update, { passive: true });
+    (_b = window.visualViewport) == null ? void 0 : _b.addEventListener("scroll", update, { passive: true });
+    var resizeObserver = typeof ResizeObserver === "function" ? new ResizeObserver(function() {
+      if (!updating) update();
+    }) : null;
+    if (!virtual || contextElement) resizeObserver == null ? void 0 : resizeObserver.observe(observedTrigger);
+    resizeObserver == null ? void 0 : resizeObserver.observe(surface);
+    var mutationObserver = typeof MutationObserver === "function" ? new MutationObserver(update) : null;
+    mutationObserver == null ? void 0 : mutationObserver.observe(surface, { childList: true, subtree: true, characterData: true });
+    updateNow();
+    return { update, dispose: function() {
+      var _a3, _b2;
+      disposed = true;
+      if (frame) cancelAnimationFrame(frame);
+      window.removeEventListener("resize", update);
+      (_a3 = window.visualViewport) == null ? void 0 : _a3.removeEventListener("resize", update);
+      (_b2 = window.visualViewport) == null ? void 0 : _b2.removeEventListener("scroll", update);
+      resizeObserver == null ? void 0 : resizeObserver.disconnect();
+      mutationObserver == null ? void 0 : mutationObserver.disconnect();
+    } };
+  }
+
+  // src/ui/overlay/layer-stack.js
+  var layers = [];
+  function focus(element) {
+    if (!element || !element.isConnected || typeof element.focus !== "function") return false;
+    try {
+      element.focus({ preventScroll: true });
+    } catch (error) {
+      try {
+        element.focus();
+      } catch (_error) {
+        return false;
+      }
+    }
+    return true;
+  }
+  function onKeydown(event) {
+    if (event.key !== "Escape") return;
+    var layer = layers[layers.length - 1];
+    if (!layer || !layer.closeOnEscape) return;
+    event.preventDefault();
+    event.stopPropagation();
+    layer.onClose("escape");
+  }
+  function onPointerdown(event) {
+    var _a2;
+    var layer = layers[layers.length - 1];
+    if (!layer || !layer.closeOnOutsidePointer) return;
+    var path2 = typeof event.composedPath === "function" ? event.composedPath() : [];
+    if (path2.includes(layer.element) || path2.includes(layer.trigger) || layer.element.contains(event.target) || ((_a2 = layer.trigger) == null ? void 0 : _a2.contains(event.target))) return;
+    if (layer.preventOutsidePointerDefault) event.preventDefault();
+    layer.onClose("outside-pointer");
+    if (layer.restoreFocus) setTimeout(function() {
+      if (!focus(layer.trigger)) focus(layer.previousFocus);
+    }, 0);
+  }
+  function syncListeners() {
+    var method = layers.length ? "addEventListener" : "removeEventListener";
+    document[method]("keydown", onKeydown, true);
+    document[method]("pointerdown", onPointerdown, true);
+  }
+  function registerLayer(options2) {
+    var layer = {
+      element: options2.element,
+      trigger: options2.trigger || null,
+      onClose: options2.onClose,
+      closeOnEscape: options2.closeOnEscape !== false,
+      closeOnOutsidePointer: options2.closeOnOutsidePointer !== false,
+      preventOutsidePointerDefault: options2.preventOutsidePointerDefault !== false,
+      restoreFocus: options2.restoreFocus !== false,
+      previousFocus: document.activeElement
+    };
+    layers.push(layer);
+    if (layers.length === 1) syncListeners();
+    var active = true;
+    return function unregisterLayer(settings) {
+      if (!active) return;
+      active = false;
+      var index = layers.indexOf(layer);
+      if (index !== -1) layers.splice(index, 1);
+      if (!layers.length) syncListeners();
+      if (layer.restoreFocus && (!settings || settings.restoreFocus !== false)) {
+        if (!focus(layer.trigger)) focus(layer.previousFocus);
+      }
+    };
+  }
+
   // src/ui/ask-followups.js
   var askHooks = {
     post: function() {
@@ -3878,8 +4025,6 @@ var RabbitholeClient = (() => {
         return null;
       };
       if (!c2("#peek") && !c2("mark[data-child]")) askHooks.hidePeek();
-      if (inAsk(e)) return;
-      hideAsk();
     });
     document.addEventListener("mouseup", function(e) {
       if (inAsk(e)) return;
@@ -3896,6 +4041,9 @@ var RabbitholeClient = (() => {
       autoGrowEl(askText, 110);
     });
     askText.addEventListener("keydown", onAskTextKeydown);
+    ask.addEventListener("transitionend", function(e) {
+      if (e.target === ask && askPosition) askPosition.update();
+    });
     composerText.addEventListener("input", function() {
       autoGrowComposer();
       updateComposerState();
@@ -3919,6 +4067,28 @@ var RabbitholeClient = (() => {
   }
   function inAsk(e) {
     return e.target && e.target.closest && e.target.closest("#ask");
+  }
+  var askPosition = null;
+  var askLayer = null;
+  var askTabOwner = null;
+  function selectionOwner(dc) {
+    return dc.closest(".node") || readerMain;
+  }
+  function onAskOwnerKeydown(e) {
+    if (e.key !== "Tab" || e.shiftKey || !ask.classList.contains("visible")) return;
+    var active = document.activeElement;
+    if (active !== document.body && active !== askTabOwner && !askTabOwner.contains(active)) return;
+    e.preventDefault();
+    askText.focus();
+  }
+  function focusAskOwner(owner) {
+    if (!owner || !owner.isConnected) return;
+    if (!owner.hasAttribute("tabindex")) owner.setAttribute("tabindex", "-1");
+    try {
+      owner.focus({ preventScroll: true });
+    } catch (e) {
+      owner.focus();
+    }
   }
   function maybeShowAsk() {
     var sel = window.getSelection();
@@ -3948,16 +4118,42 @@ var RabbitholeClient = (() => {
     paintAskHighlight(pendingAsk.range);
     askText.value = "";
     askText.placeholder = "Ask about this\u2026 \u21B5 = Explain";
-    var rect = range.getBoundingClientRect();
-    ask.style.left = Math.min(window.innerWidth - 392, Math.max(10, rect.left)) + "px";
-    ask.style.top = Math.min(window.innerHeight - 200, rect.bottom + 8) + "px";
     ask.classList.add("visible");
-    setSurfaceOrigin(ask, rect);
+    var owner = selectionOwner(dc);
+    var virtualAnchor = { getBoundingClientRect: function() {
+      return pendingAsk.range.getBoundingClientRect();
+    }, contextElement: dc };
+    setSurfaceOrigin(ask, virtualAnchor.getBoundingClientRect());
+    askPosition = anchorSurface(virtualAnchor, ask, { placement: "bottom-start" });
+    askTabOwner = owner;
+    document.addEventListener("keydown", onAskOwnerKeydown);
+    askLayer = registerLayer({
+      element: ask,
+      restoreFocus: false,
+      preventOutsidePointerDefault: false,
+      onClose: function(reason) {
+        var escapeOwner = reason === "escape" ? owner : null;
+        hideAsk();
+        if (escapeOwner) focusAskOwner(escapeOwner);
+      }
+    });
     autoGrowEl(askText, 110);
-    askText.focus();
   }
   var pendingAsk = null;
   function hideAsk() {
+    if (askPosition) {
+      askPosition.dispose();
+      askPosition = null;
+    }
+    if (askLayer) {
+      var unregister = askLayer;
+      askLayer = null;
+      unregister({ restoreFocus: false });
+    }
+    if (askTabOwner) {
+      document.removeEventListener("keydown", onAskOwnerKeydown);
+      askTabOwner = null;
+    }
     ask.classList.remove("visible");
     pendingAsk = null;
     clearAskHighlight();
@@ -3979,8 +4175,6 @@ var RabbitholeClient = (() => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       submitAsk(null, "keyboard");
-    } else if (e.key === "Escape") {
-      hideAsk();
     } else if (askText.value === "" && !e.metaKey && !e.ctrlKey && !e.altKey && LENS_KEYS[e.key]) {
       e.preventDefault();
       submitAsk(LENS_KEYS[e.key], "keyboard");
@@ -4188,71 +4382,6 @@ var RabbitholeClient = (() => {
       sort: nodeOrder2,
       childSize: DEFAULT_CHILD
     });
-  }
-
-  // src/ui/overlay/layer-stack.js
-  var layers = [];
-  function focus(element) {
-    if (!element || !element.isConnected || typeof element.focus !== "function") return false;
-    try {
-      element.focus({ preventScroll: true });
-    } catch (error) {
-      try {
-        element.focus();
-      } catch (_error) {
-        return false;
-      }
-    }
-    return true;
-  }
-  function onKeydown(event) {
-    if (event.key !== "Escape") return;
-    var layer = layers[layers.length - 1];
-    if (!layer || !layer.closeOnEscape) return;
-    event.preventDefault();
-    event.stopPropagation();
-    layer.onClose("escape");
-  }
-  function onPointerdown(event) {
-    var _a2;
-    var layer = layers[layers.length - 1];
-    if (!layer || !layer.closeOnOutsidePointer) return;
-    var path2 = typeof event.composedPath === "function" ? event.composedPath() : [];
-    if (path2.includes(layer.element) || path2.includes(layer.trigger) || layer.element.contains(event.target) || ((_a2 = layer.trigger) == null ? void 0 : _a2.contains(event.target))) return;
-    event.preventDefault();
-    layer.onClose("outside-pointer");
-    if (layer.restoreFocus) setTimeout(function() {
-      if (!focus(layer.trigger)) focus(layer.previousFocus);
-    }, 0);
-  }
-  function syncListeners() {
-    var method = layers.length ? "addEventListener" : "removeEventListener";
-    document[method]("keydown", onKeydown, true);
-    document[method]("pointerdown", onPointerdown, true);
-  }
-  function registerLayer(options2) {
-    var layer = {
-      element: options2.element,
-      trigger: options2.trigger || null,
-      onClose: options2.onClose,
-      closeOnEscape: options2.closeOnEscape !== false,
-      closeOnOutsidePointer: options2.closeOnOutsidePointer !== false,
-      restoreFocus: options2.restoreFocus !== false,
-      previousFocus: document.activeElement
-    };
-    layers.push(layer);
-    if (layers.length === 1) syncListeners();
-    var active = true;
-    return function unregisterLayer(settings) {
-      if (!active) return;
-      active = false;
-      var index = layers.indexOf(layer);
-      if (index !== -1) layers.splice(index, 1);
-      if (!layers.length) syncListeners();
-      if (layer.restoreFocus && (!settings || settings.restoreFocus !== false)) {
-        if (!focus(layer.trigger)) focus(layer.previousFocus);
-      }
-    };
   }
 
   // src/ui/primitives/dialog.js
@@ -5263,84 +5392,6 @@ var RabbitholeClient = (() => {
         }
       }
     };
-  }
-
-  // src/ui/overlay/anchor.js
-  function tokenPx(surface, name) {
-    var value = parseFloat(getComputedStyle(surface).getPropertyValue(name));
-    return Number.isFinite(value) ? value : 0;
-  }
-  function viewportRect() {
-    var viewport2 = window.visualViewport;
-    return {
-      left: viewport2 ? viewport2.offsetLeft : 0,
-      top: viewport2 ? viewport2.offsetTop : 0,
-      width: viewport2 ? viewport2.width : window.innerWidth,
-      height: viewport2 ? viewport2.height : window.innerHeight
-    };
-  }
-  function anchorSurface(trigger, surface, options2) {
-    var _a2, _b;
-    options2 = options2 || {};
-    var placement = options2.placement || "bottom-end", disposed = false, frame = 0, updating = false;
-    var lastLeft = null, lastTop = null;
-    function updateNow() {
-      frame = 0;
-      if (disposed || !trigger.isConnected || !surface.isConnected) return;
-      updating = true;
-      var anchor = trigger.getBoundingClientRect(), box = surface.getBoundingClientRect(), viewport2 = viewportRect();
-      var edge = tokenPx(surface, "--surface-edge"), gap = tokenPx(surface, "--surface-gap");
-      var parts = placement.split("-"), side = parts[0], align = parts[1] || "center";
-      var vertical = side === "top" || side === "bottom";
-      var before = vertical ? anchor.top - viewport2.top : anchor.left - viewport2.left;
-      var after = vertical ? viewport2.top + viewport2.height - anchor.bottom : viewport2.left + viewport2.width - anchor.right;
-      var mainSize = vertical ? box.height : box.width;
-      var preferredSpace = side === "top" || side === "left" ? before : after;
-      var alternateSpace = side === "top" || side === "left" ? after : before;
-      if (preferredSpace < mainSize + gap + edge && alternateSpace > preferredSpace) {
-        side = side === "top" ? "bottom" : side === "bottom" ? "top" : side === "left" ? "right" : "left";
-      }
-      var left, top;
-      if (side === "top" || side === "bottom") {
-        top = side === "bottom" ? anchor.bottom + gap : anchor.top - box.height - gap;
-        left = align === "start" ? anchor.left : align === "end" ? anchor.right - box.width : anchor.left + (anchor.width - box.width) / 2;
-      } else {
-        left = side === "right" ? anchor.right + gap : anchor.left - box.width - gap;
-        top = align === "start" ? anchor.top : align === "end" ? anchor.bottom - box.height : anchor.top + (anchor.height - box.height) / 2;
-      }
-      left = Math.min(viewport2.left + viewport2.width - edge - box.width, Math.max(viewport2.left + edge, left));
-      top = Math.min(viewport2.top + viewport2.height - edge - box.height, Math.max(viewport2.top + edge, top));
-      if (left !== lastLeft) surface.style.left = left + "px";
-      if (top !== lastTop) surface.style.top = top + "px";
-      lastLeft = left;
-      lastTop = top;
-      surface.dataset.placement = side + "-" + align;
-      updating = false;
-    }
-    function update() {
-      if (!disposed && !frame) frame = requestAnimationFrame(updateNow);
-    }
-    window.addEventListener("resize", update, { passive: true });
-    (_a2 = window.visualViewport) == null ? void 0 : _a2.addEventListener("resize", update, { passive: true });
-    (_b = window.visualViewport) == null ? void 0 : _b.addEventListener("scroll", update, { passive: true });
-    var resizeObserver = typeof ResizeObserver === "function" ? new ResizeObserver(function() {
-      if (!updating) update();
-    }) : null;
-    resizeObserver == null ? void 0 : resizeObserver.observe(trigger);
-    resizeObserver == null ? void 0 : resizeObserver.observe(surface);
-    var mutationObserver = typeof MutationObserver === "function" ? new MutationObserver(update) : null;
-    mutationObserver == null ? void 0 : mutationObserver.observe(surface, { childList: true, subtree: true, characterData: true });
-    updateNow();
-    return { update, dispose: function() {
-      var _a3, _b2;
-      disposed = true;
-      if (frame) cancelAnimationFrame(frame);
-      window.removeEventListener("resize", update);
-      (_a3 = window.visualViewport) == null ? void 0 : _a3.removeEventListener("resize", update);
-      (_b2 = window.visualViewport) == null ? void 0 : _b2.removeEventListener("scroll", update);
-      resizeObserver == null ? void 0 : resizeObserver.disconnect();
-      mutationObserver == null ? void 0 : mutationObserver.disconnect();
-    } };
   }
 
   // src/ui/primitives/popover.js

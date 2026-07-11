@@ -369,6 +369,7 @@ body.mode-canvas #toolbar { display: flex; }
   transform: scale(0.97) translateY(-4px); transform-origin: top center;
   transition: opacity 160ms cubic-bezier(0.23, 1, 0.32, 1), transform 160ms cubic-bezier(0.23, 1, 0.32, 1), visibility 0s linear 160ms; }
 #ask.visible { visibility: visible; opacity: 1; pointer-events: auto; transform: scale(1) translateY(0); transition-delay: 0s; }
+#ask:focus-within { border-color: var(--color-accent); box-shadow: var(--focus-field-shadow), var(--shadow); }
 .ask-input { display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 14px; }
 .ask-input textarea { flex: 1; border: none; outline: none; resize: none; background: transparent; color: var(--fg);
   font-family: var(--font-ui); font-size: 13px; line-height: 1.5; padding: 3px 0; min-height: 20px; max-height: 110px; }
