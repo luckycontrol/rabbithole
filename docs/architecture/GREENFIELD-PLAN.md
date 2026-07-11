@@ -1,6 +1,6 @@
 # Rabbithole repository reset plan
 
-- **Status:** in execution — Phase 0 complete; Phase 1 active
+- **Status:** in execution — Phases 0 and 1 complete; Phase 2 active
 - **Nature:** temporary execution plan
 - **Delete when:** Phase 3 is complete and every enduring rule has moved into
   present-tense project documentation.
@@ -97,6 +97,10 @@ the order in which they were migrated.
 
 ### Slice 1A — rename tests without editing their contents
 
+**Slice status:** complete in `894922b`. All suites and packaging passed from
+their capability-based locations; the historical script aliases were retained
+for Slice 1B to replace.
+
 Use `git mv` so history remains legible. A suggested destination taxonomy is:
 
 ```text
@@ -160,6 +164,9 @@ minimal path corrections.
 
 ### Slice 1B — replace the test command surface
 
+**Slice status:** complete in `38c2d58`. Package scripts, test output, fixture
+labels, budget guidance, and testing documentation now use capability names.
+
 1. Replace `test:stageN` scripts with capability scripts:
    - `test:unit`
    - `test:contracts`
@@ -178,6 +185,10 @@ minimal path corrections.
    not archaeology.
 
 ### Slice 1C — replace migration documentation
+
+**Slice status:** complete. Present-tense architecture, contribution,
+compatibility, testing, and design-system documents replace the completed
+migration diary and stale repository guidance.
 
 Create or update these present-tense documents:
 

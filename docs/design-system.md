@@ -1,31 +1,28 @@
-# The Rabbithole visual constitution
+# Rabbithole design system
 
-This document is law for surface work in Phases 2–10.
-
-It defines the visual vocabulary, geometry, interaction behavior, and review
-standard of Rabbithole. Implementations conform to this document. Existing code
-is evidence, not authority, where it conflicts with this document.
+This document defines the visual vocabulary, geometry, interaction behavior,
+accessibility requirements, and review standard for Rabbithole surfaces. It is
+the source of truth for product chrome across the live canvas, web app, themes,
+and frozen snapshots.
 
 ## 1. Scope and authority
 
-- One token sheet supplies canvas chrome, web chrome, light theme, dark theme,
+- One token sheet supplies canvas chrome, web chrome, light and dark themes,
   and frozen snapshots.
 - Chrome consumes named tokens. Per-screen magic design values are forbidden.
 - Structural literals remain legal: `0`, `1px`, `100%`, intrinsic dimensions,
   and component-local optical corrections.
 - Document-rhythm `em` values form a named document subsystem. They are not
   chrome spacing tokens. They must continue to respond to document scaling.
-- Vendored KaTeX and highlight.js styles are outside this constitution.
-- Visible convergence is intentional. A blessed visual change is not a
-  regression when it brings the product into compliance.
-- Every migrated surface must satisfy the experience standard: real-browser
-  visual and interaction review, keyboard and screen-reader verification,
+- Vendored KaTeX and highlight.js styles are outside this design system.
+- Every surface must satisfy the experience standard: real-browser visual and
+  interaction review, keyboard and screen-reader verification,
   perceived-latency review, and designed error and recovery behavior.
 
 ## 2. Token sheet
 
-These names and values are the single source of design values. Compatibility
-aliases may exist only during migration. They must resolve to this sheet.
+These names and values are the single source of design values. Any compatibility
+alias must resolve to this sheet and must not create a competing design scale.
 
 ```css
 :root {
@@ -300,21 +297,60 @@ html[data-theme="dark"] {
 - Trigger-relative placement is the default. A different anchor requires a
   named product behavior, not local positioning arithmetic.
 
-## 4. Normative behavior table
+## 4. Product behavior
 
-Status states implementation truth. “Current parity” is already the required
-behavior. “Spec ahead of code” is binding before its named implementation phase.
+These interaction rules apply wherever the corresponding surface is present.
 
-| Area | Normative behavior | Status | Code evidence |
-|---|---|---|---|
-| Blank app | Resolve explicit hash, then last-opened document, then newest stored document; otherwise open the composer. Escape on a first-use blank canvas reveals the persistent “New Rabbithole” action. | current parity | `src/web/app.js:52`, `src/web/app.js:140`, `src/web/app.js:313`, `src/web/app.js:621` |
-| First document | Preserve all three entry paths: ask, file, URL. File launches directly; ask and URL enter their forms. Preserve keyboard focus semantics. | current parity | `src/web/app.js:83`, `src/web/app.js:328` |
-| Rail | The rail is an overlay and always starts closed. Open state is never persisted. This is the designed calm default, not a stub. Toolbar and unmodified `S` toggle it; Escape closes it while active; `aria-expanded` tracks state. | current parity | `src/web/app.js:157`, `src/web/app.js:202`, `src/web/app.js:639`, `src/web/app.js:753`, `src/web/app.js:770` |
-| Settings placement | Place settings relative to its trigger through the single measure-then-clamp anchoring engine. Consume the shared edge and gap tokens; reposition after open and on resize. | spec ahead of code (Phase 3) | `src/web/app.js:157`, `src/web/app.js:733`, `src/web/app.js:782` |
-| Settings semantics | Settings is an anchored non-modal popover. Outside click and Escape close the top layer; nested surfaces close before their parent; closing restores focus to the invoking trigger. Settings continue to apply live. | spec ahead of code (Phase 3) | `src/web/app.js:125`, `src/web/app.js:774`, `src/web/styles.css:615` |
-| Streaming follow | Preserve position when the user has scrolled away. Follow the streaming tail while within a small threshold of it. Scroll, pointer, or key input disengages following. The activity chip re-engages and jumps to the active tail. | spec ahead of code (Phase 6) | `src/ui/transport-status.js:151`, `src/ui/transport-status.js:176`, `src/ui/core.js:318` |
-| Selection bar | Preserve single-answered-document validation, selection highlight, Enter submit, Escape close, empty-input number shortcuts, and recovery copy. Position it through the common anchoring engine. Add an explicit keyboard-only invocation path. | spec ahead of code (Phases 3/4) | `src/ui/ask-followups.js:71`, `src/ui/ask-followups.js:102`, `src/ui/ask-followups.js:130`, `src/ui/ask-followups.js:150` |
-| Toolbar groups | Order groups by task: navigation, view, layout, sharing/preferences, activity. Hide unavailable groups. A separator dies with its group. | current parity | `src/core/html/shell.js:8`, `src/core/html/shell.js:34`, `src/web/styles.css:28` |
+### 4.1 App entry
+
+- Resolve an explicit hash first, then the last-opened document, then the newest
+  stored document. Show the persistent blank-canvas entry when no document is
+  available.
+- Require an explicitly completed provider/model setup before enabling “New
+  Rabbithole” or accepting a dropped file. An incomplete setup opens the model
+  settings surface; it never opens an unusable composer.
+- Preserve all three entry paths: ask, file, and URL. File launches directly;
+  ask and URL enter their forms.
+- Move focus deliberately when the entry surface changes. Do not rely on DOM
+  order or browser defaults to choose the next focus target.
+
+### 4.2 Rail and toolbar
+
+- The rail is an overlay and starts closed. Its open state is not persisted.
+- The toolbar and unmodified `S` toggle the rail. Escape closes it while active,
+  and `aria-expanded` reflects its state.
+- Order toolbar groups by task: navigation, view, layout,
+  sharing/preferences, activity.
+- Hide unavailable groups. A separator is hidden with its group.
+
+### 4.3 Settings and transient surfaces
+
+- Settings is an anchored, non-modal popover positioned relative to its trigger
+  by the common measure-then-clamp anchoring engine.
+- Settings consumes the shared edge and gap tokens and repositions after opening,
+  resizing, or a content-size change.
+- Outside click and Escape close the topmost transient surface. Nested surfaces
+  close before their parent.
+- Closing a transient surface restores focus to the trigger that opened it.
+- Settings fields persist as they change. Provider/model readiness remains an
+  explicit completion step so a validated key alone cannot start generation.
+
+### 4.4 Streaming follow
+
+- Preserve scroll position when the user has moved away from the streaming tail.
+- Follow the tail while the viewport remains within a small threshold of it.
+- Scroll, pointer, or keyboard input disengages following.
+- The activity control re-engages following and moves to the active tail.
+
+### 4.5 Selection bar
+
+- Accept selections from one answered document at a time and preserve the
+  selection highlight while the bar is active.
+- Provide an explicit keyboard-only invocation path.
+- Enter submits, Escape closes, and number shortcuts work when the input is
+  empty.
+- Position the bar with the common anchoring engine.
+- Failure copy explains what happened and how the user can recover.
 
 ## 5. Optical corrections
 
@@ -335,16 +371,16 @@ Screenshot review is the arbiter. Grep purity is not. A token-complete surface
 that looks misaligned is unfinished; an explicitly documented optical correction
 that survives screenshot review is compliant.
 
-## 6. Enforcement
+## 6. Review and enforcement
 
 - New chrome values must resolve to this sheet or qualify as documented
   structural or optical literals.
 - Light and dark modes use the same semantic token names.
 - Frozen output remains self-contained. Tokens introduce no external asset,
   stylesheet, preprocessing, or runtime fetch.
-- Behavior changes require a deliberate spec amendment or a blessed convergence
-  diff. Accidental current-code parity has no standing against this document.
+- Behavior changes require a deliberate design-system amendment. Existing code
+  does not override this document by accident.
 - Surface completion requires browser review, keyboard and screen-reader review,
   perceived-latency review, and designed failure recovery.
-- Phases 3–10 may extend this constitution only by naming a new semantic role.
-  They may not reopen settled values through component-local invention.
+- Extend this design system only by naming a new semantic role. Do not reopen
+  settled values through component-local invention.

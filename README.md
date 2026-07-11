@@ -197,13 +197,24 @@ assets base64-encoded into the single JSON file for portability.
 ## Repo layout
 
 - `bin/mcp-server.js` — entry point (stdio MCP server)
-- `src/` — server, canvas UI (self-contained HTML), storage
-- `website/` — retired Next.js marketing site sources, kept for reference
+- `src/core/` — host-independent document engine, rendering, artifacts, and contracts
+- `src/ui/` — shared live/frozen browser runtime
+- `src/node/` — MCP host, filesystem storage, local HTTP/SSE, and PDF ingestion
+- `src/web/` — static BYOK browser host and IndexedDB storage
+- `dist/` — committed browser bundles used by GitHub `npx` installs
+- `test/` — capability-oriented unit, contract, integration, end-to-end,
+  performance, and packaging suites
+- `workers/fetch-proxy/` — optional allowlisted URL-ingestion relay
+- `website/public/` — public deployment assets consumed by `build:publish`; the
+  remaining Next.js source is not part of the current Cloudflare Pages build
 
 ## Development
 
-The browser runtime source lives in `src/ui/` and is bundled into committed
-artifacts under `dist/`. When editing the UI, run:
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the development workflow and
+[ARCHITECTURE.md](./ARCHITECTURE.md) for system boundaries. Compatibility,
+testing, and interface rules live under [`docs/`](./docs/). The browser runtime
+source lives in `src/ui/` and is bundled into committed artifacts under `dist/`.
+When editing the UI, run:
 
 ```bash
 npm run build
