@@ -1,6 +1,7 @@
 import { buildAnswerMessages, buildAuthorMessages, buildExplainerMessages } from "../../core/prompts/index.js";
 import { ProviderError, normalizeProviderError } from "./errors.js";
 import { OpenAICompatibleBrain } from "./openai-compatible.js";
+import { adaptBranchGeneration, adaptTextGeneration } from "./generation-events.js";
 
 export class AnthropicDirectBrain {
   constructor({ baseUrl, apiKey, authorModel, answerModel } = {}) {
@@ -49,17 +50,19 @@ export class AnthropicDirectBrain {
 
   async *answerBranchMessagesApi(context, signal) {
     const messages = buildAnswerMessages(context);
-    yield* this.streamMessagesApi({ messages, model: this.answerModel, signal });
+    yield* adaptBranchGeneration(this.streamMessagesApi({ messages, model: this.answerModel, signal }), {
+      fallbackTitle: context?.fallbackTitle,
+    });
   }
 
   async *authorDocumentMessagesApi(source, signal) {
     const messages = buildAuthorMessages(source);
-    yield* this.streamMessagesApi({ messages, model: this.authorModel, signal });
+    yield* adaptTextGeneration(this.streamMessagesApi({ messages, model: this.authorModel, signal }));
   }
 
   async *authorExplainerMessagesApi(input, signal) {
     const messages = buildExplainerMessages(input);
-    yield* this.streamMessagesApi({ messages, model: this.authorModel, signal });
+    yield* adaptTextGeneration(this.streamMessagesApi({ messages, model: this.authorModel, signal }));
   }
 
   async *streamMessagesApi({ messages, model, signal }) {
@@ -118,7 +121,7 @@ export class AnthropicDirectBrain {
   }
 }
 
-function parseAnthropicSseEvent(eventText) {
+export function parseAnthropicSseEvent(eventText) {
   const lines = String(eventText || "").split(/\r?\n/);
   let out = "";
   for (const line of lines) {

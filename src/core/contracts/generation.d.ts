@@ -11,10 +11,9 @@
  * (`answerBranch`); it has no browser-style `Brain` and receives partial/final
  * tool calls carrying `content`, `partial`, and `title` instead.
  *
- * This declaration is Phase 6 vocabulary, not a claim that producers already
- * emit it uniformly. Browser brains currently yield raw string chunks and the
- * host derives titles; Phase 6 normalizes those producers to `GenerationEvent`.
- * The MCP host remains a separate ingress with its own persistence policy.
+ * Browser brains emit this vocabulary: branch adapters contain sentinel
+ * parsing and authoring adapters emit text events only. The MCP host remains a
+ * separate ingress with its own persistence policy.
  * Transport-level run tagging uses `ProgressRun` from {@link ./engine.js} and
  * begins in Phase 6; it is intentionally not redeclared here.
  */

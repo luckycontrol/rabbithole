@@ -1,5 +1,6 @@
 import { buildAnswerMessages, buildAuthorMessages, buildExplainerMessages } from "../../core/prompts/index.js";
 import { ProviderError, normalizeProviderError } from "./errors.js";
+import { adaptBranchGeneration, adaptTextGeneration } from "./generation-events.js";
 
 export class OpenAICompatibleBrain {
   constructor({ baseUrl, apiKey, authorModel, answerModel, extraHeaders = {}, title = "Rabbithole" } = {}) {
@@ -18,14 +19,14 @@ export class OpenAICompatibleBrain {
       stream: true,
       temperature: 0.2,
     };
-    yield* streamOpenAICompatible({
+    yield* adaptTextGeneration(streamOpenAICompatible({
       url: chatCompletionsUrl(this.baseUrl),
       apiKey: this.apiKey,
       body,
       signal,
       extraHeaders: this.extraHeaders,
       title: this.title,
-    });
+    }));
   }
 
   async *authorExplainer({ question } = {}, signal) {
@@ -35,14 +36,14 @@ export class OpenAICompatibleBrain {
       stream: true,
       temperature: 0.35,
     };
-    yield* streamOpenAICompatible({
+    yield* adaptTextGeneration(streamOpenAICompatible({
       url: chatCompletionsUrl(this.baseUrl),
       apiKey: this.apiKey,
       body,
       signal,
       extraHeaders: this.extraHeaders,
       title: this.title,
-    });
+    }));
   }
 
   async *answerBranch(context, signal) {
@@ -52,14 +53,14 @@ export class OpenAICompatibleBrain {
       stream: true,
       temperature: 0.4,
     };
-    yield* streamOpenAICompatible({
+    yield* adaptBranchGeneration(streamOpenAICompatible({
       url: chatCompletionsUrl(this.baseUrl),
       apiKey: this.apiKey,
       body,
       signal,
       extraHeaders: this.extraHeaders,
       title: this.title,
-    });
+    }), { fallbackTitle: context?.fallbackTitle });
   }
 }
 
@@ -109,7 +110,7 @@ export async function* streamOpenAICompatible({ url, apiKey, body, signal, extra
   }
 }
 
-function parseOpenAISseEvent(eventText) {
+export function parseOpenAISseEvent(eventText) {
   const lines = String(eventText || "").split(/\r?\n/);
   let out = "";
   for (const line of lines) {

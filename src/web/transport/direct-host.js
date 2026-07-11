@@ -1,7 +1,7 @@
 import { createHoleState, holeStateToHole, holeStateToHydrationNodes, reduceHoleEvent } from "../../core/reducer.js";
 import { lineageNodesFromMap, truncate } from "../../core/model.js";
 import { extractAssetRefsFromMarkdown } from "../../core/assets.js";
-import { ProviderError, TitleSentinelParser, fallbackTitleForNode, normalizeProviderError } from "../brain/index.js";
+import { ProviderError, fallbackTitleForNode, normalizeProviderError, textDeltaFromGenerationEvent } from "../brain/index.js";
 
 const SAVE_DEBOUNCE_MS = 400;
 const WEB_ROOT_QUESTION = "web_root_question";
@@ -240,8 +240,9 @@ export class DirectRabbitholeHost {
     }
 
     let markdown = resetMarkdownForRun(node);
-    for await (const chunk of this.brain.authorExplainer({ question }, controller.signal)) {
+    for await (const event of this.brain.authorExplainer({ question }, controller.signal)) {
       if (controller.signal.aborted || !this.isLivePending(nodeId)) return;
+      const chunk = textDeltaFromGenerationEvent(event);
       markdown += chunk;
       this.dispatchProgress(nodeId, markdown, { emit: true });
     }
@@ -297,26 +298,21 @@ export class DirectRabbitholeHost {
     }
 
     const context = this.buildBranchContext(node);
-    const parser = new TitleSentinelParser({ fallbackTitle: fallbackTitleForNode(node) });
+    let title = fallbackTitleForNode(node);
+    context.fallbackTitle = title;
     let markdown = resetMarkdownForRun(node);
 
-    for await (const chunk of this.brain.answerBranch(context, controller.signal)) {
+    for await (const event of this.brain.answerBranch(context, controller.signal)) {
       if (controller.signal.aborted || !this.isLivePending(nodeId)) return;
-      const delta = parser.push(chunk);
+      const delta = textDeltaFromGenerationEvent(event, { onTitle: (value) => { title = value; } });
       if (!delta) continue;
       markdown += delta;
       this.dispatchProgress(nodeId, markdown, { emit: true });
     }
 
-    const tail = parser.finish();
-    if (tail) {
-      markdown += tail;
-      this.dispatchProgress(nodeId, markdown, { emit: true });
-    }
     if (controller.signal.aborted || !this.isLivePending(nodeId)) return;
 
     const current = this.state.nodes.get(nodeId);
-    const title = parser.title || fallbackTitleForNode(current);
     this.dispatch({
       type: "node_answered",
       node_id: current.id,

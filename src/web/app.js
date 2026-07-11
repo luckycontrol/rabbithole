@@ -511,13 +511,14 @@ async function maybeAuthorMarkdown({
   const brain = createBrain(settings, key);
   const controller = new AbortController();
   let out = "";
-  for await (const chunk of brain.authorDocument({
+  for await (const event of brain.authorDocument({
     title,
     markdown,
     source_name: sourceName,
     kind,
     base_url: baseUrl,
   }, controller.signal)) {
+    const chunk = event.type === "text" ? event.delta : ""; // Phase 6 S1 seam; delete in S4.
     out += chunk;
     if (out.length) setIngestStatus(`Improving structure... ${out.length.toLocaleString()} characters`, "busy");
   }
