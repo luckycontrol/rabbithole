@@ -19,3 +19,4 @@ website/next-env.d.ts
 # standalone web app build output
 web/dist/
 publish/
+scratchpad/
