@@ -13,7 +13,7 @@ import { buttonMarkup } from "../ui/primitives/button.js";
 import { wireNotice } from "../ui/primitives/notice.js";
 import { setSnapshotHooks, buildSnapshotProjection, buildSnapshotHtml } from "../ui/snapshot.js";
 import { openUrlToStoredHole } from "./ingest/url.js";
-import { buildRabbitholeExport, downloadRabbitholeExport, importRabbitholeFile, rabbitholeFilename } from "./portable.js";
+import { buildRabbitholeExport, downloadRabbitholeExport, importRabbitholeFile, importSnapshotFile, rabbitholeFilename } from "./portable.js";
 
 const LAST_HOLE_KEY = "rh-last-hole";
 const OPENROUTER_KEYS_URL = "https://openrouter.ai/keys";
@@ -105,7 +105,7 @@ function renderShell() {
             <button id="composer-primary" class="web-primary" type="button"></button>
           </div>
         </section>
-        <input id="file-md" type="file" accept=".md,.markdown,.pdf,.rabbithole,text/markdown,text/plain,application/pdf,application/json" hidden>
+        <input id="file-md" type="file" accept=".md,.markdown,.pdf,.rabbithole,.html,text/markdown,text/plain,text/html,application/pdf,application/json" hidden>
         <div id="composer-key-panel" class="inline-key-slot" hidden></div>
         <div id="ingest-status" class="ingest-status" aria-live="polite" aria-atomic="true"></div>
       </div>
@@ -444,9 +444,10 @@ async function createFromUrl(rawUrl) {
 
 async function createFromFile(file) {
   if (isRabbitholeFile(file)) return createFromRabbitholeFile(file);
+  if (isSnapshotFile(file)) return createFromSnapshotFile(file);
   if (isPdfFile(file)) return createFromPdfFile(file);
   if (!isMarkdownFile(file)) {
-    setIngestStatus("Choose a markdown, PDF, or .rabbithole file.", "error");
+    setIngestStatus("Choose a markdown, PDF, .rabbithole, or snapshot HTML file.", "error");
     return;
   }
   try {
@@ -462,6 +463,19 @@ async function createFromFile(file) {
     await startHole(await store.loadHole(hole.hole_id) || hole);
   } catch (err) {
     setIngestStatus(`Markdown import failed. ${err?.message || String(err)}`, "error");
+  }
+}
+
+async function createFromSnapshotFile(file) {
+  try {
+    setIngestStatus("Importing Rabbithole snapshot...", "busy");
+    const imported = await importSnapshotFile(store, file);
+    setIngestStatus("");
+    const hole = await store.loadHole(imported.hole_id);
+    if (!hole) throw new Error("Imported snapshot could not be loaded.");
+    await startHole(hole);
+  } catch (err) {
+    setIngestStatus(err?.message || String(err), "error");
   }
 }
 
@@ -1042,6 +1056,10 @@ function isPdfFile(file) {
 
 function isRabbitholeFile(file) {
   return /\.rabbithole$/i.test(file?.name || "");
+}
+
+function isSnapshotFile(file) {
+  return /(\.html?$|text\/html)/i.test(`${file?.name || ""} ${file?.type || ""}`);
 }
 
 function isMarkdownFile(file) {

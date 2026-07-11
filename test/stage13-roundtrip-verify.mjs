@@ -3,7 +3,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { FsStore } from "../src/node/fs-store.js";
-import { buildRabbitholeExport, importRabbitholeFile } from "../src/web/portable.js";
+import { SNAPSHOT_PAYLOAD_CLOSE, SNAPSHOT_PAYLOAD_OPEN } from "../src/core/portable-import.js";
+import { buildRabbitholeExport, importRabbitholeFile, importSnapshotFile } from "../src/web/portable.js";
 
 const corpusDir = new URL("./fixtures/corpus/", import.meta.url);
 const fixtureNames = (await fs.readdir(corpusDir)).filter((name) => name.endsWith(".rabbithole")).sort();
@@ -27,6 +28,9 @@ function normalized(payload) {
   copy.hole.updated_at = "<updated_at>";
   copy.hole.hole_id = "<hole_id>";
   return copy;
+}
+function snapshotHtml(payload) {
+  return `<!doctype html><html><body>${SNAPSHOT_PAYLOAD_OPEN}${JSON.stringify(payload).replace(/</g, "\\u003c")}${SNAPSHOT_PAYLOAD_CLOSE}</body></html>`;
 }
 
 // Fixtures 10 and 11 are legacy-era shapes whose import deliberately migrates
@@ -70,7 +74,13 @@ console.log(`ok stage13: all ${fixtureNames.length} corpus fixtures are normaliz
   assert.notEqual(collided.hole_id, original.hole_id);
   const after = await buildRabbitholeExport(target.store, collided.hole_id);
   assert.deepEqual(normalized(after), normalized(before), "collision changes identity but preserves content and assets");
+
+  const snapshotImported = await importSnapshotFile(target.store, snapshotHtml(before));
+  assert.equal(snapshotImported.collision, true);
+  assert.notEqual(snapshotImported.hole_id, original.hole_id);
+  const snapshotFixedPoint = await buildRabbitholeExport(target.store, snapshotImported.hole_id);
+  assert.deepEqual(normalized(snapshotFixedPoint), normalized(before), "snapshot import exports to the canonical .rabbithole fixed point");
 }
-console.log("ok stage13: import collision mints a fresh hole_id and preserves content");
+console.log("ok stage13: portable and snapshot import collisions mint fresh ids and preserve the .rabbithole fixed point");
 
 console.log("stage13 round-trip verification passed");

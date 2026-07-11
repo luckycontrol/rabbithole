@@ -4,6 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import { MAX_ASSET_BYTES } from "../src/core/assets.js";
 import {
+  extractSnapshotPayload,
+  MAX_IMPORT_FILE_BYTES,
+  MAX_IMPORT_PAYLOAD_BYTES,
+  SNAPSHOT_PAYLOAD_CLOSE,
+  SNAPSHOT_PAYLOAD_OPEN,
+  validatePortableImportCaps,
+} from "../src/core/portable-import.js";
+import {
   base64ToBytes,
   binaryToBase64,
   createPortableProjection,
@@ -12,7 +20,7 @@ import {
 import { migratePersistedHole, toPersistedHole, validatePersistedHole } from "../src/core/schema.js";
 import { assertRabbitholeStore, RABBITHOLE_STORE_METHODS } from "../src/core/store.js";
 import { FsStore } from "../src/node/fs-store.js";
-import { importRabbitholeFile, parseRabbitholeFile } from "../src/web/portable.js";
+import { importRabbitholeFile, importSnapshotFile, parseRabbitholeFile } from "../src/web/portable.js";
 import {
   nullSchemaLegacyFixture,
   persistedHoleFixture,
@@ -181,12 +189,90 @@ console.log("ok stage13: malformed JSON, base64, and wrong-type fields reject wi
 }
 console.log("ok stage13: unicode, emoji, and RTL titles survive validate-persist-reload");
 
-// KNOWN DEFECT / Phase 7 gate: snapshots currently embed ad-hoc hydration in an
-// executable script and there is no snapshot import/extraction boundary to call.
-// Consequently tampered types and oversized payloads cannot yet be runtime-
-// rejected. Keep this explicit skip until snapshot import flows through
-// parseRabbitholeFile -> migratePersistedHole with strict caps (THESEUS Phase 7).
-console.log("skip stage13: hand-edited snapshot payload validation (known defect: no snapshot import validator or size cap)");
+const snapshot = (payload, before = "", after = "") =>
+  `<!doctype html><html><body>${before}${SNAPSHOT_PAYLOAD_OPEN}${payload}${SNAPSHOT_PAYLOAD_CLOSE}${after}</body></html>`;
+
+{
+  let read = false;
+  await assert.rejects(
+    async () => importRabbitholeFile(await newStore(), { size: MAX_IMPORT_FILE_BYTES + 1, text: async () => { read = true; return ""; } }),
+    /file exceeds 64 MB/,
+  );
+  assert.equal(read, false, "oversized files reject before File.text()");
+
+  assert.throws(() => parseRabbitholeFile(" ".repeat(MAX_IMPORT_PAYLOAD_BYTES + 1)), /payload exceeds 32 MB/);
+  const tooManyNodes = validHole({ nodes: Array.from({ length: 5001 }, (_, index) => validNode({ id: `n${index}` })) });
+  assert.throws(() => parseRabbitholeFile(portable(tooManyNodes)), /exceeds 5,000 nodes/);
+  const tooManyAssets = Object.fromEntries(Array.from({ length: 201 }, (_, index) => [`a${index}.png`, ""]));
+  assert.throws(() => parseRabbitholeFile(portable(validHole(), tooManyAssets)), /exceeds 200 assets/);
+
+  const aggregateChunk = Buffer.alloc(18 * 1024 * 1024).toString("base64");
+  assert.throws(
+    () => validatePortableImportCaps({
+      format: "rabbithole",
+      format_version: 1,
+      hole: validHole(),
+      assets: Object.fromEntries(Array.from({ length: 6 }, (_, index) => [`aggregate${index}.png`, aggregateChunk])),
+    }),
+    /exceed 100 MB aggregate/,
+  );
+
+  const payload = portable(validHole({ hole_id: "snapshot-valid" }));
+  assert.equal(extractSnapshotPayload(snapshot(payload)), payload);
+  await assert.rejects(async () => importSnapshotFile(await newStore(), "<!doctype html><script>legacyHydrate()</script>"), /older snapshot that cannot be imported/);
+  await assert.rejects(async () => importSnapshotFile(await newStore(), snapshot(payload) + snapshot(payload)), /duplicate portable payload/);
+  await assert.rejects(async () => importSnapshotFile(await newStore(), `${SNAPSHOT_PAYLOAD_OPEN}{ nope${SNAPSHOT_PAYLOAD_CLOSE}`), /snapshot payload must be valid JSON/);
+  await assert.rejects(async () => importSnapshotFile(await newStore(), '<script id="rabbithole-portable" type="application/vnd.rabbithole+json">{}</script>'), /payload element is malformed/);
+
+  const storage = new Map();
+  const previousWindow = globalThis.window;
+  const previousLocalStorage = globalThis.localStorage;
+  globalThis.window = {};
+  globalThis.localStorage = {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, String(value)),
+  };
+  try {
+    const hostileHole = validHole({
+      hole_id: "hostile-snapshot",
+      title: "safe </script> text",
+      "rh-web-api-key": "top-secret",
+      nodes: [validNode({ origin: { nested: { "rh-web-api-keys": { openai: "nested-secret" } } } })],
+    });
+    const escapedPayload = portable(hostileHole).replace(/</g, "\\u003c");
+    const hostile = snapshot(
+      escapedPayload,
+      '<script>window.__snapshot_executed__ = true; localStorage.setItem("snapshot-executed", "yes")</script><img src=x onerror="localStorage.setItem(\'event-executed\',\'yes\')">',
+      '<script>localStorage.setItem("after-executed", "yes")</script>',
+    );
+    const store = await newStore();
+    const imported = await importSnapshotFile(store, hostile);
+    const saved = await store.loadHole(imported.hole_id);
+    assert.equal(globalThis.window.__snapshot_executed__, undefined);
+    assert.equal(storage.size, 0, "HTML scripts and event handlers never execute during text-only import");
+    assert.equal(JSON.stringify(saved).includes("rh-web-api-key"), false);
+    assert.equal(JSON.stringify(saved).includes("secret"), false);
+    assert.equal(saved.title, "safe </script> text", "escaped breakout text does not corrupt extraction");
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow;
+    if (previousLocalStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = previousLocalStorage;
+  }
+
+  const cleanupStore = await newStore();
+  const originalPutAsset = cleanupStore.putAsset.bind(cleanupStore);
+  let puts = 0;
+  cleanupStore.putAsset = async (...args) => {
+    puts += 1;
+    if (puts === 2) throw new Error("synthetic asset failure");
+    return originalPutAsset(...args);
+  };
+  await assert.rejects(
+    () => importRabbitholeFile(cleanupStore, portable(validHole({ hole_id: "cleanup-failure" }), { "one.png": "AA==", "two.png": "AA==" })),
+    /synthetic asset failure/,
+  );
+  assert.equal(await cleanupStore.loadHole("cleanup-failure"), null, "failed asset persistence removes the partial hole");
+}
+console.log("ok stage13: snapshot and portable imports enforce inert extraction, uniform caps, secret isolation, and cleanup-on-failure");
 
 {
   const exact = Buffer.alloc(MAX_ASSET_BYTES, 0xa5).toString("base64");
@@ -194,10 +280,15 @@ console.log("skip stage13: hand-edited snapshot payload validation (known defect
   const exactStore = await newStore();
   const accepted = await importRabbitholeFile(exactStore, portable(validHole({ hole_id: "asset-exact" }), { "limit.png": exact }));
   assert.equal((await exactStore.getAsset(accepted.hole_id, "limit.png")).byteLength, MAX_ASSET_BYTES);
+  const originalAtob = globalThis.atob;
+  let atobCalled = false;
+  globalThis.atob = (...args) => { atobCalled = true; return originalAtob(...args); };
   await assert.rejects(
     async () => importRabbitholeFile(await newStore(), portable(validHole({ hole_id: "asset-over" }), { "limit.png": over })),
     /exceeds 20 MB/,
   );
+  globalThis.atob = originalAtob;
+  assert.equal(atobCalled, false, "encoded-length preflight rejects oversized base64 before atob");
 }
 console.log("ok stage13: exact 20 MB asset is accepted and one byte over is rejected");
 

@@ -127,7 +127,7 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | rail content/geometry exact values | C4 | Pins the Phase 2 semantic rail width, panel padding, and symmetric row-padding geometry. | — |
 | keyboard-opened rail holds focus without a container ring; Escape closes only the rail | C2 | Focus policy: the panel takes focus so keys flow into rows, container emphasis must not impersonate the keyboard ring (was a UA `outline: auto` around the whole panel), and Escape must not fall through to the canvas client's open-the-reader shortcut (it did — the rail handler leaked propagation). | Chrome: keyboard-only completion (rail subset) |
 | credentials stay isolated from holes/snapshots | C1 | Protects the no-export credential contract. | Data: preference/credential storage (isolation only, not migrations) |
-| inert snapshot portable carrier and canonical projection | C1 | Requires exactly one typed/id-addressed inert JSON payload whose document matches the portable export after the documented one-time live view-state substitution and referenced-only asset normalization, including all canonical timestamps. | Data: snapshot external format; Rendering: frozen viewing fully offline |
+| inert snapshot portable carrier and canonical projection | C1 | Requires exactly one typed/id-addressed inert JSON payload whose document matches the portable export after the documented one-time live view-state substitution and referenced-only asset normalization, including all canonical timestamps, with extraction parity against the shipped extractor. | Data: snapshot external format; Rendering: frozen viewing fully offline |
 | snapshot payload script-breakout escaping and JSON fidelity | C1 | Requires `<`, `>`, `&`, U+2028, and U+2029 to be escaped without changing the value recovered by JSON parsing from inert script text. | Data: snapshot external format; Rendering: script-element breakout defense |
 | legacy direct-hydration frozen snapshot boot | C1 | Preserves one-way viewing compatibility for snapshots created before the inert portable carrier; it does not make legacy snapshots importable. | Migration/deploy: new code opening old snapshots |
 | web-exported frozen snapshots apply canonical self-contained styles | C2 | Requires exports to embed the shared canvas and self-contained KaTeX stylesheet with structural toolbar styling active after offline hydration, while excluding web-only chrome CSS. | Rendering: frozen viewing fully offline; Data: snapshot export styling |
@@ -228,7 +228,7 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | schema_version null backfills, persists, and reloads | C1 | Protects forever-readable legacy files and idempotent migration through the filesystem store. | Data: `schema_version: null` legacy backfill; Migration/deploy: old storage/idempotent migrations |
 | malformed JSON, base64, and wrong-type fields reject without crashing | C1 | Exercises portable and schema trust boundaries with representative malformed inputs. | Data: malformed JSON/base64; hand-edited payload types |
 | unicode, emoji, and RTL titles survive validate-persist-reload | C1 | Protects lossless international text across validation and filesystem persistence. | Data: unicode/emoji/RTL titles |
-| hand-edited snapshot payload validation | C4 | Records that current snapshots have no import validator or size cap; skipped until the Phase 7 snapshot boundary exists. | Data: hand-edited snapshot payloads |
+| inert snapshot and portable import boundary | C1 | Protects canonical text-only extraction, legacy/duplicate/malformed refusal, uniform file/payload/node/asset caps, encoded-length preflight, hostile-HTML non-execution, credential exclusion, and cleanup-on-failure. | Data: hand-edited snapshot payloads; malformed JSON/base64; import limits; device-secret isolation |
 | exact 20 MB asset is accepted and one byte over is rejected | C1 | Pins both sides of the documented per-asset byte boundary using generated data. | Data: 20MB asset boundary |
 
 ## `stage13-roundtrip-verify.mjs`
@@ -236,7 +236,7 @@ Scenario references use the Part VI group and shortened ledger wording. `—` me
 | Case | Category | Rationale | Scenario-ledger entries covered |
 |---|---|---|---|
 | all corpus fixtures are normalized fixed points and export-idempotent | C1 | Protects portable migration, assets, durable asks, and filesystem persistence across repeated import/export projections. Exports are anchored to the source file (not merely to each other), so a field silently dropped by the export path cannot cancel out; the two legacy fixtures are exempt from source-anchoring because import deliberately migrates them. | Data: portable compatibility; `schema_version: null`; unicode/emoji/RTL; very wide holes; durable asks per host semantics |
-| import collision mints a fresh hole_id and preserves content | C1 | Protects collision-safe identity generation without content or asset loss. | Data: import ID collision |
+| portable and snapshot import collisions mint a fresh hole_id and preserve content | C1 | Protects collision-safe identity generation without content or asset loss and pins snapshot → import → `.rabbithole` as a canonical fixed point. | Data: import ID collision; portable compatibility |
 
 ## `stage14-reducer-conformance.mjs`
 
@@ -346,16 +346,16 @@ These live-provider eval cases run only through `npm run eval`; their regex/heur
 
 ## Counts
 
-Current inventory arithmetic: `50 + 154 + 11 + 2 + 0 = 217` total cases.
+Current inventory arithmetic: `51 + 154 + 11 + 1 + 0 = 217` total cases.
 
-Counts treat each row above as one case; the shared Stage 9 contract counts once per backend because `npm test` executes it against both. Phase 5 Slice 2 added three C1 rows (`41 + 3 = 44`, `184 + 3 = 187`). Slice 3 added three C2 rows and reclassified the reducer mutation probe from C3 to C2: `129 + 3 + 1 = 133`, `10 - 1 = 9`, and `187 + 3 = 190` total. Slice 4 retires the stale-progress C4 as a C2 and adds four ordering goldens: `133 + 1 + 4 = 138`, `4 - 1 = 3`, and `190 + 4 = 194` total. Slice 5 adds one generation-vocabulary C2 case: `138 + 1 = 139` and `194 + 1 = 195` total. Slice 7 adds one content-vocabulary C2 case: `139 + 1 = 140` and `195 + 1 = 196` total. Slice 8 adds one hydration-wire C1 golden: `44 + 1 = 45` and `196 + 1 = 197` total. Slice 9 adds one packaging C1 case and one installed-launch C2 case: `45 + 1 = 46`, `140 + 1 = 141`, and `197 + 2 = 199` total. Phase 6 Slice 1 adds four C2 adapter/parser/error cases and two C3 SSE framing cases: `141 + 4 = 145`, `9 + 2 = 11`, and `199 + 6 = 205` total. Phase 6 Slice 2 adds two C2 cases: `145 + 2 = 147` and `205 + 2 = 207` total. Phase 6 Slice 3 adds three C2 browser-branch wiring cases: `147 + 3 = 150` and `207 + 3 = 210` total. Phase 6 Slice 4 adds three C2 root/authoring/seam-retirement cases: `150 + 3 = 153` and `210 + 3 = 213` total. Phase 7 Slice 1 reclassifies the portable-import MIME fossil from C4 to C1: `46 + 1 = 47`, `3 - 1 = 2`, and the total remains `214`. Phase 7 Slice 2 adds three C1 snapshot-format cases (canonical inert projection, escaping fidelity, and legacy viewing compatibility): `47 + 3 = 50` and `214 + 3 = 217` total. Phase 7 Slice 3 extends the existing frozen-styles C2 case, so the arithmetic remains `50 + 154 + 11 + 2 + 0 = 217`.
+Counts treat each row above as one case; the shared Stage 9 contract counts once per backend because `npm test` executes it against both. Phase 5 Slice 2 added three C1 rows (`41 + 3 = 44`, `184 + 3 = 187`). Slice 3 added three C2 rows and reclassified the reducer mutation probe from C3 to C2: `129 + 3 + 1 = 133`, `10 - 1 = 9`, and `187 + 3 = 190` total. Slice 4 retires the stale-progress C4 as a C2 and adds four ordering goldens: `133 + 1 + 4 = 138`, `4 - 1 = 3`, and `190 + 4 = 194` total. Slice 5 adds one generation-vocabulary C2 case: `138 + 1 = 139` and `194 + 1 = 195` total. Slice 7 adds one content-vocabulary C2 case: `139 + 1 = 140` and `195 + 1 = 196` total. Slice 8 adds one hydration-wire C1 golden: `44 + 1 = 45` and `196 + 1 = 197` total. Slice 9 adds one packaging C1 case and one installed-launch C2 case: `45 + 1 = 46`, `140 + 1 = 141`, and `197 + 2 = 199` total. Phase 6 Slice 1 adds four C2 adapter/parser/error cases and two C3 SSE framing cases: `141 + 4 = 145`, `9 + 2 = 11`, and `199 + 6 = 205` total. Phase 6 Slice 2 adds two C2 cases: `145 + 2 = 147` and `205 + 2 = 207` total. Phase 6 Slice 3 adds three C2 browser-branch wiring cases: `147 + 3 = 150` and `207 + 3 = 210` total. Phase 6 Slice 4 adds three C2 root/authoring/seam-retirement cases: `150 + 3 = 153` and `210 + 3 = 213` total. Phase 7 Slice 1 reclassifies the portable-import MIME fossil from C4 to C1: `46 + 1 = 47`, `3 - 1 = 2`, and the total remains `214`. Phase 7 Slice 2 adds three C1 snapshot-format cases (canonical inert projection, escaping fidelity, and legacy viewing compatibility): `47 + 3 = 50` and `214 + 3 = 217` total. Phase 7 Slice 3 extends the existing frozen-styles C2 case, so the arithmetic remains `50 + 154 + 11 + 2 + 0 = 217`. Phase 7 Slice 4 retires the hand-edited snapshot C4 as an executable C1 boundary case: `50 + 1 = 51`, `2 - 1 = 1`, and the total remains `217`, yielding `51 + 154 + 11 + 1 + 0 = 217`.
 
 | Category | Count |
 |---|---:|
-| C1 compatibility contract | 50 |
+| C1 compatibility contract | 51 |
 | C2 behavioral product contract | 154 |
 | C3 implementation snapshot | 11 |
-| C4 known defect | 2 |
+| C4 known defect | 1 |
 | C5 design target | 0 |
 | **Total** | **217** |
 
@@ -364,7 +364,6 @@ Counts treat each row above as one case; the shared Stage 9 contract counts once
 - `stage10-web-verify.mjs:179-224` pins rail padding (`12px`, `7px`, `8px`), bottom gap (`14px`), and width (`<=226px`): per-screen magic design values Phase 2 intends to centralize.
 - `stage10-web-verify.mjs:421-442` retains settings surface equality and the optical gear offset; `stage10-web-verify.mjs:486-521` retains share surface equality and exact shell/item padding. Anchoring itself is now a C2 engine contract rather than a bespoke-geometry fossil.
 - No assertion requires settings `innerHTML` rebuilding or focus-hunting. `stage2-verify.mjs:253-271` does rebuild a synthetic content container via `innerHTML`, but its asserted contract is visual mount identity/cache behavior, not that settings/chrome must rebuild. No current case asserts focus restoration after settings close, so the bespoke focus-hunting debt is unprotected rather than fossilized.
-- `stage13-data-edges-verify.mjs` "hand-edited snapshot payload validation" is a skip-with-reason: snapshots currently have no inert import boundary, validator, or size cap (built in Phase 7).
 
 ## Baseline defects on record
 
@@ -388,7 +387,7 @@ Run at commit 0853e1b (2026-07-10): five deliberate regressions, one per instrum
 
 **Phase 1 — instruments/data/security baseline** (most entries closed by stages 13–16; remaining:)
 
-- Data: genuinely very large holes with a budget (the wide-hole fixture and snapshot gauges only cover reference-sized content); extension-bag survival through an old build (refusal is covered; survival semantics await Phase 5 typing); hand-edited snapshot payload runtime rejection (C4 skip until the Phase 7 import boundary); export-vs-debounce timing for the MCP/filesystem projection (stage16's save-window gauge covers the web path only).
+- Data: genuinely very large holes with a budget (the wide-hole fixture and snapshot gauges only cover reference-sized content); extension-bag survival through an old build (refusal is covered; survival semantics await Phase 5 typing); export-vs-debounce timing for the MCP/filesystem projection (stage16's save-window gauge covers the web path only).
 - Rendering: reduced motion; semantic dark parity.
 - Migration/deploy: a real mid-session deploy (new code opening old IndexedDB, with migration rerun/idempotence — stage15 covers localStorage preferences, not the IDB schema during a live session); CLI version skew with an older CLI against additive wire changes; a v0.1-era hole retained through Phase 9.
 

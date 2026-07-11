@@ -4,6 +4,7 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
+import { extractSnapshotPayload } from "../src/core/portable-import.js";
 import { serializeForInlineScript } from "../src/core/utils.js";
 
 const ROOT = path.resolve(new URL("..", import.meta.url).pathname);
@@ -496,6 +497,7 @@ async function verifyAskKeyUxAndRail() {
   assert(!snapshotHtml.includes(MOCK_KEY), "snapshot export must not contain provider key");
   const payloadMatches = [...snapshotHtml.matchAll(/<script type="application\/vnd\.rabbithole\+json" id="rabbithole-portable">([\s\S]*?)<\/script>/g)];
   assert.equal(payloadMatches.length, 1, "snapshot HTML should contain exactly one self-identifying inert portable payload");
+  assert.equal(extractSnapshotPayload(snapshotHtml), payloadMatches[0][1], "real snapshot payload extraction should match the shipped extractor");
   const snapshotProjection = JSON.parse(payloadMatches[0][1]);
   const portableProjection = await page.evaluate(() => window.__rabbitholeTest.exportPortable());
   const referencedAssets = new Set(portableProjection.hole.nodes.flatMap((node) =>
@@ -1000,7 +1002,9 @@ async function verifyCanvasBranching() {
   assert.equal(await frozenPage.evaluate(() => document.activeElement?.id), "t-share", "Frozen Share Escape should restore its trigger");
   await frozenPage.close();
 
-  const legacyProjection = JSON.parse(frozenHtml.match(/<script type="application\/vnd\.rabbithole\+json" id="rabbithole-portable">([\s\S]*?)<\/script>/)[1]);
+  const frozenPayloadMatch = frozenHtml.match(/<script type="application\/vnd\.rabbithole\+json" id="rabbithole-portable">([\s\S]*?)<\/script>/);
+  assert.equal(extractSnapshotPayload(frozenHtml), frozenPayloadMatch[1], "second real snapshot payload extraction should match the shipped extractor");
+  const legacyProjection = JSON.parse(frozenPayloadMatch[1]);
   const legacyHole = legacyProjection.hole;
   const legacyHydration = {
     session_id: `legacy-${legacyHole.hole_id}`,

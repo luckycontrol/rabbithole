@@ -5,9 +5,13 @@ import {
   createPortableProjection,
   RABBITHOLE_FILE_FORMAT,
   RABBITHOLE_FILE_FORMAT_VERSION,
-  validatePortableProjection,
 } from "../core/portable-projection.js";
 import { migratePersistedHole } from "../core/schema.js";
+import {
+  extractSnapshotPayload,
+  MAX_IMPORT_FILE_BYTES,
+  parsePortableImportPayload,
+} from "../core/portable-import.js";
 
 export { RABBITHOLE_FILE_FORMAT, RABBITHOLE_FILE_FORMAT_VERSION };
 
@@ -42,9 +46,23 @@ export async function downloadRabbitholeExport(store, holeId) {
 
 export async function importRabbitholeFile(store, fileOrText) {
   if (!store) throw new Error("Import needs a store.");
+  assertImportFileSize(fileOrText);
   const text = typeof fileOrText === "string" ? fileOrText : await fileOrText.text();
   const parsed = parseRabbitholeFile(text);
+  return persistPortableImport(store, parsed);
+}
+
+export async function importSnapshotFile(store, fileOrText) {
+  if (!store) throw new Error("Import needs a store.");
+  assertImportFileSize(fileOrText);
+  const html = typeof fileOrText === "string" ? fileOrText : await fileOrText.text();
+  const parsed = parsePortableImportPayload(extractSnapshotPayload(html), "snapshot");
+  return persistPortableImport(store, parsed);
+}
+
+async function persistPortableImport(store, parsed) {
   const migrated = migratePersistedHole(parsed.hole).hole;
+  removeCredentialShapedKeys(migrated);
   const assets = await decodeAssets(parsed.assets);
   let hole = migrated;
   let collision = false;
@@ -54,8 +72,13 @@ export async function importRabbitholeFile(store, fileOrText) {
   }
 
   await store.saveHole(hole, { updatedAt: hole.updated_at || new Date().toISOString() });
-  for (const asset of assets) {
-    await store.putAsset(hole.hole_id, asset.name, asset.blob);
+  try {
+    for (const asset of assets) {
+      await store.putAsset(hole.hole_id, asset.name, asset.blob);
+    }
+  } catch (error) {
+    try { await store.deleteHole(hole.hole_id); } catch {}
+    throw error;
   }
   return {
     hole_id: hole.hole_id,
@@ -66,13 +89,7 @@ export async function importRabbitholeFile(store, fileOrText) {
 }
 
 export function parseRabbitholeFile(text) {
-  let parsed;
-  try {
-    parsed = JSON.parse(String(text || ""));
-  } catch {
-    throw new Error("Import failed: .rabbithole must be valid JSON.");
-  }
-  return validatePortableProjection(parsed);
+  return parsePortableImportPayload(text, "rabbithole");
 }
 
 export function rabbitholeFilename(title) {
@@ -94,6 +111,23 @@ async function decodeAssets(rawAssets) {
     out.push({ name: safeName, blob });
   }
   return out;
+}
+
+function assertImportFileSize(fileOrText) {
+  if (typeof fileOrText !== "string" && Number(fileOrText?.size) > MAX_IMPORT_FILE_BYTES) {
+    throw new Error("Import failed: file exceeds 64 MB.");
+  }
+}
+
+function removeCredentialShapedKeys(value) {
+  if (!value || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    for (const item of value) removeCredentialShapedKeys(item);
+    return;
+  }
+  delete value["rh-web-api-key"];
+  delete value["rh-web-api-keys"];
+  for (const child of Object.values(value)) removeCredentialShapedKeys(child);
 }
 
 async function freshHoleId(store) {
