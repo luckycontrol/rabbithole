@@ -1,15 +1,21 @@
 import { backfillLegacyHoleBaseUrls, normalizeStoredBaseUrlFields } from "./base-url.js";
 import { normalizePosition, normalizeSize, normalizeViewState } from "./model.js";
 
+/** @typedef {import("./contracts/artifact.js").PersistedHole} PersistedHole */
+/** @typedef {import("./contracts/artifact.js").PersistedNode} PersistedNode */
+
 export const CURRENT_SCHEMA_VERSION = 1;
 export const SCHEMA_VERSION = CURRENT_SCHEMA_VERSION;
 
+/** @template T @param {T} value @returns {T} */
 export function cloneJson(value) {
   return JSON.parse(JSON.stringify(value ?? null));
 }
 
+/** @param {Partial<PersistedHole> | null | undefined} hole @param {{ updatedAt?: string }} [options] @returns {PersistedHole} */
 export function toPersistedHole(hole, { updatedAt = new Date().toISOString() } = {}) {
   const nodes = Array.isArray(hole?.nodes) ? hole.nodes : [];
+  /** @type {PersistedHole} */
   const persisted = {
     schema_version: CURRENT_SCHEMA_VERSION,
     hole_id: String(hole?.hole_id ?? ""),
@@ -24,6 +30,7 @@ export function toPersistedHole(hole, { updatedAt = new Date().toISOString() } =
   return persisted;
 }
 
+/** @param {Partial<PersistedNode> | null | undefined} node @returns {PersistedNode} */
 export function toPersistedNode(node) {
   const base = normalizeStoredBaseUrlFields(node);
   return {
@@ -44,8 +51,9 @@ export function toPersistedNode(node) {
   };
 }
 
+/** @param {unknown} raw */
 export function migratePersistedHole(raw) {
-  const hole = cloneJson(raw);
+  const hole = /** @type {Record<string, any>} */ (cloneJson(raw));
   if (!hole || typeof hole !== "object" || Array.isArray(hole)) {
     throw new Error("Persisted Rabbithole must be an object");
   }
@@ -66,6 +74,7 @@ export function migratePersistedHole(raw) {
   return { hole, changed, fromVersion, toVersion: CURRENT_SCHEMA_VERSION };
 }
 
+/** @param {Record<string, any>} hole */
 function backfillLegacyShapeDefaults(hole) {
   if (!Object.prototype.hasOwnProperty.call(hole, "view_state")) hole.view_state = null;
   if (!Array.isArray(hole.nodes)) return;
@@ -85,6 +94,7 @@ function backfillLegacyShapeDefaults(hole) {
   }
 }
 
+/** @param {any} hole @returns {hole is PersistedHole} */
 export function validatePersistedHole(hole) {
   if (!hole || typeof hole !== "object" || Array.isArray(hole)) throw new Error("Persisted Rabbithole must be an object");
   if (hole.schema_version !== CURRENT_SCHEMA_VERSION) throw new Error(`Persisted Rabbithole must have schema_version ${CURRENT_SCHEMA_VERSION}`);
@@ -96,6 +106,7 @@ export function validatePersistedHole(hole) {
   return true;
 }
 
+/** @param {any} node @returns {node is PersistedNode} */
 export function validatePersistedNode(node) {
   if (!node || typeof node !== "object" || Array.isArray(node)) throw new Error("Persisted node must be an object");
   if (typeof node.id !== "string" || !node.id) throw new Error("Persisted node id must be a non-empty string");

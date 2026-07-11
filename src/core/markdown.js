@@ -5,6 +5,7 @@ export { MARKDOWN_RENDERER_SENTINEL, createMarkdownRenderer } from "./markdown-r
 
 const BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
+/** @param {unknown} value */
 export function encodeBase64Utf8(value) {
   const bytes = new TextEncoder().encode(String(value ?? ""));
   let out = "";
@@ -23,14 +24,16 @@ export function encodeBase64Utf8(value) {
 
 const nodeRenderer = createMarkdownRenderer({
   encodeBase64: encodeBase64Utf8,
-  resolveAssetUrl: defaultAssetUrlResolver,
+  resolveAssetUrl: /** @type {(name: string) => string | null} */ (defaultAssetUrlResolver),
 });
 
+/** @param {string} language @param {(source: string, context: { language: string }) => string} render */
 export function registerFenceRenderer(language, render) {
   nodeRenderer.registerFenceRenderer(language, render);
 }
 
 /** Renders markdown to safe HTML, collapsing inter-tag whitespace for compact embedding. */
+/** @param {unknown} markdown @param {{ baseUrl?: string | null, assetNames?: Set<string> | null, resolveAssetUrl?: ((name: string) => string | null) | null }} [options] */
 export async function renderMarkdownToHtml(markdown, options = {}) {
   return nodeRenderer.renderMarkdownToHtml(markdown, options);
 }

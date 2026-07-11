@@ -65,7 +65,7 @@ export function defaultAssetUrlResolver(name) {
 
 /**
  * @param {unknown} raw
- * @param {{assetNames?: Set<string> | null, resolveAssetUrl?: (name: string) => string}} [options]
+ * @param {{assetNames?: Set<string> | null, resolveAssetUrl?: (name: string) => string | null}} [options]
  */
 export function resolveAssetMarkdownImageUrl(raw, { assetNames = null, resolveAssetUrl = defaultAssetUrlResolver } = {}) {
   const match = ASSET_URL_RE.exec(String(raw ?? ""));

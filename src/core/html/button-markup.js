@@ -2,11 +2,15 @@ import { escapeHtml } from "../utils.js";
 
 const STATEFUL_ARIA = ["aria-haspopup", "aria-controls", "aria-expanded", "aria-pressed"];
 
+/** @typedef {Record<string, any>} ButtonOptions */
+
+/** @param {string} name @param {unknown} value */
 function attribute(name, value) {
   if (value === undefined || value === false || value === null) return "";
   return " " + name + (value === true ? "" : '="' + escapeHtml(String(value)) + '"');
 }
 
+/** @param {ButtonOptions} options @param {boolean} iconOnly */
 function buttonAttributes(options, iconOnly) {
   const label = String(options.label || "").trim();
   const ariaLabel = String(options.ariaLabel || "").trim();
@@ -38,12 +42,14 @@ function buttonAttributes(options, iconOnly) {
   return result + attribute("hidden", options.hidden) + attribute("disabled", options.disabled);
 }
 
+/** @param {ButtonOptions} [options] */
 export function buttonMarkup(options = {}) {
   const content = (options.svgIconHtml || "") + escapeHtml(String(options.label || "")) +
     (options.kbdHint ? "<kbd>" + escapeHtml(String(options.kbdHint)) + "</kbd>" : "");
   return "<button" + buttonAttributes(options, false) + ">" + content + "</button>";
 }
 
+/** @param {ButtonOptions} [options] */
 export function iconButtonMarkup(options = {}) {
   const content = options.svgIconHtml || escapeHtml(String(options.icon || ""));
   return "<button" + buttonAttributes(options, true) + ">" + content + "</button>";

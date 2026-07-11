@@ -48,7 +48,7 @@ export interface ProgressRun { id: string; seq: number; }
 
 interface NodeTarget { node_id?: unknown; }
 interface BaseUrlFields { base_url?: unknown; base_url_source?: unknown; }
-interface NodePresentationFields {
+export interface NodePresentationFields {
   position?: unknown;
   size?: unknown;
   collapsed?: unknown;

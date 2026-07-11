@@ -2,6 +2,12 @@ export const MAX_PDF_BYTES = 100 * 1024 * 1024;
 export const DEFAULT_PAGE_CAP = 40;
 export const PDF_RENDER_SCALE = 2;
 
+/** @typedef {{ str: string, transform: number[], width?: number, height?: number }} PdfTextItem */
+/** @typedef {{ str: string, x: number, y: number, width: number, height: number }} TextGeometry */
+/** @typedef {{ y: number, minX: number, maxX: number, text: string }} TextLine */
+/** @typedef {TextLine & { column: string }} ClassifiedLine */
+
+/** @param {unknown} pages */
 export function parsePagesRange(pages) {
   if (pages == null || pages === "") return null;
   const value = String(pages).trim();
@@ -15,6 +21,7 @@ export function parsePagesRange(pages) {
   return { start, end, explicit: value };
 }
 
+/** @param {number} pageCount @param {unknown} pages @param {string[]} [notes] */
 export function resolvePagesToProcess(pageCount, pages, notes = []) {
   const range = parsePagesRange(pages);
   if (range) {
@@ -37,22 +44,27 @@ export function resolvePagesToProcess(pageCount, pages, notes = []) {
   return rangeToArray(1, end);
 }
 
+/** @param {number} start @param {number} end */
 export function rangeToArray(start, end) {
+  /** @type {number[]} */
   const out = [];
   for (let page = start; page <= end; page += 1) out.push(page);
   return out;
 }
 
+/** @param {any} metadata */
 export function normalizePdfTitle(metadata) {
   const raw = metadata?.info?.Title || metadata?.metadata?.get?.("dc:title") || "";
   const title = String(raw || "").replace(/\s+/g, " ").trim();
   return title || null;
 }
 
+/** @param {number} pageNumber */
 export function pdfPageAssetName(pageNumber) {
   return `page-${String(pageNumber).padStart(3, "0")}.png`;
 }
 
+/** @param {PdfTextItem} item @returns {TextGeometry} */
 export function getTextItemGeometry(item) {
   const [a, b, c, d, e, f] = item.transform;
   const height = Math.hypot(c, d) || item.height || Math.hypot(a, b) || 1;
@@ -65,6 +77,7 @@ export function getTextItemGeometry(item) {
   };
 }
 
+/** @param {PdfTextItem[]} items @returns {TextLine[]} */
 export function clusterTextLines(items) {
   const textItems = items
     .filter((item) => typeof item.str === "string" && item.str.length > 0 && item.transform)
@@ -77,6 +90,7 @@ export function clusterTextLines(items) {
     return a.x - b.x;
   });
 
+  /** @type {{ y: number, items: TextGeometry[] }[]} */
   const lines = [];
   for (const item of textItems) {
     const threshold = Math.max(1.8, item.height * 0.45);
@@ -104,7 +118,7 @@ export function clusterTextLines(items) {
           text = normalized.trimStart();
         } else {
           const charWidth = item.width / Math.max(item.str.length, 1);
-          const gap = item.x - lastRight;
+          const gap = item.x - /** @type {number} */ (lastRight);
           if (gap > Math.max(1.5, charWidth * 0.45) && !text.endsWith(" ")) text += " ";
           text += normalized;
         }
@@ -121,6 +135,7 @@ export function clusterTextLines(items) {
     .sort((a, b) => b.y - a.y || a.minX - b.minX);
 }
 
+/** @param {TextLine[]} lines @param {number} pageWidth */
 export function orderLinesForReading(lines, pageWidth) {
   const mid = pageWidth / 2;
   const gutter = Math.max(12, pageWidth * 0.035);
@@ -134,7 +149,9 @@ export function orderLinesForReading(lines, pageWidth) {
   const rightCount = classified.filter((line) => line.column === "right").length;
   if (leftCount < 8 || rightCount < 8) return classified.map((line) => line.text);
 
+  /** @type {ClassifiedLine[]} */
   const ordered = [];
+  /** @type {ClassifiedLine[]} */
   let run = [];
   const flushRun = () => {
     if (run.length === 0) return;
@@ -158,17 +175,20 @@ export function orderLinesForReading(lines, pageWidth) {
   return ordered.map((line) => line.text);
 }
 
+/** @param {{ items?: PdfTextItem[] } | null | undefined} content @param {number} pageWidth */
 export function extractTextFromPdfContent(content, pageWidth) {
   const lines = orderLinesForReading(clusterTextLines(content?.items || []), pageWidth);
   return lines.join("\n");
 }
 
+/** @param {any} page */
 export async function extractPdfPageText(page) {
   const content = await page.getTextContent({ includeMarkedContent: false });
   const viewport = page.getViewport({ scale: 1 });
   return extractTextFromPdfContent(content, viewport.width);
 }
 
+/** @param {{ title?: unknown, pageCount?: number, processedPages?: number[], pageAssets?: { page: number, name?: string }[], pageText?: { page: number, text?: unknown }[], notes?: unknown[] }} [input] */
 export function buildPdfMarkdown({ title, pageCount, processedPages, pageAssets, pageText, notes } = {}) {
   const out = [`# ${cleanHeading(title || "PDF Document")}`, ""];
   const pages = Array.isArray(processedPages) ? processedPages : [];
@@ -198,6 +218,7 @@ export function buildPdfMarkdown({ title, pageCount, processedPages, pageAssets,
   return out.join("\n").replace(/\n{4,}/g, "\n\n\n").trimEnd() + "\n";
 }
 
+/** @param {unknown} value */
 function cleanHeading(value) {
   return String(value || "PDF Document").replace(/\s+/g, " ").replace(/^#+\s*/, "").trim() || "PDF Document";
 }

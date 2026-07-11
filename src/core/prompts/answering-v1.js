@@ -18,6 +18,9 @@ export const ANSWERING_SYSTEM_PROMPT_V1 = [
 const APPROX_CHARS_PER_TOKEN = 4;
 const DEFAULT_TOKEN_BUDGET = 12000;
 
+/** @typedef {Record<string, any>} AnswerContext */
+
+/** @param {AnswerContext} context @param {{ tokenBudget?: number }} [options] */
 export function buildAnswerMessages(context, { tokenBudget = DEFAULT_TOKEN_BUDGET } = {}) {
   const packed = packBranchContext(context, { tokenBudget });
   return [
@@ -26,6 +29,7 @@ export function buildAnswerMessages(context, { tokenBudget = DEFAULT_TOKEN_BUDGE
   ];
 }
 
+/** @param {AnswerContext} context @param {{ tokenBudget?: number }} [options] */
 export function packBranchContext(context, { tokenBudget = DEFAULT_TOKEN_BUDGET } = {}) {
   const budget = Math.max(2000, Number(tokenBudget) || DEFAULT_TOKEN_BUDGET);
   const charBudget = budget * APPROX_CHARS_PER_TOKEN;
@@ -73,6 +77,7 @@ export function packBranchContext(context, { tokenBudget = DEFAULT_TOKEN_BUDGET 
   return packed;
 }
 
+/** @param {unknown} ancestors */
 function summarizeAncestors(ancestors) {
   const list = Array.isArray(ancestors) ? ancestors : [];
   if (!list.length) return "(none)";
@@ -83,10 +88,12 @@ function summarizeAncestors(ancestors) {
   }).join("\n");
 }
 
+/** @param {unknown} value */
 function clean(value) {
   return String(value ?? "").replace(/\r\n?/g, "\n").trim();
 }
 
+/** @param {unknown} value @param {number} budget */
 function trimToBudget(value, budget) {
   const source = String(value ?? "");
   if (source.length <= budget) return source;
