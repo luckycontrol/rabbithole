@@ -62,7 +62,9 @@ export const toolDefinitions = [
       "parent document as a whole (a chat reply beneath it) — answer conversationally in that document's " +
       "context. A branch_request may carry a 'lens' (explain | eli5 | example | deeper) — the question " +
       "text spells out the style the human tapped; honor it. One marked saved=true was asked while no " +
-      "agent was listening — answer it like any other. On a resumed hole the first branch_request carries " +
+      "agent was listening — answer it like any other. When region.image_path is present, read that " +
+      "image before answering and trust it over extracted text for math, tables, and figures. " +
+      "On a resumed hole the first branch_request carries " +
       "a 'rehydration' field with the whole tree (and any saved_asks); read it to reload your context. " +
       "Long waits periodically return status='keep_listening' with hole_id; immediately call " +
       "open_rabbithole { hole_id } to keep listening, and do not re-send content. If the host reports " +
@@ -101,7 +103,7 @@ export const toolDefinitions = [
   {
     name: "answer_branch",
     description: [
-      "Answer one pending branch request from an open Rabbithole. Called after open_rabbithole or answer_branch returns status='branch_request'. Write a focused, well-formatted markdown answer to the human's question about their selection - use selected_text, parent_node_title, and lineage for context (you already hold the documents you authored). If selected_text is empty, answer conversationally about the parent document as a whole. If the request has a 'lens', match that style.",
+      "Answer one pending branch request from an open Rabbithole. Called after open_rabbithole or answer_branch returns status='branch_request'. Write a focused, well-formatted markdown answer to the human's question about their selection - use selected_text, parent_node_title, and lineage for context (you already hold the documents you authored). If selected_text is empty, answer conversationally about the parent document as a whole. If the request has a 'lens', match that style. When region.image_path is present, read that image before answering and trust it over extracted text for math, tables, and figures.",
       "",
       AUTHORING_VOCABULARY_V1,
       "",

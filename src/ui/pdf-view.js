@@ -1,4 +1,4 @@
-import { normalizePdfExtension } from "../core/pdf-shared.js";
+import { enclosedPdfLines, normalizePdfExtension } from "../core/pdf-shared.js";
 import { openImageLightbox } from "./image-ux.js";
 import { resolveAssetUrl } from "./renderer.js";
 import { childrenOf } from "./core.js";
@@ -37,6 +37,13 @@ export function mountPdfView(container, node) {
   var pageEls = [];
   var observer = null;
   var resizeObserver = null;
+  var boxButton = null, boxMode = false, draft = null;
+  function setBoxMode(active) {
+    boxMode = !!active;
+    container.classList.toggle("rh-pdf-box-mode", boxMode);
+    if (boxButton) { boxButton.classList.toggle("active", boxMode); boxButton.setAttribute("aria-pressed", boxMode ? "true" : "false"); }
+    if (!boxMode && draft) { draft.remove(); draft = null; }
+  }
   function fitText(pageEl) {
     var spans = pageEl.querySelectorAll(".rh-pdf-textlayer span");
     for (var i = 0; i < spans.length; i++) {
@@ -82,6 +89,34 @@ export function mountPdfView(container, node) {
       if (!resizeObserver) resizeObserver = new ResizeObserver(function(entries){ entries.forEach(function(entry){ fitText(entry.target); }); });
       resizeObserver.observe(pageEl);
     } else setTimeout(function(){ fitText(pageEl); }, 0);
+    pageEl.addEventListener("pointerdown", function(event) {
+      if (!boxMode || event.button !== 0) return;
+      event.preventDefault(); event.stopPropagation();
+      var pageRect = pageEl.getBoundingClientRect();
+      var startX = Math.min(1, Math.max(0, (event.clientX-pageRect.left)/pageRect.width));
+      var startY = Math.min(1, Math.max(0, (event.clientY-pageRect.top)/pageRect.height));
+      draft = document.createElement("div"); draft.className = "rh-pdf-box-draft"; pageEl.appendChild(draft);
+      pageEl.setPointerCapture?.(event.pointerId);
+      function move(moveEvent) {
+        var x = Math.min(1, Math.max(0, (moveEvent.clientX-pageRect.left)/pageRect.width));
+        var y = Math.min(1, Math.max(0, (moveEvent.clientY-pageRect.top)/pageRect.height));
+        var rect = { x: Math.min(startX,x), y: Math.min(startY,y), w: Math.abs(x-startX), h: Math.abs(y-startY) };
+        draft.style.left=(rect.x*100)+"%"; draft.style.top=(rect.y*100)+"%"; draft.style.width=(rect.w*100)+"%"; draft.style.height=(rect.h*100)+"%";
+        draft._rect = rect;
+      }
+      function up(upEvent) {
+        pageEl.removeEventListener("pointermove", move); pageEl.removeEventListener("pointerup", up); pageEl.removeEventListener("pointercancel", cancel);
+        var rect = draft && draft._rect, anchorEl = draft;
+        if (!rect || rect.w <= 0 || rect.h <= 0) { cancel(); return; }
+        var enclosed = enclosedPdfLines(pdf.lines, page.n, rect, markdown);
+        draft = null; setBoxMode(false);
+        showAskFromSelection({ parentId: node.id, selectedText: enclosed.text, mdStart: enclosed.start, mdEnd: enclosed.end,
+          pdfAnchor: { page: page.n, rect: rect }, anchorRectEl: anchorEl });
+        upEvent.preventDefault(); upEvent.stopPropagation();
+      }
+      function cancel() { pageEl.removeEventListener("pointermove", move); pageEl.removeEventListener("pointerup", up); pageEl.removeEventListener("pointercancel", cancel); setBoxMode(false); }
+      pageEl.addEventListener("pointermove", move); pageEl.addEventListener("pointerup", up); pageEl.addEventListener("pointercancel", cancel);
+    });
     if (typeof IntersectionObserver === "function") {
       if (!observer) observer = new IntersectionObserver(function(entries){
         entries.forEach(function(entry){ if (entry.isIntersecting) mountWindow(pageEls.indexOf(entry.target)); });
@@ -89,6 +124,12 @@ export function mountPdfView(container, node) {
       observer.observe(pageEl);
     }
   });
+  var toolbar = document.createElement("div"); toolbar.className = "rh-pdf-toolbar";
+  boxButton = document.createElement("button"); boxButton.type = "button"; boxButton.className = "node-btn rh-pdf-box-toggle";
+  boxButton.textContent = "□ Draw box"; boxButton.title = "Draw a selection box"; boxButton.setAttribute("aria-label", "Draw a selection box"); boxButton.setAttribute("aria-pressed", "false");
+  boxButton.addEventListener("click", function(event){ event.stopPropagation(); setBoxMode(!boxMode); }); toolbar.appendChild(boxButton); container.prepend(toolbar);
+  function onKeydown(event) { if (event.key === "Escape" && boxMode) { event.preventDefault(); setBoxMode(false); } }
+  document.addEventListener("keydown", onKeydown);
   childrenOf(node.id).forEach(function(child){ if (child.origin && child.origin.anchor && child.origin.anchor.pdf) mountPdfRectMark(container, child.origin.anchor, child.id, "rh-pdf-mark " + (child.status === "answered" ? "mark-ready" : "mark-pending")); });
   container.addEventListener("mouseup", function(e){
     var sel = window.getSelection(); if (!sel || sel.isCollapsed || !sel.rangeCount) return;
@@ -105,6 +146,8 @@ export function mountPdfView(container, node) {
     disposed = true;
     if (observer) observer.disconnect();
     if (resizeObserver) resizeObserver.disconnect();
+    document.removeEventListener("keydown", onKeydown);
+    toolbar.remove(); setBoxMode(false);
     pageEls.forEach(function(pageEl){
       var img = pageEl.querySelector("img");
       if (img) { img.removeAttribute("src"); img.remove(); }

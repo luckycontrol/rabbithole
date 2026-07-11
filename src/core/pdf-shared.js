@@ -1,6 +1,40 @@
 export const MAX_PDF_BYTES = 100 * 1024 * 1024;
 export const DEFAULT_PAGE_CAP = 40;
 export const PDF_RENDER_SCALE = 2;
+export const PDF_CROP_MAX_LONG_EDGE = 1568;
+export const PDF_CROP_PADDING = 0.02;
+
+/** @param {any} rect @param {number} sourceWidth @param {number} sourceHeight @param {{padding?: number, maxLongEdge?: number}} [options] */
+export function planPdfCrop(rect, sourceWidth, sourceHeight, { padding = PDF_CROP_PADDING, maxLongEdge = PDF_CROP_MAX_LONG_EDGE } = {}) {
+  const width = Number(sourceWidth), height = Number(sourceHeight);
+  if (!(width > 0) || !(height > 0)) return null;
+  const value = rect && typeof rect === "object" ? rect : {};
+  const clamp = (/** @type {unknown} */ n) => Math.min(1, Math.max(0, Number(n) || 0));
+  let x = clamp(value.x), y = clamp(value.y);
+  let w = Math.min(clamp(value.w), 1 - x), h = Math.min(clamp(value.h), 1 - y);
+  if (!(w > 0) || !(h > 0)) return null;
+  const padX = w * Math.max(0, Number(padding) || 0);
+  const padY = h * Math.max(0, Number(padding) || 0);
+  const right = Math.min(1, x + w + padX), bottom = Math.min(1, y + h + padY);
+  x = Math.max(0, x - padX); y = Math.max(0, y - padY);
+  w = right - x; h = bottom - y;
+  const sx = Math.floor(x * width), sy = Math.floor(y * height);
+  const sw = Math.max(1, Math.ceil((x + w) * width) - sx);
+  const sh = Math.max(1, Math.ceil((y + h) * height) - sy);
+  const scale = Math.min(1, Math.max(1, Number(maxLongEdge) || PDF_CROP_MAX_LONG_EDGE) / Math.max(sw, sh));
+  return { sx, sy, sw: Math.min(sw, width - sx), sh: Math.min(sh, height - sy), width: Math.max(1, Math.round(sw * scale)), height: Math.max(1, Math.round(sh * scale)) };
+}
+
+/** @param {Array<any>} lines @param {number} page @param {any} rect @param {unknown} markdown */
+export function enclosedPdfLines(lines, page, rect, markdown) {
+  const box = rect && typeof rect === "object" ? rect : {};
+  const x = Number(box.x), y = Number(box.y), w = Number(box.w), h = Number(box.h);
+  if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) return { text: "", start: 0, end: 0 };
+  const enclosed = (Array.isArray(lines) ? lines : []).filter((line) => line.p === page && line.x >= x && line.y >= y && line.x + line.w <= x + w && line.y + line.h <= y + h);
+  if (!enclosed.length) return { text: "", start: 0, end: 0 };
+  const source = String(markdown ?? "");
+  return { text: enclosed.map((line) => source.slice(line.s, line.e)).join("\n"), start: enclosed[0].s, end: enclosed[enclosed.length - 1].e };
+}
 export const PDF_MAGIC = "%PDF";
 export const MAX_PDF_PAGE_ASSET_BYTES = 24 * 1024 * 1024;
 export const MAX_PDF_PAGES = 100;

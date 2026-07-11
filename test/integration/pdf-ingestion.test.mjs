@@ -5,7 +5,7 @@ import path from "node:path";
 import { openRabbithole } from "../../src/node/index.js";
 import { ingestPdfDocument } from "../../src/node/pdf-ingest.js";
 import { closeAllSessions, getSession } from "../../src/node/sessions.js";
-import { defaultFsStore, listAssets, loadHole } from "../../src/node/fs-store.js";
+import { defaultFsStore, listAssets, loadHole, resolveAsset } from "../../src/node/fs-store.js";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-native-pdf-"));
@@ -50,7 +50,18 @@ await session.handleBrowserEvent({ type: "branch_request", request_id: "pdf-requ
 const branch = await session.waitForEvent();
 assert.equal(branch.status, "branch_request");
 assert.equal(branch.selected_text, "Same host");
-assert.equal(Object.hasOwn(branch, "region"), false, "Slice 2 node-host request stays lean");
+assert.equal(branch.region.page, 1);
+assert.equal(path.isAbsolute(branch.region.image_path), true);
+const regionBytes = await fs.readFile(branch.region.image_path);
+assert.equal(regionBytes[0], 0xff); assert.equal(regionBytes[1], 0xd8, "region path should point at a readable JPEG");
+session.inFlightBranchRequests.delete("pdf-request");
+await fs.writeFile(await resolveAsset(holeId, staged.pdfExtension.pages[0].asset), Buffer.from("broken"));
+await session.handleBrowserEvent({ type: "branch_request", request_id: "pdf-fallback", node_id: "pdf-child-fallback", parent_id: session.rootId,
+  selected_text: "fallback", question: "Explain", anchor: { offset_start: 0, offset_end: 1,
+    pdf: { page: 1, rect: { x: .1, y: .2, w: .3, h: .04 } } }, position: { x: 20, y: 20 } });
+const fallback = await session.waitForEvent();
+assert.equal(fallback.request_id, "pdf-fallback");
+assert.equal(Object.hasOwn(fallback, "region"), false, "crop failure must preserve the lean branch request");
 await closeAllSessions("persist_native_pdf");
 const hole = await loadHole(holeId);
 const root = hole.nodes.find((node) => node.id === hole.root_id);
@@ -59,7 +70,7 @@ assert.deepEqual(root.extensions.pdf.lines, staged.pdfExtension.lines, "line geo
 assert.deepEqual(hole.nodes.find((node) => node.id === "pdf-child").origin.anchor.pdf,
   { page: 1, rect: { x: .1, y: .2, w: .3, h: .04 } });
 assert.equal(root.extensions.pdf.pages.length, 2);
-assert.deepEqual(await listAssets(holeId), ["page-001.jpg", "page-002.jpg"]);
+assert.deepEqual(await listAssets(holeId), ["page-001.jpg", "page-002.jpg", "region-pdf-request.jpg"]);
 for (const page of root.extensions.pdf.pages) {
   assert(page.w > 0 && page.h > 0);
   assert.equal(page.asset.endsWith(".jpg"), true);

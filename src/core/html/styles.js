@@ -485,4 +485,9 @@ body:not(.mode-canvas) #hint.flash { bottom: 84px; }
 .rh-pdf-marks { z-index: 3; pointer-events: none; }
 .rh-pdf-mark { position: absolute; display: block; padding: 0; border-radius: 2px; background: var(--mark); pointer-events: auto; cursor: pointer; opacity: .42; }
 .rh-pdf-mark.mark-pending { background: var(--mark-pending); }
+.rh-pdf-box-mode .rh-pdf-page, .rh-pdf-box-mode .rh-pdf-img, .rh-pdf-box-mode .rh-pdf-textlayer { cursor: crosshair; user-select: none; }
+.rh-pdf-box-draft { position: absolute; z-index: 4; border: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); pointer-events: none; }
+.rh-pdf-box-toggle.active { color: var(--accent); background: var(--hover); }
+.rh-pdf-toolbar { position: sticky; top: 0; z-index: 6; display: flex; justify-content: flex-end; margin-bottom: -10px; pointer-events: none; }
+.rh-pdf-toolbar .rh-pdf-box-toggle { pointer-events: auto; width: auto; padding: 4px 8px; border: 1px solid var(--border); background: var(--node-head); border-radius: var(--radius-control); }
 `;

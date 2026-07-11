@@ -13,6 +13,8 @@ import { writeSseEvent } from "./sse.js";
 import { handleSessionRequest } from "./session-router.js";
 import { GenerationIngress } from "./generation-ingress.js";
 import { applyPersistedBrowserEvent, assetsOrphanedByDeletion, buildNodeAnsweredEvent, createSaveChain, dispatchBrowserEvent } from "../../core/hole-host.js";
+import { normalizePdfExtension } from "../../core/pdf-shared.js";
+import { cropPdfRegionToFile } from "../pdf-crop.js";
 
 const SESSION_TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2 hours
 const SAVE_DEBOUNCE_MS = 400;
@@ -617,6 +619,16 @@ export class RabbitHoleSession {
       lineage: this.lineageTitles(parentId),
     };
 
+    const pdf = normalizePdfExtension(parent);
+    const anchor = node.origin?.anchor?.pdf;
+    const page = pdf && anchor ? pdf.pages.find((entry) => entry.n === anchor.page) : null;
+    const enqueue = page
+      ? cropPdfRegionToFile({ holeId: this.holeId, asset: page.asset, rect: anchor.rect, requestId })
+          .then((imagePath) => { event.region = { page: anchor.page, image_path: imagePath }; })
+          .catch((error) => { logError(`PDF region crop failed: ${error.message}`); })
+          .then(() => this.pushEvent(event))
+      : null;
+
     if (this.needsRehydration) {
       this.needsRehydration = false;
       event.rehydration = this.buildRehydrationPayload();
@@ -626,7 +638,7 @@ export class RabbitHoleSession {
     // SIGKILL between ask and answer can't lose the question.
     this.scheduleSave();
 
-    this.pushEvent(event);
+    if (!enqueue) this.pushEvent(event);
     return { ok: true, node_id: nodeId, request_id: requestId };
   }
 

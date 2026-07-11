@@ -22,10 +22,12 @@ const DEFAULT_TOKEN_BUDGET = 12000;
 
 /** @param {AnswerContext} context @param {{ tokenBudget?: number }} [options] */
 export function buildAnswerMessages(context, { tokenBudget = DEFAULT_TOKEN_BUDGET } = {}) {
-  const packed = packBranchContext(context, { tokenBudget });
+  let packed = packBranchContext(context, { tokenBudget });
+  const attachment = context?.attachment?.kind === "image" && context.attachment.data_url ? context.attachment : null;
+  if (attachment) packed = `Selection region image: attached (page ${attachment.page}). Trust the image over extracted text for math, tables, and figures.\n${packed}`;
   return [
     { role: "system", content: ANSWERING_SYSTEM_PROMPT_V1 },
-    { role: "user", content: packed },
+    { role: "user", content: attachment ? [{ type: "text", text: packed }, { type: "image_url", image_url: { url: attachment.data_url } }] : packed },
   ];
 }
 

@@ -33806,6 +33806,15 @@ ${text2}</tr>
 
   // src/core/pdf-shared.js
   var MAX_PDF_BYTES = 100 * 1024 * 1024;
+  function enclosedPdfLines(lines, page, rect, markdown2) {
+    const box = rect && typeof rect === "object" ? rect : {};
+    const x = Number(box.x), y = Number(box.y), w = Number(box.w), h = Number(box.h);
+    if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) return { text: "", start: 0, end: 0 };
+    const enclosed = (Array.isArray(lines) ? lines : []).filter((line) => line.p === page && line.x >= x && line.y >= y && line.x + line.w <= x + w && line.y + line.h <= y + h);
+    if (!enclosed.length) return { text: "", start: 0, end: 0 };
+    const source2 = String(markdown2 != null ? markdown2 : "");
+    return { text: enclosed.map((line) => source2.slice(line.s, line.e)).join("\n"), start: enclosed[0].s, end: enclosed[enclosed.length - 1].e };
+  }
   var MAX_PDF_PAGE_ASSET_BYTES = 24 * 1024 * 1024;
   var MAX_PDF_PAGES = 100;
   var MAX_PDF_LINES = 25e3;
@@ -33882,6 +33891,19 @@ ${text2}</tr>
     var pageEls = [];
     var observer = null;
     var resizeObserver = null;
+    var boxButton = null, boxMode = false, draft = null;
+    function setBoxMode(active) {
+      boxMode = !!active;
+      container.classList.toggle("rh-pdf-box-mode", boxMode);
+      if (boxButton) {
+        boxButton.classList.toggle("active", boxMode);
+        boxButton.setAttribute("aria-pressed", boxMode ? "true" : "false");
+      }
+      if (!boxMode && draft) {
+        draft.remove();
+        draft = null;
+      }
+    }
     function fitText(pageEl) {
       var spans = pageEl.querySelectorAll(".rh-pdf-textlayer span");
       for (var i2 = 0; i2 < spans.length; i2++) {
@@ -33943,6 +33965,61 @@ ${text2}</tr>
       } else setTimeout(function() {
         fitText(pageEl);
       }, 0);
+      pageEl.addEventListener("pointerdown", function(event) {
+        var _a3;
+        if (!boxMode || event.button !== 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        var pageRect = pageEl.getBoundingClientRect();
+        var startX = Math.min(1, Math.max(0, (event.clientX - pageRect.left) / pageRect.width));
+        var startY = Math.min(1, Math.max(0, (event.clientY - pageRect.top) / pageRect.height));
+        draft = document.createElement("div");
+        draft.className = "rh-pdf-box-draft";
+        pageEl.appendChild(draft);
+        (_a3 = pageEl.setPointerCapture) == null ? void 0 : _a3.call(pageEl, event.pointerId);
+        function move(moveEvent) {
+          var x = Math.min(1, Math.max(0, (moveEvent.clientX - pageRect.left) / pageRect.width));
+          var y = Math.min(1, Math.max(0, (moveEvent.clientY - pageRect.top) / pageRect.height));
+          var rect = { x: Math.min(startX, x), y: Math.min(startY, y), w: Math.abs(x - startX), h: Math.abs(y - startY) };
+          draft.style.left = rect.x * 100 + "%";
+          draft.style.top = rect.y * 100 + "%";
+          draft.style.width = rect.w * 100 + "%";
+          draft.style.height = rect.h * 100 + "%";
+          draft._rect = rect;
+        }
+        function up(upEvent) {
+          pageEl.removeEventListener("pointermove", move);
+          pageEl.removeEventListener("pointerup", up);
+          pageEl.removeEventListener("pointercancel", cancel);
+          var rect = draft && draft._rect, anchorEl = draft;
+          if (!rect || rect.w <= 0 || rect.h <= 0) {
+            cancel();
+            return;
+          }
+          var enclosed = enclosedPdfLines(pdf.lines, page.n, rect, markdown2);
+          draft = null;
+          setBoxMode(false);
+          showAskFromSelection({
+            parentId: node.id,
+            selectedText: enclosed.text,
+            mdStart: enclosed.start,
+            mdEnd: enclosed.end,
+            pdfAnchor: { page: page.n, rect },
+            anchorRectEl: anchorEl
+          });
+          upEvent.preventDefault();
+          upEvent.stopPropagation();
+        }
+        function cancel() {
+          pageEl.removeEventListener("pointermove", move);
+          pageEl.removeEventListener("pointerup", up);
+          pageEl.removeEventListener("pointercancel", cancel);
+          setBoxMode(false);
+        }
+        pageEl.addEventListener("pointermove", move);
+        pageEl.addEventListener("pointerup", up);
+        pageEl.addEventListener("pointercancel", cancel);
+      });
       if (typeof IntersectionObserver === "function") {
         if (!observer) observer = new IntersectionObserver(function(entries) {
           entries.forEach(function(entry) {
@@ -33952,6 +34029,28 @@ ${text2}</tr>
         observer.observe(pageEl);
       }
     });
+    var toolbar = document.createElement("div");
+    toolbar.className = "rh-pdf-toolbar";
+    boxButton = document.createElement("button");
+    boxButton.type = "button";
+    boxButton.className = "node-btn rh-pdf-box-toggle";
+    boxButton.textContent = "\u25A1 Draw box";
+    boxButton.title = "Draw a selection box";
+    boxButton.setAttribute("aria-label", "Draw a selection box");
+    boxButton.setAttribute("aria-pressed", "false");
+    boxButton.addEventListener("click", function(event) {
+      event.stopPropagation();
+      setBoxMode(!boxMode);
+    });
+    toolbar.appendChild(boxButton);
+    container.prepend(toolbar);
+    function onKeydown2(event) {
+      if (event.key === "Escape" && boxMode) {
+        event.preventDefault();
+        setBoxMode(false);
+      }
+    }
+    document.addEventListener("keydown", onKeydown2);
     childrenOf(node.id).forEach(function(child) {
       if (child.origin && child.origin.anchor && child.origin.anchor.pdf) mountPdfRectMark(container, child.origin.anchor, child.id, "rh-pdf-mark " + (child.status === "answered" ? "mark-ready" : "mark-pending"));
     });
@@ -33979,6 +34078,9 @@ ${text2}</tr>
       disposed = true;
       if (observer) observer.disconnect();
       if (resizeObserver) resizeObserver.disconnect();
+      document.removeEventListener("keydown", onKeydown2);
+      toolbar.remove();
+      setBoxMode(false);
       pageEls.forEach(function(pageEl) {
         var img = pageEl.querySelector("img");
         if (img) {

@@ -36,6 +36,7 @@ await context.addInitScript(() => localStorage.setItem("rh-web-settings", JSON.s
 const page = await context.newPage();
 const requests = [];
 let directArticleCalls = 0;
+const answerBodies = [];
 
 page.on("request", (request) => {
   requests.push(request.url());
@@ -58,6 +59,8 @@ await page.route("https://openrouter.ai/api/v1/models", async (route) => {
 });
 await page.route("http://localhost:11434/v1/chat/completions", async (route) => {
   if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: corsHeaders(), body: "" });
+  const body = route.request().postDataJSON(); answerBodies.push(body);
+  if (answerBodies.length === 1) return route.fulfill({ status: 400, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ error: { message: "model does not support images" } }) });
   await route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "text/event-stream" }, body: sse(["# PDF branch\n\n", "Streamed from selected prose."]) });
 });
 
@@ -94,18 +97,23 @@ try {
   assert(pdfState.raw.includes("Browser PDF page one"));
   assert(pdfState.raw.includes("Integral int_0^1"));
   const selected = await page.evaluate(() => {
-    const span = [...document.querySelectorAll(".node .rh-pdf-textlayer span")].find((el) => el.textContent.includes("Browser PDF page one"));
-    const text = span.firstChild, start = text.data.indexOf("Browser PDF page one"), range = document.createRange();
-    range.setStart(text, start); range.setEnd(text, start + "Browser PDF page one".length);
+    const span = [...document.querySelectorAll(".node .rh-pdf-textlayer span")].find((el) => el.textContent.includes("e^(i*pi)+1=0"));
+    const text = span.firstChild, start = text.data.indexOf("e^(i*pi)+1=0"), range = document.createRange();
+    range.setStart(text, start); range.setEnd(text, start + "e^(i*pi)+1=0".length);
     const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
     span.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
     return selection.toString();
   });
-  assert.equal(selected, "Browser PDF page one");
+  assert.equal(selected, "e^(i*pi)+1=0");
   await page.waitForSelector("#ask.visible");
   await page.click('#ask-lenses .lens[data-lens="explain"]');
   const mark = page.locator(".node .rh-pdf-mark.mark-ready").first();
   await mark.waitFor();
+  assert.equal(answerBodies.length, 2, "vision rejection should trigger exactly one text-only retry");
+  assert(Array.isArray(answerBodies[0].messages.at(-1).content), "equation selection should ship multimodal content parts");
+  assert.equal(answerBodies[0].messages.at(-1).content[1].type, "image_url");
+  assert.match(answerBodies[0].messages.at(-1).content[1].image_url.url, /^data:image\/jpeg;base64,/);
+  assert.equal(typeof answerBodies[1].messages.at(-1).content, "string", "fallback attempt must be text-only");
   assert.equal(await mark.getAttribute("role"), "link");
   assert.equal(await mark.getAttribute("tabindex"), "0");
   assert.equal(await page.locator("#edges path").count() > 0, true, "PDF branch should retain an anchored canvas edge");
@@ -116,6 +124,25 @@ try {
   assert.equal(storedAnchor.pdf.page, 1);
   assert(storedAnchor.offset_end > storedAnchor.offset_start);
   assert(storedAnchor.pdf.rect.w > 0 && storedAnchor.pdf.rect.h > 0);
+
+  const boxToggle = page.locator(".node .rh-pdf-box-toggle").first();
+  await boxToggle.click();
+  const secondPage = page.locator(".node .rh-pdf-page[data-page='2']").first();
+  const pageBox = await secondPage.boundingBox();
+  await page.mouse.move(pageBox.x + pageBox.width * .05, pageBox.y + pageBox.height * .65);
+  await page.mouse.down();
+  await page.mouse.move(pageBox.x + pageBox.width * .95, pageBox.y + pageBox.height * .9);
+  await page.mouse.up();
+  await page.waitForSelector("#ask.visible");
+  await page.click('#ask-lenses .lens[data-lens="explain"]');
+  await page.waitForFunction(() => document.querySelectorAll(".node .rh-pdf-mark.mark-ready").length >= 2);
+  assert.equal(answerBodies.length, 3);
+  assert(Array.isArray(answerBodies[2].messages.at(-1).content), "box ask should ship its crop as an image part");
+  const boxAnchor = await page.evaluate(async () => {
+    const hole = await window.__rabbitholeTest.readStoredHole();
+    return hole.nodes.filter((node) => node.parent_id).at(-1).origin.anchor;
+  });
+  assert.equal(boxAnchor.pdf.page, 2); assert(boxAnchor.pdf.rect.w > .8, "drawn box should persist normalized geometry");
   await page.reload({ waitUntil: "networkidle" });
   await page.waitForSelector(".doc-content.rh-pdf .rh-pdf-page[data-page='2']", { state: "attached" });
   await page.waitForSelector(".rh-pdf-mark.mark-ready", { state: "attached" });

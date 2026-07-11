@@ -6,6 +6,8 @@ import { GenerationRun } from "../../core/generation-run.js";
 import { applyPersistedBrowserEvent, assetsOrphanedByDeletion, buildNodeAnsweredEvent, createSaveChain, dispatchBrowserEvent } from "../../core/hole-host.js";
 import { randomId } from "../../core/utils.js";
 import { ProviderError, fallbackTitleForNode, normalizeProviderError } from "../brain/index.js";
+import { normalizePdfExtension } from "../../core/pdf-shared.js";
+import { cropPdfAssetToDataUrl } from "../pdf-crop.js";
 
 const SAVE_DEBOUNCE_MS = 400;
 const WEB_ROOT_QUESTION = "web_root_question";
@@ -313,6 +315,7 @@ export class DirectRabbitholeHost {
 
     const brain = this.brain;
     const context = this.buildBranchContext(node);
+    await this.attachPdfSelection(node, context);
     const fallbackTitle = fallbackTitleForNode(node);
     context.fallbackTitle = fallbackTitle;
     // Each attempt, including a retry, gets a fresh run id. The reducer can
@@ -320,18 +323,40 @@ export class DirectRabbitholeHost {
     const run = this.createGenerationRun(node, fallbackTitle);
     // Capture the brain at attempt start: provider changes affect only later
     // generations; this in-flight iterator finishes on the old brain.
-    const generation = brain.answerBranch(context, controller.signal);
-    for await (const docEvent of generationDocEvents(generation, run, {
+    let generation = brain.answerBranch(context, controller.signal);
+    const events = generationDocEvents(generation, run, {
       nodeId,
       progressFields: { base_url: node.base_url, base_url_source: node.base_url_source },
       answeredFields: () => branchAnsweredFields(this.state.nodes.get(nodeId)),
-    })) {
-      if (controller.signal.aborted || !this.isLivePending(nodeId)) return;
-      this.dispatch(docEvent);
-      if (docEvent.type === "node_progress") {
-        const current = this.state.nodes.get(nodeId);
-        this.emit({ ...docEvent, markdown: current.markdown });
-        this.scheduleSave();
+    });
+    try {
+      for await (const docEvent of events) {
+        if (controller.signal.aborted || !this.isLivePending(nodeId)) return;
+        this.dispatch(docEvent);
+        if (docEvent.type === "node_progress") {
+          const current = this.state.nodes.get(nodeId);
+          this.emit({ ...docEvent, markdown: current.markdown });
+          this.scheduleSave();
+        }
+      }
+    } catch (error) {
+      if (!context.attachment || controller.signal.aborted) throw error;
+      delete context.attachment;
+      this.dispatchProgress(nodeId, "", { emit: true });
+      const retryRun = this.createGenerationRun(this.state.nodes.get(nodeId), fallbackTitle);
+      generation = brain.answerBranch(context, controller.signal);
+      for await (const docEvent of generationDocEvents(generation, retryRun, {
+        nodeId,
+        progressFields: { base_url: node.base_url, base_url_source: node.base_url_source },
+        answeredFields: () => branchAnsweredFields(this.state.nodes.get(nodeId)),
+      })) {
+        if (controller.signal.aborted || !this.isLivePending(nodeId)) return;
+        this.dispatch(docEvent);
+        if (docEvent.type === "node_progress") {
+          const current = this.state.nodes.get(nodeId);
+          this.emit({ ...docEvent, markdown: current.markdown });
+          this.scheduleSave();
+        }
       }
     }
 
@@ -341,6 +366,20 @@ export class DirectRabbitholeHost {
     this.abortByNode.delete(nodeId);
     this.emit(buildNodeAnsweredEvent(finalNode));
     await this.flushSave();
+  }
+
+  async attachPdfSelection(node, context) {
+    const parent = this.state.nodes.get(node.parent_id);
+    const pdf = normalizePdfExtension(parent);
+    const anchor = node.origin?.anchor?.pdf;
+    if (!pdf || !anchor) return;
+    const page = pdf.pages.find((entry) => entry.n === anchor.page);
+    if (!page) return;
+    try {
+      const blob = await this.store.getAsset(this.holeId, page.asset);
+      const dataUrl = await cropPdfAssetToDataUrl(blob, anchor.rect);
+      context.attachment = { kind: "image", data_url: dataUrl, page: anchor.page };
+    } catch {}
   }
 
   createGenerationRun(node, fallbackTitle = fallbackTitleForNode(node)) {
