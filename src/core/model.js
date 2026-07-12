@@ -170,16 +170,21 @@ export function applyNodeUpdateFields(node, payload) {
 
 /** @param {NodeCollection} nodes @param {string} rootId @returns {string[]} */
 export function collectSubtreeIds(nodes, rootId) {
-  const doomed = new Set([rootId]);
-  let grew = true;
-  while (grew) {
-    grew = false;
-    for (const node of valuesOfNodes(nodes)) {
-      if (node.parent_id && doomed.has(node.parent_id) && !doomed.has(node.id)) {
-        doomed.add(node.id);
-        grew = true;
-      }
-    }
+  const doomed = new Set();
+  const children = new Map();
+  for (const node of valuesOfNodes(nodes)) {
+    if (!node.parent_id) continue;
+    const siblings = children.get(node.parent_id);
+    if (siblings) siblings.push(node.id);
+    else children.set(node.parent_id, [node.id]);
+  }
+  const pending = [rootId];
+  while (pending.length) {
+    const id = pending.pop();
+    if (doomed.has(id)) continue;
+    doomed.add(id);
+    const descendants = children.get(id);
+    if (descendants) pending.push(...descendants);
   }
   return [...doomed];
 }

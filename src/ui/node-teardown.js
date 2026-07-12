@@ -1,4 +1,4 @@
-import { disposeNodeContent, nodes, readerMain } from "./core.js";
+import { disposeNodeContent, nodes, readerMain, unregisterNode } from "./core.js";
 import { removeThreadItem } from "./reader.js";
 import { removeMarks } from "./text-marks.js";
 
@@ -12,5 +12,5 @@ export function teardownNode(id) {
   removeThreadItem(id);
   var parent = nodes[node.parent_id];
   if (parent && parent.bodyEl) removeMarks(parent.bodyEl, id);
-  delete nodes[id];
+  unregisterNode(id);
 }

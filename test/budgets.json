@@ -127,6 +127,28 @@
       "baseline": 0.9,
       "ceiling": 20,
       "measured_at_commit": "ca405ac"
+    },
+    {
+      "id": "owned_stream_reducer_ms",
+      "description": "One hundred owned-state stream updates in a 20,000-node hole",
+      "unit": "ms",
+      "tolerance": 4,
+      "rationale": "Minimum of repeated runs; a 10ms floor catches accidental whole-Map cloning while absorbing timer noise.",
+      "floor": 10,
+      "baseline": 0.06,
+      "ceiling": 10,
+      "measured_at_commit": "8413b39"
+    },
+    {
+      "id": "subtree_collect_ms",
+      "description": "Collect all descendants in a 20,000-node ternary tree",
+      "unit": "ms",
+      "tolerance": 4,
+      "rationale": "Minimum of repeated runs; a 25ms floor catches repeated whole-graph scans while absorbing timer noise.",
+      "floor": 25,
+      "baseline": 1.94,
+      "ceiling": 25,
+      "measured_at_commit": "8413b39"
     }
   ]
 }

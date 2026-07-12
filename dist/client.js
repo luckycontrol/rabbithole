@@ -1609,12 +1609,12 @@ var RabbitholeClient = (() => {
     const slash = String.fromCharCode(47);
     return slash + "assets" + slash + name;
   }
-  function resolveAssetMarkdownImageUrl(raw, { assetNames = null, resolveAssetUrl: resolveAssetUrl2 = defaultAssetUrlResolver } = {}) {
+  function resolveAssetMarkdownImageUrl(raw, { assetNames: assetNames2 = null, resolveAssetUrl: resolveAssetUrl2 = defaultAssetUrlResolver } = {}) {
     const match = ASSET_URL_RE.exec(String(raw != null ? raw : ""));
     if (!match) return void 0;
     const name = match[1];
     if (!isValidAssetName(name)) return null;
-    if (assetNames && !assetNames.has(name)) return null;
+    if (assetNames2 && !assetNames2.has(name)) return null;
     return resolveAssetUrl2(name);
   }
   function extractAssetRefsFromMarkdown(markdown2) {
@@ -1648,10 +1648,10 @@ var RabbitholeClient = (() => {
     if (mode2 !== "blob" && mode2 !== "raw" || !owner || !repo || !ref || pathParts.length === 0) return value;
     return `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${pathParts.join("/")}`;
   }
-  function resolveMarkdownUrl(raw, { baseUrl = null, image = false, assetNames = null, resolveAssetUrl: resolveAssetUrl2 = void 0 } = {}) {
+  function resolveMarkdownUrl(raw, { baseUrl = null, image = false, assetNames: assetNames2 = null, resolveAssetUrl: resolveAssetUrl2 = void 0 } = {}) {
     let value = String(raw != null ? raw : "");
     if (image) {
-      const assetUrl = resolveAssetMarkdownImageUrl(value, { assetNames, resolveAssetUrl: resolveAssetUrl2 });
+      const assetUrl = resolveAssetMarkdownImageUrl(value, { assetNames: assetNames2, resolveAssetUrl: resolveAssetUrl2 });
       if (assetUrl !== void 0) return assetUrl;
     }
     if (shouldResolveUrl(value, baseUrl)) {
@@ -1701,10 +1701,11 @@ var RabbitholeClient = (() => {
 
   // src/ui/primitives/notice.js
   var WIRED = /* @__PURE__ */ new WeakMap();
+  var VARIANTS = /* @__PURE__ */ new Set(["banner", "hint", "toast"]);
   var TIMED = /* @__PURE__ */ new Set(["hint", "toast"]);
   function wireNotice(element, { variant } = {}) {
     if (!element) throw new Error("Notice requires an element");
-    if (!(/* @__PURE__ */ new Set(["banner", "hint", "toast"])).has(variant)) throw new Error("Unknown Notice variant: " + variant);
+    if (!VARIANTS.has(variant)) throw new Error("Unknown Notice variant: " + variant);
     const existing = WIRED.get(element);
     if (existing) {
       if (existing.variant !== variant) throw new Error("Notice shell is already wired as " + existing.variant);
@@ -2390,6 +2391,7 @@ var RabbitholeClient = (() => {
   var rootId = null;
   var frozen = false;
   var nodes = {};
+  var childrenByParent = /* @__PURE__ */ Object.create(null);
   var currentNodeId = null;
   var mode = "reader";
   var view = { x: 0, y: 0, scale: 1 };
@@ -2403,6 +2405,7 @@ var RabbitholeClient = (() => {
   var canvasFramed = false;
   var viewAdjusted = false;
   var orderCounter = 0;
+  var loadingTimers = /* @__PURE__ */ new Set();
   var readerMain = null;
   var sideEl = null;
   var breadcrumbEl = null;
@@ -2428,7 +2431,6 @@ var RabbitholeClient = (() => {
   var paletteEl = null;
   var palText = null;
   var palResults = null;
-  var peekEl = null;
   var shareMenu = null;
   var confirmEl = null;
   function defaultCoreHooks() {
@@ -2441,6 +2443,8 @@ var RabbitholeClient = (() => {
       diveToNode: function() {
       },
       openNode: function() {
+      },
+      ensureNodeHtml: function() {
       },
       mountDocImages: null,
       mountPdfView: null,
@@ -2464,6 +2468,7 @@ var RabbitholeClient = (() => {
     rootId = hydration.root_id;
     frozen = !!hydration.frozen;
     nodes = {};
+    childrenByParent = /* @__PURE__ */ Object.create(null);
     currentNodeId = rootId;
     mode = "reader";
     view = { x: 0, y: 0, scale: 1 };
@@ -2477,6 +2482,7 @@ var RabbitholeClient = (() => {
     canvasFramed = false;
     viewAdjusted = false;
     orderCounter = 0;
+    loadingTimers.clear();
     sinceDismissed = false;
     sinceArmed = false;
     readerMain = document.getElementById("reader-main");
@@ -2504,7 +2510,6 @@ var RabbitholeClient = (() => {
     paletteEl = document.getElementById("palette");
     palText = document.getElementById("pal-text");
     palResults = document.getElementById("pal-results");
-    peekEl = document.getElementById("peek");
     shareMenu = document.getElementById("sharemenu");
     confirmEl = document.getElementById("confirm");
     initReduceMotion(coreScope);
@@ -2512,7 +2517,7 @@ var RabbitholeClient = (() => {
     coreScope.listen(actCanvas, "click", onActivityClick);
     coreScope.listen(document.getElementById("since-show"), "click", function(e) {
       var un = unreadNodes();
-      if (un.length) goToNode2(un[0], motionSourceFromEvent(e));
+      if (un.length) goToNode(un[0], motionSourceFromEvent(e));
     });
     coreScope.listen(document.getElementById("since-x"), "click", function() {
       sinceDismissed = true;
@@ -2542,6 +2547,7 @@ var RabbitholeClient = (() => {
     rootId = null;
     frozen = false;
     nodes = {};
+    childrenByParent = /* @__PURE__ */ Object.create(null);
     currentNodeId = null;
     mode = "reader";
     view = { x: 0, y: 0, scale: 1 };
@@ -2555,13 +2561,14 @@ var RabbitholeClient = (() => {
     canvasFramed = false;
     viewAdjusted = false;
     orderCounter = 0;
+    loadingTimers.clear();
     readerMain = sideEl = breadcrumbEl = viewport = world = edgesSvg = null;
     ask = askText = askGo = zoomLabel = hintEl = bannerEl = null;
     hintNotice = bannerNotice = null;
     composerInner = composerText = composerSend = null;
     actReader = actCanvas = actSep = null;
     sinceEl = sinceMsg = paletteEl = palText = palResults = null;
-    peekEl = shareMenu = confirmEl = null;
+    shareMenu = confirmEl = null;
     sinceDismissed = false;
     sinceArmed = false;
     reduceMotion = false;
@@ -2616,10 +2623,34 @@ var RabbitholeClient = (() => {
   function truncate2(s, n) {
     return truncate(s, n);
   }
+  function registerNode(node) {
+    if (!node) return node;
+    var previous = nodes[node.id];
+    if (previous) unregisterNode(previous.id);
+    nodes[node.id] = node;
+    if (node.parent_id != null) {
+      var siblings = childrenByParent[node.parent_id];
+      if (!siblings) siblings = childrenByParent[node.parent_id] = [];
+      siblings.push(node);
+    }
+    return node;
+  }
+  function unregisterNode(id) {
+    var node = nodes[id];
+    if (!node) return null;
+    if (node.parent_id != null) {
+      var siblings = childrenByParent[node.parent_id];
+      if (siblings) {
+        var index = siblings.indexOf(node);
+        if (index !== -1) siblings.splice(index, 1);
+        if (!siblings.length) delete childrenByParent[node.parent_id];
+      }
+    }
+    delete nodes[id];
+    return node;
+  }
   function childrenOf(id) {
-    var out = [];
-    for (var k in nodes) if (nodes[k].parent_id === id) out.push(nodes[k]);
-    return out;
+    return childrenByParent[id] ? childrenByParent[id].slice() : [];
   }
   function anchorStart(n) {
     return n.origin && n.origin.anchor ? n.origin.anchor.offset_start : 1e9;
@@ -2633,13 +2664,27 @@ var RabbitholeClient = (() => {
     }
     return arr.reverse();
   }
-  function isVisible(node) {
-    var p = node.parent_id ? nodes[node.parent_id] : null;
+  function isVisible(node, cache) {
+    if (cache && Object.prototype.hasOwnProperty.call(cache, node.id)) return cache[node.id];
+    var trail = [], p = node.parent_id ? nodes[node.parent_id] : null, visible = true;
     while (p) {
-      if (p.collapsed) return false;
+      if (cache && Object.prototype.hasOwnProperty.call(cache, p.id)) {
+        visible = cache[p.id];
+        break;
+      }
+      trail.push(p);
       p = p.parent_id ? nodes[p.parent_id] : null;
     }
-    return true;
+    if (cache) {
+      for (var i2 = trail.length - 1; i2 >= 0; i2--) {
+        cache[trail[i2].id] = visible;
+        if (trail[i2].collapsed) visible = false;
+      }
+      cache[node.id] = visible;
+    } else {
+      for (var j = 0; j < trail.length; j++) if (trail[j].collapsed) return false;
+    }
+    return visible;
   }
   function fontPx(node, base) {
     return Math.round(base * (node.font_scale || 1));
@@ -2759,7 +2804,7 @@ var RabbitholeClient = (() => {
     });
     return out;
   }
-  function goToNode2(node, source2) {
+  function goToNode(node, source2) {
     if (!node) return;
     if (mode === "canvas") {
       coreHooks.ensureCanvasBuilt();
@@ -2797,7 +2842,7 @@ var RabbitholeClient = (() => {
   function onActivityClick(e) {
     var source2 = motionSourceFromEvent(e);
     var pend = pendingNodes();
-    if (pend.length) goToNode2(pend[pend.length - 1], source2);
+    if (pend.length) goToNode(pend[pend.length - 1], source2);
   }
   var sinceDismissed = false;
   var sinceArmed = false;
@@ -2853,6 +2898,7 @@ var RabbitholeClient = (() => {
     var st = document.createElement("div");
     st.className = "loading-status";
     st.innerHTML = LOADING_BUNNY_HTML + '<span class="shimmer-text ll-live">Thinking</span><span class="ll-stalled">Saved \u2014 waiting for the agent</span><span class="ll-closed">Saved \u2014 answered when you reopen this hole</span><span class="ll-frozen">Unanswered when this snapshot was exported</span><span class="loading-time" data-start="' + (node._startTs || Date.now()) + '"></span>';
+    loadingTimers.add(st.querySelector(".loading-time"));
     var sk = document.createElement("div");
     sk.innerHTML = '<div class="sk-line w1"></div><div class="sk-line w2"></div><div class="sk-line w3"></div><div class="sk-line w4"></div>';
     wrap.appendChild(st);
@@ -2907,6 +2953,7 @@ var RabbitholeClient = (() => {
     var st = document.createElement("div");
     st.className = "stream-status";
     st.innerHTML = '<span class="shimmer-text ll-live">Writing</span><span class="ll-stalled">Paused \u2014 waiting for the agent</span><span class="ll-closed">Saved \u2014 answered in full when you reopen this hole</span><span class="ll-frozen">Unfinished when this snapshot was exported</span><span class="loading-time" data-start="' + (node._startTs || Date.now()) + '"></span>';
+    loadingTimers.add(st.querySelector(".loading-time"));
     dc.appendChild(st);
     surfaceKey = surfaceKey || "stream:" + (node && node.id || "unknown");
     mountVisuals(dc, surfaceKey);
@@ -2920,11 +2967,15 @@ var RabbitholeClient = (() => {
   }
   function updateLoadingTimers() {
     if (closed) return;
-    var els = document.querySelectorAll(".loading-time");
-    for (var i2 = 0; i2 < els.length; i2++) {
-      var t = Number(els[i2].getAttribute("data-start")) || 0;
-      if (t) els[i2].textContent = formatElapsed(Date.now() - t);
-    }
+    var now = Date.now();
+    loadingTimers.forEach(function(el) {
+      if (!el || !el.isConnected) {
+        loadingTimers.delete(el);
+        return;
+      }
+      var t = Number(el.getAttribute("data-start")) || 0;
+      if (t) el.textContent = formatElapsed(now - t);
+    });
   }
   function disposeNodeContent(node) {
     if (!node || !node._contentDisposers) return;
@@ -2934,6 +2985,7 @@ var RabbitholeClient = (() => {
     node._contentDisposers.clear();
   }
   function buildDocContent(node, base) {
+    coreHooks.ensureNodeHtml(node);
     var dc = document.createElement("div");
     dc.className = "doc-content md";
     dc.dataset.nodeId = node.id;
@@ -3137,8 +3189,6 @@ var RabbitholeClient = (() => {
     return {
       hideAsk: function() {
       },
-      hidePeek: function() {
-      },
       updateComposerState: function() {
       },
       scheduleViewSave: function() {
@@ -3169,7 +3219,6 @@ var RabbitholeClient = (() => {
     setModeValue("reader");
     document.body.classList.remove("mode-canvas");
     readerLifecycle.hooks.hideAsk();
-    readerLifecycle.hooks.hidePeek();
     kbdMarkIdx = -1;
     renderBreadcrumb();
     renderReaderBody();
@@ -3227,9 +3276,9 @@ var RabbitholeClient = (() => {
       });
       readerScope.listen(readerMain, "scroll", onReaderScroll, { passive: true });
       readerScope.listen(readerMain, "click", onMarkClick);
-      readerScope.listen(world, "click", onMarkClick);
       readerScope.listen(readerMain, "keydown", onMarkKeydown);
-      readerScope.listen(world, "keydown", onMarkKeydown);
+      readerScope.listen(world, "click", onCanvasMarkClick);
+      readerScope.listen(world, "keydown", onCanvasMarkKeydown);
       readerScope.listen(sideEl, "click", onSidebarClick);
       readerScope.listen(sideEl, "keydown", onSidebarKeydown);
       readerScope.listen(document.getElementById("r-textdown"), "click", function() {
@@ -3331,7 +3380,6 @@ var RabbitholeClient = (() => {
   function onReaderScroll() {
     var n = nodes[currentNodeId];
     if (n) n._scrollTop = readerMain.scrollTop;
-    readerLifecycle.hooks.hidePeek();
     readerLifecycle.hooks.scheduleViewSave();
   }
   function buildThreadRule() {
@@ -3410,6 +3458,22 @@ var RabbitholeClient = (() => {
     if (!k) return;
     e.preventDefault();
     openNode(k.id);
+  }
+  function onCanvasMarkClick(e) {
+    var m = e.target.closest && e.target.closest("mark[data-child]");
+    if (!m) return;
+    if (!window.getSelection().isCollapsed) return;
+    var k = nodes[m.dataset.child];
+    if (k) goToNode(k, motionSourceFromEvent(e));
+  }
+  function onCanvasMarkKeydown(e) {
+    if (e.key !== "Enter") return;
+    var m = e.target.closest && e.target.closest("mark[data-child]");
+    if (!m) return;
+    var k = nodes[m.dataset.child];
+    if (!k) return;
+    e.preventDefault();
+    goToNode(k, motionSourceFromEvent(e));
   }
   function renderSidebar() {
     var kids = childrenOf(currentNodeId).filter(function(k) {
@@ -3635,8 +3699,6 @@ var RabbitholeClient = (() => {
   function defaultCanvasHooks() {
     return {
       hideAsk: function() {
-      },
-      hidePeek: function() {
       },
       sendFollowup: function() {
         return null;
@@ -4212,14 +4274,16 @@ var RabbitholeClient = (() => {
     canvasLifecycle.hooks.persistNode(node);
   }
   function renderVisibility() {
+    var cache = /* @__PURE__ */ Object.create(null);
     for (var id in nodes) {
       var n = nodes[id];
       if (!n.el) continue;
       if (n.id === rootId) {
         n.el.style.display = "";
+        cache[n.id] = true;
         continue;
       }
-      n.el.style.display = isVisible(n) ? "" : "none";
+      n.el.style.display = isVisible(n, cache) ? "" : "none";
     }
   }
   var edgeRaf = 0;
@@ -4325,11 +4389,9 @@ var RabbitholeClient = (() => {
   }
   function drawEdges() {
     var live = {};
-    var visCache = {};
+    var visCache = /* @__PURE__ */ Object.create(null);
     function vis(node) {
-      var k = node.id;
-      if (k in visCache) return visCache[k];
-      return visCache[k] = isVisible(node);
+      return isVisible(node, visCache);
     }
     for (var id in nodes) {
       var n = nodes[id];
@@ -4473,8 +4535,9 @@ var RabbitholeClient = (() => {
     if (!consumable) e.preventDefault();
   }
   function frameAll(animate, source2) {
+    var visCache = /* @__PURE__ */ Object.create(null);
     var ids = Object.keys(nodes).filter(function(id) {
-      return isVisible(nodes[id]);
+      return isVisible(nodes[id], visCache);
     });
     if (!ids.length) return;
     var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -4579,7 +4642,6 @@ var RabbitholeClient = (() => {
     setModeValue(m);
     if (m === "canvas") {
       ensureCanvasBuilt();
-      canvasLifecycle.hooks.hidePeek();
       document.body.classList.add("mode-canvas");
       requestAnimationFrame(function() {
         rebuildEdges();
@@ -4788,7 +4850,7 @@ var RabbitholeClient = (() => {
     removeThreadItem(id);
     var parent = nodes[node.parent_id];
     if (parent && parent.bodyEl) removeMarks(parent.bodyEl, id);
-    delete nodes[id];
+    unregisterNode(id);
   }
 
   // src/ui/ask-followups.js
@@ -4796,8 +4858,6 @@ var RabbitholeClient = (() => {
     return {
       post: function() {
         return Promise.resolve({ ok: true });
-      },
-      hidePeek: function() {
       }
     };
   }
@@ -4808,14 +4868,6 @@ var RabbitholeClient = (() => {
   function initAskFollowups() {
     disposeAskFollowupResources(false);
     var askScope = askLifecycle.beginInit();
-    askScope.listen(document, "mousedown", function(e) {
-      var c2 = e.target && e.target.closest ? function(sel) {
-        return e.target.closest(sel);
-      } : function() {
-        return null;
-      };
-      if (!c2("#peek") && !c2("mark[data-child]")) askLifecycle.hooks.hidePeek();
-    });
     askScope.listen(document, "mouseup", function(e) {
       if (inAsk(e)) return;
       askScope.timeout(maybeShowAsk, 0);
@@ -5078,7 +5130,7 @@ var RabbitholeClient = (() => {
       _order: nextOrder(),
       _startTs: Date.now()
     };
-    nodes[childId] = node;
+    registerNode(node);
     if (canvasBuilt) {
       createNodeEl(node, true);
       renderVisibility();
@@ -5161,7 +5213,7 @@ var RabbitholeClient = (() => {
       _order: nextOrder(),
       _startTs: Date.now()
     };
-    nodes[childId] = node;
+    registerNode(node);
     if (canvasBuilt) {
       createNodeEl(node, true);
       renderVisibility();
@@ -5635,861 +5687,6 @@ var RabbitholeClient = (() => {
         };
       })(frame, key));
     }
-  }
-
-  // src/ui/palette.js
-  function defaultPaletteHooks() {
-    return {
-      hideAsk: function() {
-      },
-      hidePeek: function() {
-      },
-      closeShare: function() {
-      },
-      hideConfirm: function() {
-      }
-    };
-  }
-  var paletteLifecycle = createModuleLifecycle({ defaults: defaultPaletteHooks });
-  function registerPaletteHooks(hooks) {
-    paletteLifecycle.register(hooks);
-  }
-  function getPlain(node) {
-    if (node._plainFor !== node.html) {
-      var d = document.createElement("div");
-      d.innerHTML = node.html || "";
-      node._plainFor = node.html;
-      node._plain = d.textContent || "";
-    }
-    return node._plain || "";
-  }
-  var palOpen = false;
-  var palSel = 0;
-  var palItems = [];
-  var palCanvasCommands = false;
-  var palDialog = null;
-  var palRows = [];
-  function initPalette() {
-    disposePaletteResources(false);
-    var paletteScope = paletteLifecycle.beginInit();
-    try {
-      palText.setAttribute("role", "combobox");
-      palText.setAttribute("aria-expanded", "false");
-      paletteScope.listen(palText, "input", function() {
-        renderPalette(palText.value);
-      });
-      paletteScope.listen(palText, "keydown", onPaletteKeydown);
-      paletteScope.listen(palResults, "click", onPaletteClick);
-      paletteScope.listen(palResults, "mousemove", onPaletteMousemove);
-      return disposePalette;
-    } catch (error) {
-      disposePalette();
-      throw error;
-    }
-  }
-  function disposePalette() {
-    disposePaletteResources(true);
-  }
-  function disposePaletteResources(resetHooks) {
-    closePalette({ restoreFocus: false });
-    paletteLifecycle.dispose(resetHooks);
-    palOpen = false;
-    palSel = 0;
-    palItems = [];
-    palCanvasCommands = false;
-    palRows = [];
-  }
-  function togglePalette() {
-    if (palOpen) closePalette();
-    else openPalette();
-  }
-  function openPalette() {
-    palOpen = true;
-    palCanvasCommands = mode === "canvas";
-    paletteLifecycle.hooks.hideAsk();
-    paletteLifecycle.hooks.hidePeek();
-    paletteLifecycle.hooks.closeShare();
-    paletteLifecycle.hooks.hideConfirm();
-    paletteEl.classList.add("visible");
-    palText.value = "";
-    renderPalette("");
-    if (palDialog) palDialog.close();
-    palDialog = openDialog({
-      dialog: document.getElementById("palette-panel"),
-      backdrop: paletteEl,
-      label: palText.getAttribute("aria-label") || palText.placeholder,
-      initialFocus: palText,
-      onClose: function() {
-        palOpen = false;
-        palCanvasCommands = false;
-        paletteEl.classList.remove("visible");
-        palText.setAttribute("aria-expanded", "false");
-        palText.removeAttribute("aria-activedescendant");
-        palDialog = null;
-      }
-    });
-    palText.setAttribute("aria-expanded", "true");
-  }
-  function closePalette(settings) {
-    if (palDialog) palDialog.close("programmatic", settings);
-  }
-  function onPaletteKeydown(e) {
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      movePalSel(1);
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      movePalSel(-1);
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      commitPal("keyboard");
-    }
-  }
-  function renderPalette(q) {
-    var tokens = q.toLowerCase().split(/\s+/).filter(function(t2) {
-      return !!t2;
-    });
-    var scored = [];
-    for (var id in nodes) {
-      var n = nodes[id];
-      var title = (n.title || "").toLowerCase();
-      var ask2 = ((n.origin && n.origin.selected_text || "") + " " + (n.origin && n.origin.question || "")).toLowerCase();
-      var body = getPlain(n).toLowerCase();
-      var score = 0, ok = true;
-      for (var i2 = 0; i2 < tokens.length; i2++) {
-        var t = tokens[i2];
-        if (title.indexOf(t) !== -1) score += title.indexOf(t) === 0 ? 40 : 30;
-        else if (ask2.indexOf(t) !== -1) score += 15;
-        else if (body.indexOf(t) !== -1) score += 5;
-        else {
-          ok = false;
-          break;
-        }
-      }
-      if (!ok) continue;
-      scored.push({ n, score });
-    }
-    scored.sort(function(a, b) {
-      return b.score - a.score || (b.n._order || 0) - (a.n._order || 0);
-    });
-    scored = scored.slice(0, 12);
-    palItems = scored.map(function(s) {
-      return { type: "node", id: s.n.id };
-    }).concat(paletteCommandItems(tokens));
-    palSel = 0;
-    if (!palItems.length) {
-      palRows.forEach(function(row) {
-        row.hidden = true;
-      });
-      palText.removeAttribute("aria-activedescendant");
-      var empty = palResults.querySelector(".pal-empty");
-      if (!empty) {
-        empty = document.createElement("div");
-        empty.className = "pal-empty";
-        palResults.appendChild(empty);
-      }
-      empty.textContent = tokens.length ? "Nothing in this hole matches that." : "";
-      empty.hidden = !tokens.length;
-      return;
-    }
-    var empty = palResults.querySelector(".pal-empty");
-    if (empty) empty.hidden = true;
-    var fragment = document.createDocumentFragment();
-    palItems.forEach(function(item, i3) {
-      var row = palRows[i3] || createPalRow(i3);
-      palRows[i3] = row;
-      row.hidden = false;
-      row.dataset.idx = i3;
-      row.classList.toggle("sel", i3 === palSel);
-      row._flag.textContent = "";
-      row._flag.className = "";
-      row._badge.hidden = true;
-      row._kbd.hidden = true;
-      row._snippet.hidden = item.type === "command";
-      if (item.type === "command") {
-        row._title.textContent = item.name;
-        row._kbd.textContent = item.kbd;
-        row._kbd.hidden = false;
-        fragment.appendChild(row);
-        return;
-      }
-      var n2 = nodes[item.id];
-      if (!n2) return;
-      row._title.textContent = n2.title || "Untitled";
-      if (n2.status === "pending") {
-        row._flag.className = "pal-writing";
-        row._flag.textContent = "writing\u2026";
-      } else if (isUnread(n2)) row._flag.className = "pal-dot";
-      if (n2.origin && (n2.origin.synthesis || n2.origin.lens)) {
-        row._badge.textContent = n2.origin.synthesis ? "\u2726 Synthesis" : lensLabel2(n2.origin.lens);
-        row._badge.hidden = false;
-      }
-      row._snippet.innerHTML = palSnippet(n2, tokens);
-      fragment.appendChild(row);
-    });
-    for (var i2 = palItems.length; i2 < palRows.length; i2++) palRows[i2].hidden = true;
-    palResults.appendChild(fragment);
-    syncPalActiveDescendant();
-  }
-  function createPalRow(index) {
-    var row = document.createElement("div");
-    row.className = "pal-item";
-    row.id = "pal-option-" + index;
-    row.setAttribute("role", "option");
-    var top = document.createElement("div");
-    top.className = "pal-t";
-    row._flag = document.createElement("span");
-    row._title = document.createElement("span");
-    row._title.className = "pal-title";
-    row._badge = document.createElement("span");
-    row._badge.className = "lens-badge";
-    row._kbd = document.createElement("kbd");
-    row._kbd.className = "pal-kbd";
-    row._snippet = document.createElement("div");
-    row._snippet.className = "pal-s";
-    top.append(row._flag, row._title, row._badge, row._kbd);
-    row.append(top, row._snippet);
-    return row;
-  }
-  function syncPalActiveDescendant() {
-    for (var i2 = 0; i2 < palRows.length; i2++) palRows[i2].setAttribute("aria-selected", i2 === palSel && !palRows[i2].hidden ? "true" : "false");
-    if (palRows[palSel] && !palRows[palSel].hidden) palText.setAttribute("aria-activedescendant", palRows[palSel].id);
-    else palText.removeAttribute("aria-activedescendant");
-  }
-  function paletteCommandItems(tokens) {
-    if (!palCanvasCommands) return [];
-    var commands = [
-      { type: "command", name: "Frame everything", kbd: "F", run: function() {
-        frameAll(true, "keyboard");
-      } },
-      { type: "command", name: "Tidy up layout", kbd: "T", run: function() {
-        tidy("keyboard");
-      } }
-    ];
-    var out = [];
-    for (var i2 = 0; i2 < commands.length; i2++) {
-      var c2 = commands[i2];
-      var name = c2.name.toLowerCase();
-      var ok = true;
-      for (var t = 0; t < tokens.length; t++) {
-        if (name.indexOf(tokens[t]) === -1) {
-          ok = false;
-          break;
-        }
-      }
-      if (ok) out.push(c2);
-    }
-    return out;
-  }
-  function palSnippet(n, tokens) {
-    var body = getPlain(n);
-    var lower = body.toLowerCase();
-    for (var i2 = 0; i2 < tokens.length; i2++) {
-      var at = lower.indexOf(tokens[i2]);
-      if (at !== -1) {
-        var start = Math.max(0, at - 34);
-        var slice = (start > 0 ? "\u2026" : "") + body.slice(start, start + 120);
-        return hiTokens(slice, tokens);
-      }
-    }
-    var quote = n.origin && n.origin.selected_text;
-    if (quote) return "\u201C" + hiTokens(truncate2(quote, 90), tokens) + "\u201D";
-    var q = n.origin && n.origin.question;
-    if (q) return hiTokens(truncate2(q, 100), tokens);
-    return escapeHtml(truncate2(body, 100));
-  }
-  function hiTokens(text2, tokens) {
-    if (!tokens.length) return escapeHtml(text2);
-    var lower = text2.toLowerCase(), out = "", i2 = 0;
-    while (i2 < text2.length) {
-      var best = -1, bl = 0;
-      for (var t = 0; t < tokens.length; t++) {
-        var at = lower.indexOf(tokens[t], i2);
-        if (at !== -1 && (best === -1 || at < best)) {
-          best = at;
-          bl = tokens[t].length;
-        }
-      }
-      if (best === -1) {
-        out += escapeHtml(text2.slice(i2));
-        break;
-      }
-      out += escapeHtml(text2.slice(i2, best)) + "<mark>" + escapeHtml(text2.slice(best, best + bl)) + "</mark>";
-      i2 = best + bl;
-    }
-    return out;
-  }
-  function movePalSel(delta) {
-    if (!palItems.length) return;
-    palSel = Math.max(0, Math.min(palItems.length - 1, palSel + delta));
-    var items = palResults.querySelectorAll(".pal-item");
-    for (var i2 = 0; i2 < items.length; i2++) items[i2].classList.toggle("sel", i2 === palSel);
-    syncPalActiveDescendant();
-    if (items[palSel]) items[palSel].scrollIntoView({ block: "nearest" });
-  }
-  function commitPal(source2) {
-    var item = palItems[palSel];
-    if (!item) return;
-    if (item.type === "command") {
-      item.run();
-      closePalette();
-      return;
-    }
-    var node = nodes[item.id];
-    closePalette();
-    if (node) goToNode2(node, source2);
-  }
-  function onPaletteClick(e) {
-    var it = e.target.closest(".pal-item");
-    if (!it) return;
-    palSel = Number(it.dataset.idx) || 0;
-    commitPal(motionSourceFromEvent(e));
-  }
-  function onPaletteMousemove(e) {
-    var it = e.target.closest(".pal-item");
-    if (!it) return;
-    var idx = Number(it.dataset.idx) || 0;
-    if (idx !== palSel) {
-      palSel = idx;
-      var items = palResults.querySelectorAll(".pal-item");
-      for (var i2 = 0; i2 < items.length; i2++) items[i2].classList.toggle("sel", i2 === palSel);
-      syncPalActiveDescendant();
-    }
-  }
-
-  // src/ui/focus-trap.js
-  var FOCUSABLE2 = [
-    "a[href]",
-    "button:not([disabled])",
-    "textarea:not([disabled])",
-    "input:not([disabled])",
-    "select:not([disabled])",
-    "[tabindex]:not([tabindex='-1'])"
-  ].join(",");
-  function activateFocusTrap(root, options2) {
-    if (!root) return function() {
-    };
-    options2 = options2 || {};
-    var previous = document.activeElement;
-    if (!root.hasAttribute("tabindex")) root.setAttribute("tabindex", "-1");
-    function focusables() {
-      var all = root.querySelectorAll ? Array.prototype.slice.call(root.querySelectorAll(FOCUSABLE2)) : [];
-      return all.filter(function(el) {
-        return el.offsetParent !== null || el === document.activeElement || el === options2.initialFocus;
-      });
-    }
-    function focusInitial() {
-      var target = options2.initialFocus || focusables()[0] || root;
-      try {
-        target.focus({ preventScroll: true });
-      } catch (e) {
-        try {
-          target.focus();
-        } catch (_e) {
-        }
-      }
-    }
-    function onKeydown2(e) {
-      if (e.key === "Escape" && typeof options2.onEscape === "function") {
-        e.preventDefault();
-        e.stopPropagation();
-        options2.onEscape(e);
-        return;
-      }
-      if (e.key !== "Tab") return;
-      var items = focusables();
-      if (!items.length) {
-        e.preventDefault();
-        root.focus();
-        return;
-      }
-      var first = items[0];
-      var last = items[items.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    }
-    document.addEventListener("keydown", onKeydown2, true);
-    var initialFocusTimer = setTimeout(function() {
-      initialFocusTimer = 0;
-      focusInitial();
-    }, 0);
-    return function deactivateFocusTrap() {
-      if (initialFocusTimer) {
-        clearTimeout(initialFocusTimer);
-        initialFocusTimer = 0;
-      }
-      document.removeEventListener("keydown", onKeydown2, true);
-      if (options2.restoreFocus !== false && previous && previous.focus) {
-        try {
-          previous.focus({ preventScroll: true });
-        } catch (e) {
-          try {
-            previous.focus();
-          } catch (_e) {
-          }
-        }
-      }
-    };
-  }
-
-  // src/ui/primitives/popover.js
-  function openPopover(options2) {
-    var trigger = options2.trigger, surface = options2.surface, closed2 = false;
-    trigger == null ? void 0 : trigger.setAttribute("aria-expanded", "true");
-    var position = anchorSurface(trigger, surface, { placement: options2.placement });
-    var trap = activateFocusTrap(options2.trapRoot || surface, {
-      initialFocus: options2.initialFocus,
-      restoreFocus: false
-    });
-    var unregister = registerLayer({
-      element: surface,
-      trigger,
-      onClose: function(reason) {
-        var _a2;
-        (_a2 = options2.onClose) == null ? void 0 : _a2.call(options2, reason);
-      },
-      closeOnEscape: options2.closeOnEscape,
-      closeOnOutsidePointer: options2.closeOnOutsidePointer,
-      restoreFocus: options2.restoreFocus
-    });
-    function close2(settings) {
-      if (closed2) return;
-      closed2 = true;
-      trigger == null ? void 0 : trigger.setAttribute("aria-expanded", "false");
-      trap();
-      position.dispose();
-      unregister(settings);
-    }
-    return { close: close2, dispose: close2, update: position.update };
-  }
-
-  // src/ui/branch-surfaces.js
-  function defaultBranchHooks() {
-    return {
-      post: function() {
-        return Promise.resolve({ ok: true });
-      },
-      exportSnapshot: null,
-      exportPortable: null
-    };
-  }
-  var branchLifecycle = createModuleLifecycle({ defaults: defaultBranchHooks });
-  function registerBranchHooks(hooks) {
-    branchLifecycle.register(hooks);
-  }
-  var peekTimer = 0;
-  var peekFor = null;
-  var peekPosition = null;
-  function initBranchSurfaces() {
-    disposeBranchSurfaceResources(false);
-    var branchScope = branchLifecycle.beginInit();
-    try {
-      branchScope.listen(readerMain, "mouseover", onReaderMarkMouseover);
-      branchScope.listen(readerMain, "mouseout", onReaderMarkMouseout);
-      branchScope.listen(world, "mouseover", onReaderMarkMouseover);
-      branchScope.listen(world, "mouseout", onReaderMarkMouseout);
-      branchScope.listen(readerMain, "focusin", onMarkFocusin);
-      branchScope.listen(readerMain, "focusout", onMarkFocusout);
-      branchScope.listen(world, "focusin", onMarkFocusin);
-      branchScope.listen(world, "focusout", onMarkFocusout);
-      branchScope.listen(peekEl, "mouseleave", function() {
-        hidePeek();
-      });
-      branchScope.listen(peekEl, "click", function() {
-        var kid = peekFor && nodes[peekFor];
-        hidePeek();
-        if (kid) openNode(kid.id);
-      });
-      branchScope.listen(document.getElementById("r-share"), "click", function(e) {
-        e.stopPropagation();
-        toggleShare(e.currentTarget, e.detail === 0);
-      });
-      branchScope.listen(document.getElementById("t-share"), "click", function(e) {
-        e.stopPropagation();
-        toggleShare(e.currentTarget, e.detail === 0);
-      });
-      branchScope.listen(shareMenu, "keydown", onShareMenuKeydown);
-      branchScope.listen(document.getElementById("sm-doc"), "click", onCopyDoc);
-      branchScope.listen(document.getElementById("sm-trail"), "click", onCopyTrail);
-      branchScope.listen(document.getElementById("sm-export"), "click", onExportSnapshot);
-      branchScope.listen(document.getElementById("sm-portable"), "click", onExportPortable);
-      branchScope.listen(document.getElementById("sm-synth"), "click", function(e) {
-        closeShare();
-        synthesize(motionSourceFromEvent(e));
-      });
-      branchScope.listen(document.getElementById("cf-keep"), "click", hideConfirm);
-      branchScope.listen(document.getElementById("cf-remove"), "click", function() {
-        var node = confirmFor && nodes[confirmFor];
-        hideConfirm();
-        if (node) deleteBranch(node);
-      });
-      return disposeBranchSurfaces;
-    } catch (error) {
-      disposeBranchSurfaces();
-      throw error;
-    }
-  }
-  function disposeBranchSurfaces() {
-    disposeBranchSurfaceResources(true);
-  }
-  function disposeBranchSurfaceResources(resetHooks) {
-    hidePeek();
-    closeShare({ restoreFocus: false });
-    hideConfirm({ restoreFocus: false });
-    branchLifecycle.dispose(resetHooks);
-    peekFor = null;
-    shareOpen = false;
-    shareAnchor = null;
-    confirmFor = null;
-  }
-  function hidePeek() {
-    if (peekTimer) {
-      clearTimeout(peekTimer);
-      peekTimer = 0;
-    }
-    if (peekPosition) {
-      peekPosition.dispose();
-      peekPosition = null;
-    }
-    peekFor = null;
-    peekEl.classList.remove("visible");
-    peekEl.setAttribute("aria-hidden", "true");
-  }
-  function showPeek(mark) {
-    var kid = nodes[mark.dataset.child];
-    if (!kid || kid.status !== "answered") return;
-    hidePeek();
-    peekFor = kid.id;
-    peekEl.querySelector("[data-peek-unread]").hidden = !isUnread(kid);
-    peekEl.querySelector("[data-peek-title]").textContent = kid.title || "Untitled";
-    var badge = peekEl.querySelector("[data-peek-badge]");
-    var badgeText = kid.origin && kid.origin.synthesis ? "\u2726 Synthesis" : kid.origin && kid.origin.lens ? lensLabel2(kid.origin.lens) : "";
-    badge.textContent = badgeText;
-    badge.hidden = !badgeText;
-    var peekBody = peekEl.querySelector("[data-peek-body]");
-    var fragment = document.createRange().createContextualFragment(kid.html || "");
-    peekBody.replaceChildren(fragment);
-    if (typeof mountVisuals === "function") {
-      mountVisuals(peekBody, "peek:" + kid.id);
-    }
-    peekEl.classList.add("visible");
-    peekEl.setAttribute("aria-hidden", "false");
-    peekPosition = openAnchoredSurface({
-      surface: peekEl,
-      anchor: mark,
-      placement: "bottom-start",
-      trigger: mark,
-      restoreFocus: false,
-      closeOnOutsidePointer: false,
-      onClose: hidePeek
-    });
-  }
-  function onReaderMarkMouseover(e) {
-    var m = e.target.closest && e.target.closest("mark[data-child]");
-    if (!m) return;
-    var kid = nodes[m.dataset.child];
-    if (!kid || kid.status !== "answered") return;
-    if (peekTimer) clearTimeout(peekTimer);
-    peekTimer = branchLifecycle.scope ? branchLifecycle.scope.timeout(function() {
-      peekTimer = 0;
-      showPeek(m);
-    }, 220) : 0;
-  }
-  function onReaderMarkMouseout(e) {
-    var m = e.target.closest && e.target.closest("mark[data-child]");
-    if (!m) return;
-    if (peekTimer) {
-      clearTimeout(peekTimer);
-      peekTimer = 0;
-    }
-    if (!branchLifecycle.scope) return;
-    branchLifecycle.scope.timeout(function() {
-      if (!peekEl.matches(":hover") && !readerMain.querySelector("mark[data-child]:hover")) hidePeek();
-    }, 80);
-  }
-  function onMarkFocusin(e) {
-    var m = e.target.closest && e.target.closest("mark[data-child]");
-    if (!m) return;
-    var kid = nodes[m.dataset.child];
-    if (!kid || kid.status !== "answered") return;
-    if (peekTimer) clearTimeout(peekTimer);
-    peekTimer = branchLifecycle.scope ? branchLifecycle.scope.timeout(function() {
-      peekTimer = 0;
-      if (document.activeElement === m) showPeek(m);
-    }, 220) : 0;
-  }
-  function onMarkFocusout(e) {
-    var m = e.target.closest && e.target.closest("mark[data-child]");
-    if (!m) return;
-    if (peekTimer) {
-      clearTimeout(peekTimer);
-      peekTimer = 0;
-    }
-    if (!branchLifecycle.scope) return;
-    branchLifecycle.scope.timeout(function() {
-      if (!peekEl.matches(":hover") && document.activeElement !== m) hidePeek();
-    }, 0);
-  }
-  var shareOpen = false;
-  var shareAnchor = null;
-  var sharePopover = null;
-  function visibleShareItems() {
-    return Array.prototype.slice.call(shareMenu.querySelectorAll('[role="menuitem"]')).filter(function(item) {
-      return item.style.display !== "none";
-    });
-  }
-  function focusShareItem(item) {
-    visibleShareItems().forEach(function(candidate) {
-      candidate.tabIndex = candidate === item ? 0 : -1;
-    });
-    if (item) item.focus();
-  }
-  function onShareMenuKeydown(e) {
-    var items = visibleShareItems();
-    if (!items.length) return;
-    var index = items.indexOf(document.activeElement), target = null;
-    if (e.key === "ArrowDown") target = items[(index + 1 + items.length) % items.length];
-    else if (e.key === "ArrowUp") target = items[(index - 1 + items.length) % items.length];
-    else if (e.key === "Home") target = items[0];
-    else if (e.key === "End") target = items[items.length - 1];
-    else if (e.key === "Enter" || e.key === " ") {
-      if (index < 0) return;
-      e.preventDefault();
-      items[index].click();
-      return;
-    } else if (e.key === "Tab") {
-      closeShare();
-      return;
-    } else return;
-    e.preventDefault();
-    focusShareItem(target);
-  }
-  function toggleShare(anchor, openedByKeyboard) {
-    if (shareOpen) {
-      closeShare();
-      return;
-    }
-    var noAgent = frozen || closed;
-    document.getElementById("sm-export").style.display = frozen ? "none" : "";
-    document.getElementById("sm-portable").style.display = !frozen && typeof branchLifecycle.hooks.exportPortable === "function" ? "" : "none";
-    document.getElementById("sm-sep2").style.display = noAgent ? "none" : "";
-    document.getElementById("sm-synth").style.display = noAgent ? "none" : "";
-    var items = visibleShareItems();
-    items.forEach(function(item, index) {
-      item.tabIndex = index === 0 ? 0 : -1;
-    });
-    shareAnchor = anchor;
-    shareOpen = true;
-    shareMenu.classList.add("visible");
-    setSurfaceOrigin(shareMenu, anchor.getBoundingClientRect());
-    sharePopover = openPopover({
-      trigger: anchor,
-      surface: shareMenu,
-      placement: "bottom-end",
-      initialFocus: openedByKeyboard ? items[0] : null,
-      onClose: closeShare
-    });
-  }
-  function closeShare(settings) {
-    shareOpen = false;
-    shareMenu.classList.remove("visible");
-    if (sharePopover) {
-      sharePopover.close(settings);
-      sharePopover = null;
-    }
-    shareAnchor = null;
-  }
-  function copyText(text2, okMsg) {
-    function done() {
-      flashHint(okMsg);
-    }
-    function legacy() {
-      var previousFocus = document.activeElement;
-      var ta = document.createElement("textarea");
-      ta.value = text2;
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.select();
-      try {
-        document.execCommand("copy");
-      } catch (err) {
-      }
-      document.body.removeChild(ta);
-      if (previousFocus && previousFocus.isConnected) {
-        try {
-          previousFocus.focus();
-        } catch (err) {
-        }
-      }
-    }
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text2).then(done, function() {
-        legacy();
-        done();
-      });
-    } else {
-      legacy();
-      done();
-    }
-  }
-  function originLine(n) {
-    if (!n.origin) return "";
-    if (n.origin.synthesis) return "> \u2726 Synthesis of the whole Rabbithole\n\n";
-    var ask2 = n.origin.lens ? lensLabel2(n.origin.lens) : n.origin.question || "";
-    if (n.origin.selected_text) return "> Asked about: \u201C" + n.origin.selected_text + "\u201D" + (ask2 ? " \u2014 " + ask2 : "") + "\n\n";
-    return ask2 ? "> Follow-up \u2014 " + ask2 + "\n\n" : "";
-  }
-  function docMarkdown(n, depth) {
-    var h = "#";
-    for (var i2 = 0; i2 < Math.min(depth, 3); i2++) h += "#";
-    var body = (n.md || "").trim() || "_(still being written)_";
-    return h + " " + (n.title || "Untitled") + "\n\n" + originLine(n) + body + "\n";
-  }
-  function trailMarkdown(id) {
-    var path2 = lineageNodes(id), parts = [];
-    for (var i2 = 0; i2 < path2.length; i2++) parts.push(docMarkdown(path2[i2], i2));
-    return parts.join("\n---\n\n");
-  }
-  function onCopyDoc() {
-    closeShare();
-    var n = nodes[currentNodeId];
-    if (!n) return;
-    copyText(docMarkdown(n, 0), "Copied \u201C" + truncate2(n.title || "Untitled", 40) + "\u201D as Markdown");
-  }
-  function onCopyTrail() {
-    closeShare();
-    var path2 = lineageNodes(currentNodeId);
-    copyText(trailMarkdown(currentNodeId), path2.length === 1 ? "Copied this document as Markdown" : "Copied the trail \u2014 " + path2.length + " documents");
-  }
-  function onExportSnapshot() {
-    closeShare();
-    if (typeof branchLifecycle.hooks.exportSnapshot !== "function") {
-      flashHint("This snapshot is already portable.");
-      return;
-    }
-    flashHint("Preparing snapshot...");
-    Promise.resolve(branchLifecycle.hooks.exportSnapshot()).then(function() {
-      flashHint("Snapshot downloading \u2014 a single file that opens anywhere.");
-    }, function() {
-      flashHint("Couldn't prepare the snapshot.");
-    });
-  }
-  function onExportPortable() {
-    closeShare();
-    if (typeof branchLifecycle.hooks.exportPortable !== "function") {
-      flashHint("Rabbithole export is only available in the web app.");
-      return;
-    }
-    flashHint("Preparing Rabbithole export...");
-    Promise.resolve().then(function() {
-      return branchLifecycle.hooks.exportPortable();
-    }).then(function(result) {
-      var name = result && result.filename ? " " + result.filename : "";
-      flashHint("Rabbithole export downloading." + name);
-    }, function() {
-      flashHint("Couldn't prepare the Rabbithole export.");
-    });
-  }
-  function synthesize(source2) {
-    if (closed) {
-      flashHint("Session ended \u2014 reopen this Rabbithole from your terminal first.");
-      return;
-    }
-    var root = nodes[rootId];
-    if (!root) return;
-    for (var k in nodes) {
-      var n = nodes[k];
-      if (n.status === "pending" && n.origin && n.origin.synthesis) {
-        flashHint("A synthesis is already being written\u2026");
-        goToNode(n, source2);
-        return;
-      }
-    }
-    var q = "Step back and write the synthesis of this whole Rabbithole so far: the key ideas we explored, how they connect, and the takeaways worth keeping. Make it a standalone summary of the journey.";
-    var kid = sendFollowup(root, q, null, true);
-    if (mode === "canvas") revealNode(kid, source2);
-    flashHint("\u2726 Synthesizing this journey \u2014 it will branch from where this Rabbithole began.");
-  }
-  var confirmFor = null;
-  var confirmPopover = null;
-  function confirmDelete(node, anchor) {
-    if (closed) {
-      flashHint(frozen ? "This is a read-only snapshot." : "Session ended \u2014 changes can't be saved anymore.");
-      return;
-    }
-    var subCount = countSubtree(node.id) - 1;
-    document.getElementById("cf-msg").textContent = subCount > 0 ? "Remove this branch and " + subCount + " inside it?" : "Remove this branch?";
-    hideConfirm({ restoreFocus: false });
-    confirmFor = node.id;
-    confirmEl.classList.add("visible");
-    setSurfaceOrigin(confirmEl, anchor.getBoundingClientRect());
-    confirmPopover = openPopover({
-      trigger: anchor,
-      surface: confirmEl,
-      placement: "bottom-end",
-      initialFocus: document.getElementById("cf-keep"),
-      onClose: hideConfirm
-    });
-  }
-  function hideConfirm(settings) {
-    confirmFor = null;
-    confirmEl.classList.remove("visible");
-    if (confirmPopover) {
-      var popover = confirmPopover;
-      confirmPopover = null;
-      popover.close(settings);
-    }
-  }
-  function countSubtree(id) {
-    var c2 = 1;
-    childrenOf(id).forEach(function(k) {
-      c2 += countSubtree(k.id);
-    });
-    return c2;
-  }
-  function collectSubtree(id, out) {
-    out.push(id);
-    childrenOf(id).forEach(function(k) {
-      collectSubtree(k.id, out);
-    });
-    return out;
-  }
-  function deleteBranch(node) {
-    var title = node.title || "Untitled";
-    var ids = collectSubtree(node.id, []);
-    branchLifecycle.hooks.post({ type: "delete_node", node_id: node.id });
-    removeNodesLocal(ids, node.parent_id);
-    flashHint(ids.length > 1 ? "Removed \u201C" + truncate2(title, 40) + "\u201D and " + (ids.length - 1) + " inside it" : "Removed \u201C" + truncate2(title, 40) + "\u201D");
-  }
-  function removeNodesLocal(ids, parentId) {
-    var currentGone = false;
-    for (var i2 = 0; i2 < ids.length; i2++) {
-      var id = ids[i2], n = nodes[id];
-      if (!n) continue;
-      if (currentNodeId === id) currentGone = true;
-      clearEdgeHighlight(id);
-      teardownNode(id);
-    }
-    if (currentGone) {
-      setCurrentNodeId(parentId && nodes[parentId] ? parentId : rootId);
-      if (mode === "reader") openNode(currentNodeId);
-    }
-    if (canvasBuilt) {
-      renderVisibility();
-      drawEdges();
-    }
-    if (mode === "reader") {
-      renderBreadcrumb();
-      renderSidebar();
-    }
-    refreshAmbient();
-    updateSince();
   }
 
   // node_modules/marked/lib/marked.esm.js
@@ -22967,8 +22164,8 @@ ${text2}</tr>
   };
 
   // node_modules/highlight.js/es/core.js
-  var import_core10 = __toESM(require_core(), 1);
-  var core_default = import_core10.default;
+  var import_core8 = __toESM(require_core(), 1);
+  var core_default = import_core8.default;
 
   // node_modules/highlight.js/es/languages/bash.js
   function bash(hljs) {
@@ -32798,10 +31995,10 @@ ${text2}</tr>
         }
       };
     }
-    function renderMarkdownToHtml2(markdown2, { baseUrl = null, assetNames = null, resolveAssetUrl: perCallResolver = null } = {}) {
+    function renderMarkdownToHtml2(markdown2, { baseUrl = null, assetNames: assetNames2 = null, resolveAssetUrl: perCallResolver = null } = {}) {
       const context = {
         baseUrl,
-        assetNames,
+        assetNames: assetNames2,
         resolveAssetUrl: perCallResolver || resolveAssetUrl2
       };
       const marked2 = new Marked({ gfm: true, breaks: false });
@@ -32816,8 +32013,10 @@ ${text2}</tr>
 
   // src/ui/renderer.js
   var assetData = null;
+  var assetNames = null;
   function setRendererAssetData(data) {
     assetData = data && typeof data === "object" ? data : null;
+    assetNames = assetData ? new Set(Object.keys(assetData)) : null;
   }
   function browserEncodeBase64Utf8(value) {
     var source2 = String(value == null ? "" : value);
@@ -32852,17 +32051,784 @@ ${text2}</tr>
   function renderNodeMarkdown(node) {
     return renderMarkdownToHtml(node && node.md, {
       baseUrl: node && node.base_url || null,
-      assetNames: assetData ? new Set(Object.keys(assetData)) : null
+      assetNames
     });
   }
   function refreshNodeHtml(node) {
     if (!node) return "";
     node.html = renderNodeMarkdown(node);
+    node._htmlFor = node.md;
     node._plainFor = null;
     return node.html;
   }
+  function ensureNodeHtml(node) {
+    if (!node) return "";
+    return node._htmlFor === node.md ? node.html : refreshNodeHtml(node);
+  }
   if (typeof window !== "undefined") {
     window.__rhMarkdownRendererSentinel = MARKDOWN_RENDERER_SENTINEL;
+  }
+
+  // src/ui/palette.js
+  function defaultPaletteHooks() {
+    return {
+      hideAsk: function() {
+      },
+      closeShare: function() {
+      },
+      hideConfirm: function() {
+      }
+    };
+  }
+  var paletteLifecycle = createModuleLifecycle({ defaults: defaultPaletteHooks });
+  function registerPaletteHooks(hooks) {
+    paletteLifecycle.register(hooks);
+  }
+  function getPlain(node) {
+    ensureNodeHtml(node);
+    if (node._plainFor !== node.html) {
+      var d = document.createElement("div");
+      d.innerHTML = node.html || "";
+      node._plainFor = node.html;
+      node._plain = d.textContent || "";
+    }
+    return node._plain || "";
+  }
+  var palOpen = false;
+  var palSel = 0;
+  var palItems = [];
+  var palCanvasCommands = false;
+  var palDialog = null;
+  var palRows = [];
+  function initPalette() {
+    disposePaletteResources(false);
+    var paletteScope = paletteLifecycle.beginInit();
+    try {
+      palText.setAttribute("role", "combobox");
+      palText.setAttribute("aria-expanded", "false");
+      paletteScope.listen(palText, "input", function() {
+        renderPalette(palText.value);
+      });
+      paletteScope.listen(palText, "keydown", onPaletteKeydown);
+      paletteScope.listen(palResults, "click", onPaletteClick);
+      paletteScope.listen(palResults, "mousemove", onPaletteMousemove);
+      return disposePalette;
+    } catch (error) {
+      disposePalette();
+      throw error;
+    }
+  }
+  function disposePalette() {
+    disposePaletteResources(true);
+  }
+  function disposePaletteResources(resetHooks) {
+    closePalette({ restoreFocus: false });
+    paletteLifecycle.dispose(resetHooks);
+    palOpen = false;
+    palSel = 0;
+    palItems = [];
+    palCanvasCommands = false;
+    palRows = [];
+  }
+  function togglePalette() {
+    if (palOpen) closePalette();
+    else openPalette();
+  }
+  function openPalette() {
+    palOpen = true;
+    palCanvasCommands = mode === "canvas";
+    paletteLifecycle.hooks.hideAsk();
+    paletteLifecycle.hooks.closeShare();
+    paletteLifecycle.hooks.hideConfirm();
+    paletteEl.classList.add("visible");
+    palText.value = "";
+    renderPalette("");
+    if (palDialog) palDialog.close();
+    palDialog = openDialog({
+      dialog: document.getElementById("palette-panel"),
+      backdrop: paletteEl,
+      label: palText.getAttribute("aria-label") || palText.placeholder,
+      initialFocus: palText,
+      onClose: function() {
+        palOpen = false;
+        palCanvasCommands = false;
+        paletteEl.classList.remove("visible");
+        palText.setAttribute("aria-expanded", "false");
+        palText.removeAttribute("aria-activedescendant");
+        palDialog = null;
+      }
+    });
+    palText.setAttribute("aria-expanded", "true");
+  }
+  function closePalette(settings) {
+    if (palDialog) palDialog.close("programmatic", settings);
+  }
+  function onPaletteKeydown(e) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      movePalSel(1);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      movePalSel(-1);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      commitPal("keyboard");
+    }
+  }
+  function renderPalette(q) {
+    var tokens = q.toLowerCase().split(/\s+/).filter(function(t2) {
+      return !!t2;
+    });
+    var scored = [];
+    for (var id in nodes) {
+      var n = nodes[id];
+      var score = 0, ok = true;
+      var title = "", ask2 = "", body = "";
+      if (tokens.length) {
+        var rawTitle = n.title || "";
+        if (n._searchTitleFor !== rawTitle) {
+          n._searchTitleFor = rawTitle;
+          n._searchTitle = rawTitle.toLowerCase();
+        }
+        title = n._searchTitle;
+        var rawAsk = (n.origin && n.origin.selected_text || "") + " " + (n.origin && n.origin.question || "");
+        if (n._searchAskFor !== rawAsk) {
+          n._searchAskFor = rawAsk;
+          n._searchAsk = rawAsk.toLowerCase();
+        }
+        ask2 = n._searchAsk;
+        var rawBody = getPlain(n);
+        if (n._searchBodyFor !== rawBody) {
+          n._searchBodyFor = rawBody;
+          n._searchBody = rawBody.toLowerCase();
+        }
+        body = n._searchBody;
+      }
+      for (var i2 = 0; i2 < tokens.length; i2++) {
+        var t = tokens[i2];
+        if (title.indexOf(t) !== -1) score += title.indexOf(t) === 0 ? 40 : 30;
+        else if (ask2.indexOf(t) !== -1) score += 15;
+        else if (body.indexOf(t) !== -1) score += 5;
+        else {
+          ok = false;
+          break;
+        }
+      }
+      if (!ok) continue;
+      scored.push({ n, score });
+    }
+    scored.sort(function(a, b) {
+      return b.score - a.score || (b.n._order || 0) - (a.n._order || 0);
+    });
+    scored = scored.slice(0, 12);
+    palItems = scored.map(function(s) {
+      return { type: "node", id: s.n.id };
+    }).concat(paletteCommandItems(tokens));
+    palSel = 0;
+    if (!palItems.length) {
+      palRows.forEach(function(row) {
+        row.hidden = true;
+      });
+      palText.removeAttribute("aria-activedescendant");
+      var empty = palResults.querySelector(".pal-empty");
+      if (!empty) {
+        empty = document.createElement("div");
+        empty.className = "pal-empty";
+        palResults.appendChild(empty);
+      }
+      empty.textContent = tokens.length ? "Nothing in this hole matches that." : "";
+      empty.hidden = !tokens.length;
+      return;
+    }
+    var empty = palResults.querySelector(".pal-empty");
+    if (empty) empty.hidden = true;
+    var fragment = document.createDocumentFragment();
+    palItems.forEach(function(item, i3) {
+      var row = palRows[i3] || createPalRow(i3);
+      palRows[i3] = row;
+      row.hidden = false;
+      row.dataset.idx = i3;
+      row.classList.toggle("sel", i3 === palSel);
+      row._flag.textContent = "";
+      row._flag.className = "";
+      row._badge.hidden = true;
+      row._kbd.hidden = true;
+      row._snippet.hidden = item.type === "command";
+      if (item.type === "command") {
+        row._title.textContent = item.name;
+        row._kbd.textContent = item.kbd;
+        row._kbd.hidden = false;
+        fragment.appendChild(row);
+        return;
+      }
+      var n2 = nodes[item.id];
+      if (!n2) return;
+      row._title.textContent = n2.title || "Untitled";
+      if (n2.status === "pending") {
+        row._flag.className = "pal-writing";
+        row._flag.textContent = "writing\u2026";
+      } else if (isUnread(n2)) row._flag.className = "pal-dot";
+      if (n2.origin && (n2.origin.synthesis || n2.origin.lens)) {
+        row._badge.textContent = n2.origin.synthesis ? "\u2726 Synthesis" : lensLabel2(n2.origin.lens);
+        row._badge.hidden = false;
+      }
+      row._snippet.innerHTML = palSnippet(n2, tokens);
+      fragment.appendChild(row);
+    });
+    for (var i2 = palItems.length; i2 < palRows.length; i2++) palRows[i2].hidden = true;
+    palResults.appendChild(fragment);
+    syncPalActiveDescendant();
+  }
+  function createPalRow(index) {
+    var row = document.createElement("div");
+    row.className = "pal-item";
+    row.id = "pal-option-" + index;
+    row.setAttribute("role", "option");
+    var top = document.createElement("div");
+    top.className = "pal-t";
+    row._flag = document.createElement("span");
+    row._title = document.createElement("span");
+    row._title.className = "pal-title";
+    row._badge = document.createElement("span");
+    row._badge.className = "lens-badge";
+    row._kbd = document.createElement("kbd");
+    row._kbd.className = "pal-kbd";
+    row._snippet = document.createElement("div");
+    row._snippet.className = "pal-s";
+    top.append(row._flag, row._title, row._badge, row._kbd);
+    row.append(top, row._snippet);
+    return row;
+  }
+  function syncPalActiveDescendant() {
+    for (var i2 = 0; i2 < palRows.length; i2++) palRows[i2].setAttribute("aria-selected", i2 === palSel && !palRows[i2].hidden ? "true" : "false");
+    if (palRows[palSel] && !palRows[palSel].hidden) palText.setAttribute("aria-activedescendant", palRows[palSel].id);
+    else palText.removeAttribute("aria-activedescendant");
+  }
+  function paletteCommandItems(tokens) {
+    if (!palCanvasCommands) return [];
+    var commands = [
+      { type: "command", name: "Frame everything", kbd: "F", run: function() {
+        frameAll(true, "keyboard");
+      } },
+      { type: "command", name: "Tidy up layout", kbd: "T", run: function() {
+        tidy("keyboard");
+      } }
+    ];
+    var out = [];
+    for (var i2 = 0; i2 < commands.length; i2++) {
+      var c2 = commands[i2];
+      var name = c2.name.toLowerCase();
+      var ok = true;
+      for (var t = 0; t < tokens.length; t++) {
+        if (name.indexOf(tokens[t]) === -1) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) out.push(c2);
+    }
+    return out;
+  }
+  function palSnippet(n, tokens) {
+    var body = getPlain(n);
+    var lower = body.toLowerCase();
+    for (var i2 = 0; i2 < tokens.length; i2++) {
+      var at = lower.indexOf(tokens[i2]);
+      if (at !== -1) {
+        var start = Math.max(0, at - 34);
+        var slice = (start > 0 ? "\u2026" : "") + body.slice(start, start + 120);
+        return hiTokens(slice, tokens);
+      }
+    }
+    var quote = n.origin && n.origin.selected_text;
+    if (quote) return "\u201C" + hiTokens(truncate2(quote, 90), tokens) + "\u201D";
+    var q = n.origin && n.origin.question;
+    if (q) return hiTokens(truncate2(q, 100), tokens);
+    return escapeHtml(truncate2(body, 100));
+  }
+  function hiTokens(text2, tokens) {
+    if (!tokens.length) return escapeHtml(text2);
+    var lower = text2.toLowerCase(), out = "", i2 = 0;
+    while (i2 < text2.length) {
+      var best = -1, bl = 0;
+      for (var t = 0; t < tokens.length; t++) {
+        var at = lower.indexOf(tokens[t], i2);
+        if (at !== -1 && (best === -1 || at < best)) {
+          best = at;
+          bl = tokens[t].length;
+        }
+      }
+      if (best === -1) {
+        out += escapeHtml(text2.slice(i2));
+        break;
+      }
+      out += escapeHtml(text2.slice(i2, best)) + "<mark>" + escapeHtml(text2.slice(best, best + bl)) + "</mark>";
+      i2 = best + bl;
+    }
+    return out;
+  }
+  function movePalSel(delta) {
+    if (!palItems.length) return;
+    palSel = Math.max(0, Math.min(palItems.length - 1, palSel + delta));
+    var items = palResults.querySelectorAll(".pal-item");
+    for (var i2 = 0; i2 < items.length; i2++) items[i2].classList.toggle("sel", i2 === palSel);
+    syncPalActiveDescendant();
+    if (items[palSel]) items[palSel].scrollIntoView({ block: "nearest" });
+  }
+  function commitPal(source2) {
+    var item = palItems[palSel];
+    if (!item) return;
+    if (item.type === "command") {
+      item.run();
+      closePalette();
+      return;
+    }
+    var node = nodes[item.id];
+    closePalette();
+    if (node) goToNode(node, source2);
+  }
+  function onPaletteClick(e) {
+    var it = e.target.closest(".pal-item");
+    if (!it) return;
+    palSel = Number(it.dataset.idx) || 0;
+    commitPal(motionSourceFromEvent(e));
+  }
+  function onPaletteMousemove(e) {
+    var it = e.target.closest(".pal-item");
+    if (!it) return;
+    var idx = Number(it.dataset.idx) || 0;
+    if (idx !== palSel) {
+      palSel = idx;
+      var items = palResults.querySelectorAll(".pal-item");
+      for (var i2 = 0; i2 < items.length; i2++) items[i2].classList.toggle("sel", i2 === palSel);
+      syncPalActiveDescendant();
+    }
+  }
+
+  // src/ui/focus-trap.js
+  var FOCUSABLE2 = [
+    "a[href]",
+    "button:not([disabled])",
+    "textarea:not([disabled])",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "[tabindex]:not([tabindex='-1'])"
+  ].join(",");
+  function activateFocusTrap(root, options2) {
+    if (!root) return function() {
+    };
+    options2 = options2 || {};
+    var previous = document.activeElement;
+    if (!root.hasAttribute("tabindex")) root.setAttribute("tabindex", "-1");
+    function focusables() {
+      var all = root.querySelectorAll ? Array.prototype.slice.call(root.querySelectorAll(FOCUSABLE2)) : [];
+      return all.filter(function(el) {
+        return el.offsetParent !== null || el === document.activeElement || el === options2.initialFocus;
+      });
+    }
+    function focusInitial() {
+      var target = options2.initialFocus || focusables()[0] || root;
+      try {
+        target.focus({ preventScroll: true });
+      } catch (e) {
+        try {
+          target.focus();
+        } catch (_e) {
+        }
+      }
+    }
+    function onKeydown2(e) {
+      if (e.key === "Escape" && typeof options2.onEscape === "function") {
+        e.preventDefault();
+        e.stopPropagation();
+        options2.onEscape(e);
+        return;
+      }
+      if (e.key !== "Tab") return;
+      var items = focusables();
+      if (!items.length) {
+        e.preventDefault();
+        root.focus();
+        return;
+      }
+      var first = items[0];
+      var last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener("keydown", onKeydown2, true);
+    var initialFocusTimer = setTimeout(function() {
+      initialFocusTimer = 0;
+      focusInitial();
+    }, 0);
+    return function deactivateFocusTrap() {
+      if (initialFocusTimer) {
+        clearTimeout(initialFocusTimer);
+        initialFocusTimer = 0;
+      }
+      document.removeEventListener("keydown", onKeydown2, true);
+      if (options2.restoreFocus !== false && previous && previous.focus) {
+        try {
+          previous.focus({ preventScroll: true });
+        } catch (e) {
+          try {
+            previous.focus();
+          } catch (_e) {
+          }
+        }
+      }
+    };
+  }
+
+  // src/ui/primitives/popover.js
+  function openPopover(options2) {
+    var trigger = options2.trigger, surface = options2.surface, closed2 = false;
+    trigger == null ? void 0 : trigger.setAttribute("aria-expanded", "true");
+    var position = anchorSurface(trigger, surface, { placement: options2.placement });
+    var trap = activateFocusTrap(options2.trapRoot || surface, {
+      initialFocus: options2.initialFocus,
+      restoreFocus: false
+    });
+    var unregister = registerLayer({
+      element: surface,
+      trigger,
+      onClose: function(reason) {
+        var _a2;
+        (_a2 = options2.onClose) == null ? void 0 : _a2.call(options2, reason);
+      },
+      closeOnEscape: options2.closeOnEscape,
+      closeOnOutsidePointer: options2.closeOnOutsidePointer,
+      restoreFocus: options2.restoreFocus
+    });
+    function close2(settings) {
+      if (closed2) return;
+      closed2 = true;
+      trigger == null ? void 0 : trigger.setAttribute("aria-expanded", "false");
+      trap();
+      position.dispose();
+      unregister(settings);
+    }
+    return { close: close2, dispose: close2, update: position.update };
+  }
+
+  // src/ui/branch-surfaces.js
+  function defaultBranchHooks() {
+    return {
+      post: function() {
+        return Promise.resolve({ ok: true });
+      },
+      exportSnapshot: null,
+      exportPortable: null
+    };
+  }
+  var branchLifecycle = createModuleLifecycle({ defaults: defaultBranchHooks });
+  function registerBranchHooks(hooks) {
+    branchLifecycle.register(hooks);
+  }
+  function initBranchSurfaces() {
+    disposeBranchSurfaceResources(false);
+    var branchScope = branchLifecycle.beginInit();
+    try {
+      branchScope.listen(document.getElementById("r-share"), "click", function(e) {
+        e.stopPropagation();
+        toggleShare(e.currentTarget, e.detail === 0);
+      });
+      branchScope.listen(document.getElementById("t-share"), "click", function(e) {
+        e.stopPropagation();
+        toggleShare(e.currentTarget, e.detail === 0);
+      });
+      branchScope.listen(shareMenu, "keydown", onShareMenuKeydown);
+      branchScope.listen(document.getElementById("sm-doc"), "click", onCopyDoc);
+      branchScope.listen(document.getElementById("sm-trail"), "click", onCopyTrail);
+      branchScope.listen(document.getElementById("sm-export"), "click", onExportSnapshot);
+      branchScope.listen(document.getElementById("sm-portable"), "click", onExportPortable);
+      branchScope.listen(document.getElementById("sm-synth"), "click", function(e) {
+        closeShare();
+        synthesize(motionSourceFromEvent(e));
+      });
+      branchScope.listen(document.getElementById("cf-keep"), "click", hideConfirm);
+      branchScope.listen(document.getElementById("cf-remove"), "click", function() {
+        var node = confirmFor && nodes[confirmFor];
+        hideConfirm();
+        if (node) deleteBranch(node);
+      });
+      return disposeBranchSurfaces;
+    } catch (error) {
+      disposeBranchSurfaces();
+      throw error;
+    }
+  }
+  function disposeBranchSurfaces() {
+    disposeBranchSurfaceResources(true);
+  }
+  function disposeBranchSurfaceResources(resetHooks) {
+    closeShare({ restoreFocus: false });
+    hideConfirm({ restoreFocus: false });
+    branchLifecycle.dispose(resetHooks);
+    shareOpen = false;
+    shareAnchor = null;
+    confirmFor = null;
+  }
+  var shareOpen = false;
+  var shareAnchor = null;
+  var sharePopover = null;
+  function visibleShareItems() {
+    return Array.prototype.slice.call(shareMenu.querySelectorAll('[role="menuitem"]')).filter(function(item) {
+      return item.style.display !== "none";
+    });
+  }
+  function focusShareItem(item) {
+    visibleShareItems().forEach(function(candidate) {
+      candidate.tabIndex = candidate === item ? 0 : -1;
+    });
+    if (item) item.focus();
+  }
+  function onShareMenuKeydown(e) {
+    var items = visibleShareItems();
+    if (!items.length) return;
+    var index = items.indexOf(document.activeElement), target = null;
+    if (e.key === "ArrowDown") target = items[(index + 1 + items.length) % items.length];
+    else if (e.key === "ArrowUp") target = items[(index - 1 + items.length) % items.length];
+    else if (e.key === "Home") target = items[0];
+    else if (e.key === "End") target = items[items.length - 1];
+    else if (e.key === "Enter" || e.key === " ") {
+      if (index < 0) return;
+      e.preventDefault();
+      items[index].click();
+      return;
+    } else if (e.key === "Tab") {
+      closeShare();
+      return;
+    } else return;
+    e.preventDefault();
+    focusShareItem(target);
+  }
+  function toggleShare(anchor, openedByKeyboard) {
+    if (shareOpen) {
+      closeShare();
+      return;
+    }
+    var noAgent = frozen || closed;
+    document.getElementById("sm-export").style.display = frozen ? "none" : "";
+    document.getElementById("sm-portable").style.display = !frozen && typeof branchLifecycle.hooks.exportPortable === "function" ? "" : "none";
+    document.getElementById("sm-sep2").style.display = noAgent ? "none" : "";
+    document.getElementById("sm-synth").style.display = noAgent ? "none" : "";
+    var items = visibleShareItems();
+    items.forEach(function(item, index) {
+      item.tabIndex = index === 0 ? 0 : -1;
+    });
+    shareAnchor = anchor;
+    shareOpen = true;
+    shareMenu.classList.add("visible");
+    setSurfaceOrigin(shareMenu, anchor.getBoundingClientRect());
+    sharePopover = openPopover({
+      trigger: anchor,
+      surface: shareMenu,
+      placement: "bottom-end",
+      initialFocus: openedByKeyboard ? items[0] : null,
+      onClose: closeShare
+    });
+  }
+  function closeShare(settings) {
+    shareOpen = false;
+    shareMenu.classList.remove("visible");
+    if (sharePopover) {
+      sharePopover.close(settings);
+      sharePopover = null;
+    }
+    shareAnchor = null;
+  }
+  function copyText(text2, okMsg) {
+    function done() {
+      flashHint(okMsg);
+    }
+    function legacy() {
+      var previousFocus = document.activeElement;
+      var ta = document.createElement("textarea");
+      ta.value = text2;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+      } catch (err) {
+      }
+      document.body.removeChild(ta);
+      if (previousFocus && previousFocus.isConnected) {
+        try {
+          previousFocus.focus();
+        } catch (err) {
+        }
+      }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text2).then(done, function() {
+        legacy();
+        done();
+      });
+    } else {
+      legacy();
+      done();
+    }
+  }
+  function originLine(n) {
+    if (!n.origin) return "";
+    if (n.origin.synthesis) return "> \u2726 Synthesis of the whole Rabbithole\n\n";
+    var ask2 = n.origin.lens ? lensLabel2(n.origin.lens) : n.origin.question || "";
+    if (n.origin.selected_text) return "> Asked about: \u201C" + n.origin.selected_text + "\u201D" + (ask2 ? " \u2014 " + ask2 : "") + "\n\n";
+    return ask2 ? "> Follow-up \u2014 " + ask2 + "\n\n" : "";
+  }
+  function docMarkdown(n, depth) {
+    var h = "#";
+    for (var i2 = 0; i2 < Math.min(depth, 3); i2++) h += "#";
+    var body = (n.md || "").trim() || "_(still being written)_";
+    return h + " " + (n.title || "Untitled") + "\n\n" + originLine(n) + body + "\n";
+  }
+  function trailMarkdown(id) {
+    var path2 = lineageNodes(id), parts = [];
+    for (var i2 = 0; i2 < path2.length; i2++) parts.push(docMarkdown(path2[i2], i2));
+    return parts.join("\n---\n\n");
+  }
+  function onCopyDoc() {
+    closeShare();
+    var n = nodes[currentNodeId];
+    if (!n) return;
+    copyText(docMarkdown(n, 0), "Copied \u201C" + truncate2(n.title || "Untitled", 40) + "\u201D as Markdown");
+  }
+  function onCopyTrail() {
+    closeShare();
+    var path2 = lineageNodes(currentNodeId);
+    copyText(trailMarkdown(currentNodeId), path2.length === 1 ? "Copied this document as Markdown" : "Copied the trail \u2014 " + path2.length + " documents");
+  }
+  function onExportSnapshot() {
+    closeShare();
+    if (typeof branchLifecycle.hooks.exportSnapshot !== "function") {
+      flashHint("This snapshot is already portable.");
+      return;
+    }
+    flashHint("Preparing snapshot...");
+    Promise.resolve(branchLifecycle.hooks.exportSnapshot()).then(function() {
+      flashHint("Snapshot downloading \u2014 a single file that opens anywhere.");
+    }, function() {
+      flashHint("Couldn't prepare the snapshot.");
+    });
+  }
+  function onExportPortable() {
+    closeShare();
+    if (typeof branchLifecycle.hooks.exportPortable !== "function") {
+      flashHint("Rabbithole export is only available in the web app.");
+      return;
+    }
+    flashHint("Preparing Rabbithole export...");
+    Promise.resolve().then(function() {
+      return branchLifecycle.hooks.exportPortable();
+    }).then(function(result) {
+      var name = result && result.filename ? " " + result.filename : "";
+      flashHint("Rabbithole export downloading." + name);
+    }, function() {
+      flashHint("Couldn't prepare the Rabbithole export.");
+    });
+  }
+  function synthesize(source2) {
+    if (closed) {
+      flashHint("Session ended \u2014 reopen this Rabbithole from your terminal first.");
+      return;
+    }
+    var root = nodes[rootId];
+    if (!root) return;
+    for (var k in nodes) {
+      var n = nodes[k];
+      if (n.status === "pending" && n.origin && n.origin.synthesis) {
+        flashHint("A synthesis is already being written\u2026");
+        goToNode(n, source2);
+        return;
+      }
+    }
+    var q = "Step back and write the synthesis of this whole Rabbithole so far: the key ideas we explored, how they connect, and the takeaways worth keeping. Make it a standalone summary of the journey.";
+    var kid = sendFollowup(root, q, null, true);
+    if (mode === "canvas") revealNode(kid, source2);
+    flashHint("\u2726 Synthesizing this journey \u2014 it will branch from where this Rabbithole began.");
+  }
+  var confirmFor = null;
+  var confirmPopover = null;
+  function confirmDelete(node, anchor) {
+    if (closed) {
+      flashHint(frozen ? "This is a read-only snapshot." : "Session ended \u2014 changes can't be saved anymore.");
+      return;
+    }
+    var subCount = countSubtree(node.id) - 1;
+    document.getElementById("cf-msg").textContent = subCount > 0 ? "Remove this branch and " + subCount + " inside it?" : "Remove this branch?";
+    hideConfirm({ restoreFocus: false });
+    confirmFor = node.id;
+    confirmEl.classList.add("visible");
+    setSurfaceOrigin(confirmEl, anchor.getBoundingClientRect());
+    confirmPopover = openPopover({
+      trigger: anchor,
+      surface: confirmEl,
+      placement: "bottom-end",
+      initialFocus: document.getElementById("cf-keep"),
+      onClose: hideConfirm
+    });
+  }
+  function hideConfirm(settings) {
+    confirmFor = null;
+    confirmEl.classList.remove("visible");
+    if (confirmPopover) {
+      var popover = confirmPopover;
+      confirmPopover = null;
+      popover.close(settings);
+    }
+  }
+  function countSubtree(id) {
+    var c2 = 1;
+    childrenOf(id).forEach(function(k) {
+      c2 += countSubtree(k.id);
+    });
+    return c2;
+  }
+  function collectSubtree(id, out) {
+    out.push(id);
+    childrenOf(id).forEach(function(k) {
+      collectSubtree(k.id, out);
+    });
+    return out;
+  }
+  function deleteBranch(node) {
+    var title = node.title || "Untitled";
+    var ids = collectSubtree(node.id, []);
+    branchLifecycle.hooks.post({ type: "delete_node", node_id: node.id });
+    removeNodesLocal(ids, node.parent_id);
+    flashHint(ids.length > 1 ? "Removed \u201C" + truncate2(title, 40) + "\u201D and " + (ids.length - 1) + " inside it" : "Removed \u201C" + truncate2(title, 40) + "\u201D");
+  }
+  function removeNodesLocal(ids, parentId) {
+    var currentGone = false;
+    for (var i2 = 0; i2 < ids.length; i2++) {
+      var id = ids[i2], n = nodes[id];
+      if (!n) continue;
+      if (currentNodeId === id) currentGone = true;
+      clearEdgeHighlight(id);
+      teardownNode(id);
+    }
+    if (currentGone) {
+      setCurrentNodeId(parentId && nodes[parentId] ? parentId : rootId);
+      if (mode === "reader") openNode(currentNodeId);
+    }
+    if (canvasBuilt) {
+      renderVisibility();
+      drawEdges();
+    }
+    if (mode === "reader") {
+      renderBreadcrumb();
+      renderSidebar();
+    }
+    refreshAmbient();
+    updateSince();
   }
 
   // src/ui/hydrate.js
@@ -32872,7 +32838,7 @@ ${text2}</tr>
     (hydration.nodes || []).forEach(function(raw) {
       var isRoot = raw.id === rootId;
       var size = raw.size || (isRoot ? DEFAULT_ROOT : DEFAULT_CHILD);
-      var node = nodes[raw.id] = {
+      var node = registerNode({
         id: raw.id,
         parent_id: raw.parent_id,
         title: raw.title,
@@ -32892,8 +32858,7 @@ ${text2}</tr>
         _order: 0,
         extensions: raw.extensions || {},
         _startTs: raw.status === "pending" ? Date.now() : 0
-      };
-      refreshNodeHtml(node);
+      });
     });
     Object.keys(nodes).forEach(function(id) {
       nodes[id]._order = nextOrder();
@@ -33037,12 +33002,12 @@ ${text2}</tr>
       registerCoreHooks({
         post: post2,
         openNode,
+        ensureNodeHtml,
         mountDocImages,
         mountPdfView: capabilities.mountPdfView || null
       });
       registerReaderHooks({
         hideAsk,
-        hidePeek,
         updateComposerState,
         scheduleViewSave: host.scheduleViewSave || noop,
         setMode,
@@ -33053,17 +33018,15 @@ ${text2}</tr>
       });
       registerCanvasHooks({
         hideAsk,
-        hidePeek,
         sendFollowup,
         confirmDelete,
         persistNode: host.persistNode || noop,
         persistNodesBulk: host.persistNodesBulk || noop,
         scheduleViewSave: host.scheduleViewSave || noop
       });
-      registerAskHooks({ post: post2, hideConfirm, hidePeek });
+      registerAskHooks({ post: post2, hideConfirm });
       registerPaletteHooks({
         hideAsk,
-        hidePeek,
         closeShare,
         hideConfirm
       });
@@ -33287,6 +33250,9 @@ ${text2}</tr>
   }
   var streamRenderRaf = 0;
   var streamRenderQueue = {};
+  function hasStreamSurface(node) {
+    return !!node.bodyEl || mode === "reader" && (currentNodeId === node.id || currentNodeId === node.parent_id);
+  }
   function cancelQueuedStreamRender(nodeId) {
     delete streamRenderQueue[nodeId];
   }
@@ -33304,6 +33270,7 @@ ${text2}</tr>
       Object.keys(batch).forEach(function(id) {
         var item = batch[id];
         if (!item.node || item.node.status !== "pending") return;
+        if (!hasStreamSurface(item.node)) return;
         refreshNodeHtml(item.node);
         renderStreamSurfaces(item.node, item.firstChunk);
       });
@@ -33388,7 +33355,7 @@ ${text2}</tr>
       var node = nodes[msg.node_id];
       if (!node) {
         var pos = msg.position || {};
-        node = nodes[msg.node_id] = {
+        node = registerNode({
           id: msg.node_id,
           parent_id: msg.parent_id || null,
           title: msg.title || "\u2026",
@@ -33407,7 +33374,7 @@ ${text2}</tr>
           status: "pending",
           _order: nextOrder(),
           _startTs: Date.now()
-        };
+        });
         if (canvasBuilt) {
           createNodeEl(node);
           renderVisibility();
@@ -33427,7 +33394,7 @@ ${text2}</tr>
       node.md = msg.markdown || node.md || "";
       node.base_url = msg.base_url || null;
       node.base_url_source = msg.base_url_source || null;
-      refreshNodeHtml(node);
+      if (hasStreamSurface(node)) refreshNodeHtml(node);
       node.read = false;
       if (node.titleEl) {
         node.titleEl.textContent = node.title;
@@ -33734,12 +33701,6 @@ ${text2}</tr>
   <div id="pal-results" role="listbox" aria-label="Search results"></div>
 </div></div>
 
-<div id="peek" aria-hidden="true">
-  <div class="peek-title"><span class="pal-dot" data-peek-unread hidden></span><span data-peek-title></span><span class="lens-badge" data-peek-badge hidden></span></div>
-  <div class="peek-body md" data-peek-body></div>
-  <div class="peek-hint">Open branch</div>
-</div>
-
 <div id="sharemenu" role="menu" aria-label="Share and export">
   ${buttonMarkup({ bare: true, className: "sm-item", id: "sm-trail", role: "menuitem", tabIndex: -1, label: "Copy trail as Markdown", svgIconHtml: '<span class="sm-ic">\u2937</span>' })}
   ${buttonMarkup({ bare: true, className: "sm-item", id: "sm-doc", role: "menuitem", tabIndex: -1, label: "Copy document as Markdown", svgIconHtml: '<span class="sm-ic">\u29C9</span>' })}
@@ -33823,10 +33784,16 @@ ${text2}</tr>
     }
   }
   async function buildAssetData(snapshotNodes) {
-    var out = {};
     var names = collectAssetNames(snapshotNodes);
-    for (var i2 = 0; i2 < names.length; i2++) out[names[i2]] = await binaryToBase64(await fetchAssetBinary(names[i2]));
-    return out;
+    var entries = new Array(names.length);
+    var next = 0;
+    await Promise.all(Array.from({ length: Math.min(4, names.length) }, async function() {
+      while (next < names.length) {
+        var index = next++, name = names[index];
+        entries[index] = [name, await binaryToBase64(await fetchAssetBinary(name))];
+      }
+    }));
+    return Object.fromEntries(entries);
   }
   function extractDompurifySource() {
     if (typeof snapshotHooks.getDompurifySource === "function") {
@@ -33935,22 +33902,17 @@ ${text2}</tr>
     return start <= end ? { start, end } : { start: end, end: start };
   }
   function normalizeRectUnion(rects, pageRect) {
-    var live = Array.from(rects).filter(function(r2) {
-      return r2.width > 0 && r2.height > 0;
-    });
-    if (!live.length || !pageRect.width || !pageRect.height) return null;
-    var left = Math.min.apply(null, live.map(function(r2) {
-      return r2.left;
-    }));
-    var top = Math.min.apply(null, live.map(function(r2) {
-      return r2.top;
-    }));
-    var right = Math.max.apply(null, live.map(function(r2) {
-      return r2.right;
-    }));
-    var bottom = Math.max.apply(null, live.map(function(r2) {
-      return r2.bottom;
-    }));
+    var left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity, found = false;
+    for (var i2 = 0; i2 < rects.length; i2++) {
+      var r2 = rects[i2];
+      if (r2.width <= 0 || r2.height <= 0) continue;
+      found = true;
+      left = Math.min(left, r2.left);
+      top = Math.min(top, r2.top);
+      right = Math.max(right, r2.right);
+      bottom = Math.max(bottom, r2.bottom);
+    }
+    if (!found || !pageRect.width || !pageRect.height) return null;
     var clamp2 = function(v) {
       return Math.min(1, Math.max(0, v));
     };

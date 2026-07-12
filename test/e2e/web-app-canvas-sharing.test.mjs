@@ -522,10 +522,8 @@ async function verifyCanvasBranching() {
   assert.deepEqual(await branchMark.evaluate((mark) => ({ tabIndex: mark.tabIndex, role: mark.getAttribute("role"), name: mark.getAttribute("aria-label") })),
     { tabIndex: 0, role: "link", name: "Open branch: Euler branch" }, "branch marks should expose keyboard navigation semantics and the branch title");
   await branchMark.hover();
-  await page.waitForSelector("#peek.visible");
-  assert.equal(await page.locator("#peek [data-peek-title]").innerText(), "Euler branch");
-  await page.mouse.move(2, 2);
-  await page.waitForSelector("#peek:not(.visible)", { state: "attached" });
+  await page.waitForTimeout(350);
+  assert.equal(await page.locator("#peek").count(), 0, "hovering a mark must not raise any peek surface — marks are plain links");
 
   await page.focus("#r-theme");
   const visitedTabStops = new Set([await page.evaluate(() => {
@@ -546,46 +544,33 @@ async function verifyCanvasBranching() {
     visitedTabStops.add(tabStop.key);
   }
   assert.equal(await page.evaluate(() => document.activeElement?.matches('mark[data-child]')), true, "branch marks should be reachable in the shared document Tab order");
-  await page.waitForSelector("#peek.visible");
-  assert.equal(await page.evaluate(() => document.activeElement?.matches('mark[data-child]')), true, "keyboard peek must not steal mark focus");
   assert.notEqual(await branchMark.evaluate((mark) => getComputedStyle(mark).outlineStyle), "none", "focused branch marks should show a keyboard ring");
-  await page.keyboard.press("Escape");
-  await page.waitForSelector("#peek:not(.visible)", { state: "attached" });
-  assert.equal(await page.evaluate(() => document.body.classList.contains("mode-canvas")), true, "peek Escape must not leak to canvas shortcuts or change views");
-  assert.equal(await page.evaluate(() => document.activeElement?.matches('mark[data-child]')), true, "peek Escape should leave focus on its mark");
-  await page.focus("#t-reader");
-  assert.equal(await page.locator("#peek.visible").count(), 0, "moving focus away should dismiss peek");
 
-  await branchMark.focus();
-  await page.waitForSelector("#peek.visible");
-  await page.evaluate(() => {
-    const mark = document.querySelector('.node mark[data-child].mark-ready');
-    mark.__probeRect = mark.getBoundingClientRect;
-    mark.getBoundingClientRect = () => ({ left: 4, right: 84, top: innerHeight - 22, bottom: innerHeight - 2, width: 80, height: 20, x: 4, y: innerHeight - 22 });
+  // Enter (and click) on a canvas mark dives the canvas to the answer card —
+  // it stays in canvas mode and flashes the card, never opening a popup.
+  // The flash class lives a single frame, so watch for it with an observer.
+  const armFlashProbe = () => page.evaluate(() => {
+    window.__markDiveFlashed = false;
+    const observer = new MutationObserver(() => {
+      if (document.querySelector(".node:not(.root).flash")) { window.__markDiveFlashed = true; observer.disconnect(); }
+    });
+    observer.observe(document.getElementById("world"), { subtree: true, attributes: true, attributeFilter: ["class"] });
   });
-  await page.evaluate(() => window.dispatchEvent(new Event("resize")));
-  await page.waitForTimeout(50);
-  const peekEdge = await page.evaluate(() => {
-    const mark = document.querySelector('.node mark[data-child].mark-ready').getBoundingClientRect();
-    const peek = document.getElementById("peek").getBoundingClientRect();
-    const edge = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--surface-edge"));
-    return { placement: document.getElementById("peek").dataset.placement, gap: mark.top - peek.bottom,
-      tokenGap: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--surface-gap")), left: peek.left, edge, right: peek.right, width: innerWidth };
-  });
-  assert.equal(peekEdge.placement, "top-start", "peek should flip above a mark at the viewport bottom");
-  assert(Math.abs(peekEdge.gap - peekEdge.tokenGap) < 1, "flipped peek should preserve the token gap");
-  assert(peekEdge.left >= peekEdge.edge - 1 && peekEdge.right <= peekEdge.width - peekEdge.edge + 1, "peek should clamp inside token viewport edges");
-  await page.evaluate(() => {
-    const mark = document.querySelector('.node mark[data-child].mark-ready');
-    mark.getBoundingClientRect = mark.__probeRect; delete mark.__probeRect;
-  });
-  await branchMark.focus();
+  await armFlashProbe();
   await page.keyboard.press("Enter");
-  await page.waitForSelector("body:not(.mode-canvas)");
-  await page.locator("#reader-main", { hasText: "Euler identity connects rotation" }).waitFor();
-  assert.equal(await page.locator("#peek.visible").count(), 0, "Enter on a mark should open its branch and dismiss peek");
+  await page.waitForFunction(() => window.__markDiveFlashed === true);
+  assert.equal(await page.evaluate(() => document.body.classList.contains("mode-canvas")), true, "Enter on a canvas mark must stay in canvas and dive to the card");
+  await page.waitForTimeout(400);
+  await page.click("#t-frame"); // the dive moved the parent's mark off-screen — refit first
+  await page.waitForTimeout(400);
+  await armFlashProbe();
+  await branchMark.click();
+  await page.waitForFunction(() => window.__markDiveFlashed === true);
+  assert.equal(await page.evaluate(() => document.body.classList.contains("mode-canvas")), true, "clicking a canvas mark must stay in canvas and dive to the card");
 
   if (!await page.evaluate(() => document.body.classList.contains("mode-canvas"))) await page.click("#r-canvas");
+  await page.click("#t-frame"); // leave the mark-dive zoom behind so popover geometry is measured from a neutral view
+  await page.waitForTimeout(400);
   const childDelete = page.locator('.node:not(.root)', { hasText: "Euler identity connects rotation" }).locator('.node-btn.danger');
   await childDelete.focus();
   await page.evaluate(() => { window.__deleteTrigger = document.activeElement; });
@@ -611,6 +596,12 @@ async function verifyCanvasBranching() {
   await page.waitForTimeout(20);
   assert.equal(await page.evaluate(() => document.activeElement?.matches('.node:not(.root) .node-btn.danger')), true, "outside-pointer dismissal should restore delete-control focus");
 
+  // Export while the child is the current node so the frozen reader opens with
+  // a parent crumb (mark clicks no longer change the current node).
+  await page.click("#t-reader");
+  await page.locator('.side-item[role="link"]').first().click();
+  await page.locator("#reader-main", { hasText: "Euler identity connects rotation" }).waitFor();
+  await page.click("#r-canvas");
   const branchFrozenHtml = await page.evaluate(() => window.__rabbitholeTest.exportSnapshot());
   const branchFrozenPage = await context.newPage();
   await branchFrozenPage.setContent(branchFrozenHtml, { waitUntil: "load" });
@@ -630,12 +621,19 @@ async function verifyCanvasBranching() {
   await branchFrozenPage.keyboard.press("Enter");
   await branchFrozenPage.waitForFunction(() => document.querySelectorAll("#breadcrumb .crumb").length === 1);
   await branchFrozenPage.click("#r-canvas");
-  await branchFrozenPage.click('.node.root .node-acts .node-btn:last-child');
-  const frozenMark = branchFrozenPage.locator('mark[data-child].mark-ready').first();
+  const frozenMark = branchFrozenPage.locator('.node mark[data-child].mark-ready').first();
   await frozenMark.focus();
-  await branchFrozenPage.waitForSelector("#peek.visible");
-  await branchFrozenPage.keyboard.press("Escape");
-  await branchFrozenPage.waitForSelector("#peek:not(.visible)", { state: "attached" });
+  await branchFrozenPage.evaluate(() => {
+    window.__markDiveFlashed = false;
+    const observer = new MutationObserver(() => {
+      if (document.querySelector(".node:not(.root).flash")) { window.__markDiveFlashed = true; observer.disconnect(); }
+    });
+    observer.observe(document.getElementById("world"), { subtree: true, attributes: true, attributeFilter: ["class"] });
+  });
+  await branchFrozenPage.keyboard.press("Enter");
+  await branchFrozenPage.waitForFunction(() => window.__markDiveFlashed === true);
+  assert.equal(await branchFrozenPage.evaluate(() => document.body.classList.contains("mode-canvas")), true,
+    "Enter on a frozen canvas mark should dive to the card in place");
   await branchFrozenPage.close();
 
   await page.click("#t-reader");

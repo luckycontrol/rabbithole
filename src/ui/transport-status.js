@@ -19,6 +19,7 @@ import {
   nextOrder,
   nodes,
   readerMain,
+  registerNode,
   refreshAmbient,
   resetSseFails,
   setAgentAttached,
@@ -189,6 +190,9 @@ export function connectSse(){
   }
   var streamRenderRaf = 0;
   var streamRenderQueue = {};
+  function hasStreamSurface(node){
+    return !!node.bodyEl || (mode === "reader" && (currentNodeId === node.id || currentNodeId === node.parent_id));
+  }
   function cancelQueuedStreamRender(nodeId){
     delete streamRenderQueue[nodeId];
   }
@@ -206,6 +210,7 @@ export function connectSse(){
       Object.keys(batch).forEach(function(id){
         var item = batch[id];
         if (!item.node || item.node.status !== "pending") return;
+        if (!hasStreamSurface(item.node)) return;
         refreshNodeHtml(item.node);
         renderStreamSurfaces(item.node, item.firstChunk);
       });
@@ -288,14 +293,14 @@ function handleServer(msg){
         // that was optimistically rolled back after a lost ack). Recreate it from
         // the broadcast so the answer is never silently dropped.
         var pos = msg.position || {};
-        node = nodes[msg.node_id] = {
+        node = registerNode({
           id: msg.node_id, parent_id: msg.parent_id || null, title: msg.title || "…",
           html: "", md: "", base_url: msg.base_url || null, base_url_source: msg.base_url_source || null,
           read: false, origin: msg.origin || null, x: pos.x || 0, y: pos.y || 0,
           w: DEFAULT_CHILD.w, h: DEFAULT_CHILD.h, font_scale: msg.font_scale || 1,
           collapsed: false, status: "pending",
           _order: nextOrder(), _startTs: Date.now()
-        };
+        });
         if (canvasBuilt){ createNodeEl(node); renderVisibility(); drawEdges(); }
         if (node.origin && node.origin.anchor){
           if (mode === "reader")
@@ -310,7 +315,7 @@ function handleServer(msg){
       node.md = msg.markdown || node.md || "";
       node.base_url = msg.base_url || null;
       node.base_url_source = msg.base_url_source || null;
-      refreshNodeHtml(node);
+      if (hasStreamSurface(node)) refreshNodeHtml(node);
       node.read = false; // unread until the human actually reaches it
       if (node.titleEl){ node.titleEl.textContent = node.title; node.titleEl.title = node.title; }
       if (node.bodyEl){ fillBody(node); scheduleEdges(); }

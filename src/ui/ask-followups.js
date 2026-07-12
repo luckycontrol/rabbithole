@@ -22,6 +22,7 @@ import {
   nodeOrder,
   nodes,
   readerMain,
+  registerNode,
   refreshAmbient,
   shouldReduceMotion,
   sessionPhase,
@@ -56,7 +57,6 @@ import { teardownNode } from "./node-teardown.js";
 function defaultAskHooks(){
   return {
     post: function(){ return Promise.resolve({ ok: true }); },
-    hidePeek: function(){}
   };
 }
 
@@ -72,10 +72,6 @@ export function registerAskHooks(hooks) {
 export function initAskFollowups(){
   disposeAskFollowupResources(false);
   var askScope = askLifecycle.beginInit();
-  askScope.listen(document, "mousedown", function(e){
-    var c = e.target && e.target.closest ? function(sel){ return e.target.closest(sel); } : function(){ return null; };
-    if (!c("#peek") && !c("mark[data-child]")) askLifecycle.hooks.hidePeek();
-  });
   askScope.listen(document, "mouseup", function(e){ if (inAsk(e)) return; askScope.timeout(maybeShowAsk, 0); });
   askScope.listen(askGo, "click", function(e){ submitAsk(null, motionSourceFromEvent(e)); });
   askScope.listen(document.getElementById("ask-lenses"), "click", function(e){
@@ -275,7 +271,7 @@ export function disposeAskFollowups(){
       x: pos.x, y: pos.y, w: DEFAULT_CHILD.w, h: DEFAULT_CHILD.h, font_scale: 1, collapsed: false,
       status: "pending", _order: nextOrder(), _startTs: Date.now()
     };
-    nodes[childId] = node;
+    registerNode(node);
     if (canvasBuilt){ createNodeEl(node, true); renderVisibility(); drawEdges(); }
 
     // Mark inline in whichever views currently render the parent doc. Wrap via
@@ -341,7 +337,7 @@ export function sendFollowup(parent, question, lens, synthesis){
       x: pos.x, y: pos.y, w: DEFAULT_CHILD.w, h: DEFAULT_CHILD.h, font_scale: 1, collapsed: false,
       status: "pending", _order: nextOrder(), _startTs: Date.now()
     };
-    nodes[childId] = node;
+    registerNode(node);
     if (canvasBuilt){ createNodeEl(node, true); renderVisibility(); drawEdges(); }
     if (currentNodeId === parent.id && mode === "reader"){
       if (synthesis) renderSidebar();

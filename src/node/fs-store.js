@@ -47,6 +47,10 @@ function holePath(holeId) {
   return path.join(holesDir(), `${assertSafeHoleId(holeId)}.json`);
 }
 
+function holeSummaryPath(holeId) {
+  return path.join(holesDir(), `${assertSafeHoleId(holeId)}.summary.json`);
+}
+
 function assetsDir() {
   return path.join(holesDir(), "assets");
 }
@@ -173,7 +177,7 @@ export class FsStore {
     }
     const migrated = migratePersistedHole(JSON.parse(raw));
     if (migrated.changed) {
-      await fs.writeFile(holePath(holeId), JSON.stringify(migrated.hole, null, 2), "utf-8");
+      await fs.writeFile(holePath(holeId), JSON.stringify(migrated.hole), "utf-8");
     }
     return migrated.hole;
   }
@@ -183,7 +187,10 @@ export class FsStore {
   }
 
   async deleteHole(holeId) {
-    await fs.rm(holePath(holeId), { force: true });
+    await Promise.all([
+      fs.rm(holePath(holeId), { force: true }),
+      fs.rm(holeSummaryPath(holeId), { force: true }),
+    ]);
     await deleteHoleAssets(holeId);
   }
 
@@ -371,24 +378,44 @@ export {
   ensureAssetDir,
 };
 
+const holeSaveQueues = new Map();
+
 /**
  * @param {{ hole_id, title, root_id, created_at, nodes: object[] }} hole
  */
-export async function saveHole(hole) {
-  await ensureDir();
-  const persisted = toPersistedHole(hole);
+export function saveHole(hole) {
+  const persisted = toPersistedHole(hole, { cloneExtensions: false });
+  const serialized = JSON.stringify(persisted);
+  const serializedSummary = JSON.stringify(holeSummary(persisted));
+  const holeId = persisted.hole_id;
+  const previous = holeSaveQueues.get(holeId) || Promise.resolve();
+  const operation = previous.catch(() => {}).then(async () => {
+    await ensureDir();
   // Unique temp name per write so concurrent/overlapping saves of the same hole
   // never clobber each other's temp file mid-write; rename is atomic, last wins.
-  const finalPath = holePath(hole.hole_id);
+  const finalPath = holePath(holeId);
   const tmp = `${finalPath}.${randomUUID()}.tmp`;
+  const summaryPath = holeSummaryPath(holeId);
+  const summaryTmp = `${summaryPath}.${randomUUID()}.tmp`;
   try {
-    await fs.writeFile(tmp, JSON.stringify(persisted, null, 2), "utf-8");
+    await fs.rm(summaryPath, { force: true });
+    await fs.writeFile(tmp, serialized, "utf-8");
     await fs.rename(tmp, finalPath);
+    await fs.writeFile(summaryTmp, serializedSummary, "utf-8");
+    await fs.rename(summaryTmp, summaryPath);
   } catch (err) {
-    await fs.rm(tmp, { force: true }).catch(() => {});
+    await Promise.all([
+      fs.rm(tmp, { force: true }).catch(() => {}),
+      fs.rm(summaryTmp, { force: true }).catch(() => {}),
+    ]);
     throw err;
   }
   return persisted;
+  });
+  holeSaveQueues.set(holeId, operation);
+  return operation.finally(() => {
+    if (holeSaveQueues.get(holeId) === operation) holeSaveQueues.delete(holeId);
+  });
 }
 
 export async function loadHole(holeId) {
@@ -405,22 +432,47 @@ export async function listHoles() {
     return [];
   }
 
-  const holes = [];
-  for (const name of entries) {
-    if (!name.endsWith(".json")) continue;
+  const names = entries.filter((name) => name.endsWith(".json") && !name.endsWith(".summary.json"));
+  const holes = await mapConcurrent(names, 32, async (name) => {
+    const id = name.slice(0, -5);
     try {
-      const raw = await fs.readFile(path.join(holesDir(), name), "utf-8");
-      const hole = JSON.parse(raw);
-      holes.push({
-        hole_id: hole.hole_id,
-        title: hole.title,
-        updated_at: hole.updated_at,
-        node_count: Array.isArray(hole.nodes) ? hole.nodes.length : 0,
-      });
+      try {
+        return JSON.parse(await fs.readFile(holeSummaryPath(id), "utf-8"));
+      } catch (err) {
+        if (err?.code !== "ENOENT" && !(err instanceof SyntaxError)) throw err;
+      }
+      const hole = JSON.parse(await fs.readFile(path.join(holesDir(), name), "utf-8"));
+      const summary = holeSummary(hole);
+      fs.writeFile(holeSummaryPath(id), JSON.stringify(summary), "utf-8").catch(() => {});
+      return summary;
     } catch (err) {
       warn(`Skipping unreadable hole ${name}: ${err.message}`);
+      return null;
+    }
+  });
+  const readable = holes.filter(Boolean);
+  readable.sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
+  return readable;
+}
+
+function holeSummary(hole) {
+  return {
+    hole_id: hole.hole_id,
+    title: hole.title,
+    updated_at: hole.updated_at,
+    node_count: Array.isArray(hole.nodes) ? hole.nodes.length : 0,
+  };
+}
+
+async function mapConcurrent(values, concurrency, fn) {
+  const results = new Array(values.length);
+  let next = 0;
+  async function worker() {
+    while (next < values.length) {
+      const index = next++;
+      results[index] = await fn(values[index]);
     }
   }
-  holes.sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
-  return holes;
+  await Promise.all(Array.from({ length: Math.min(concurrency, values.length) }, worker));
+  return results;
 }

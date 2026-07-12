@@ -166,10 +166,13 @@ function getTextItemGeometry(item) {
 
 /** @param {PdfTextItem[]} items @returns {TextLine[]} */
 function clusterTextLines(items) {
-  const textItems = items
-    .filter((item) => typeof item.str === "string" && item.str.length > 0 && item.transform)
-    .map(getTextItemGeometry)
-    .filter((item) => item.str.trim().length > 0);
+  /** @type {TextGeometry[]} */
+  const textItems = [];
+  for (const item of items) {
+    if (typeof item.str !== "string" || !item.str.length || !item.transform) continue;
+    const geometry = getTextItemGeometry(item);
+    if (geometry.str.trim().length) textItems.push(geometry);
+  }
 
   textItems.sort((a, b) => {
     const yDelta = b.y - a.y;
@@ -177,17 +180,47 @@ function clusterTextLines(items) {
     return a.x - b.x;
   });
 
-  /** @type {{ y: number, items: TextGeometry[] }[]} */
+  /** @type {{ y: number, items: TextGeometry[], ordinal: number, bucket: number }[]} */
   const lines = [];
+  const bucketSize = 2;
+  /** @type {Map<number, { y: number, items: TextGeometry[], ordinal: number, bucket: number }[]>} */
+  const linesByY = new Map();
+  const addToBucket = (/** @type {{ y: number, items: TextGeometry[], ordinal: number, bucket: number }} */ line) => {
+    const bucket = Math.floor(line.y / bucketSize);
+    line.bucket = bucket;
+    const entries = linesByY.get(bucket);
+    if (entries) entries.push(line);
+    else linesByY.set(bucket, [line]);
+  };
+  const moveBucket = (/** @type {{ y: number, items: TextGeometry[], ordinal: number, bucket: number }} */ line) => {
+    const bucket = Math.floor(line.y / bucketSize);
+    if (bucket === line.bucket) return;
+    const previous = linesByY.get(line.bucket);
+    const index = previous?.indexOf(line) ?? -1;
+    if (previous && index !== -1) previous.splice(index, 1);
+    if (previous && !previous.length) linesByY.delete(line.bucket);
+    addToBucket(line);
+  };
   for (const item of textItems) {
     const threshold = Math.max(1.8, item.height * 0.45);
-    let line = lines.find((candidate) => Math.abs(candidate.y - item.y) <= threshold);
+    const firstBucket = Math.floor((item.y - threshold) / bucketSize);
+    const lastBucket = Math.floor((item.y + threshold) / bucketSize);
+    let line = null;
+    for (let bucket = firstBucket; bucket <= lastBucket; bucket++) {
+      const candidates = linesByY.get(bucket);
+      if (!candidates) continue;
+      for (const candidate of candidates) {
+        if (Math.abs(candidate.y - item.y) <= threshold && (!line || candidate.ordinal < line.ordinal)) line = candidate;
+      }
+    }
     if (!line) {
-      line = { y: item.y, items: [] };
+      line = { y: item.y, items: [], ordinal: lines.length, bucket: 0 };
       lines.push(line);
+      addToBucket(line);
     }
     line.items.push(item);
     line.y = (line.y * (line.items.length - 1) + item.y) / line.items.length;
+    moveBucket(line);
   }
 
   return lines
@@ -217,9 +250,11 @@ function clusterTextLines(items) {
         let right = null;
         let minX = Infinity;
         let maxX = -Infinity;
+        let maxHeight = 0;
         for (const item of entry.items) {
           minX = Math.min(minX, item.x);
           maxX = Math.max(maxX, item.x + item.width);
+          maxHeight = Math.max(maxHeight, item.height);
           const normalized = item.str.replace(/\s+/g, " ");
           if (text.length === 0) {
             text = normalized.trimStart();
@@ -235,7 +270,7 @@ function clusterTextLines(items) {
           y: line.y,
           minX,
           maxX,
-          height: Math.max(...entry.items.map((item) => item.height)),
+          height: maxHeight,
           text: text.trimEnd(),
         };
       });
@@ -248,14 +283,16 @@ function clusterTextLines(items) {
 function orderLinesForReading(lines, pageWidth) {
   const mid = pageWidth / 2;
   const gutter = Math.max(12, pageWidth * 0.035);
+  let leftCount = 0;
+  let rightCount = 0;
   const classified = lines.map((line) => {
     let column = "full";
     if (line.maxX < mid + gutter) column = "left";
     else if (line.minX > mid - gutter) column = "right";
+    if (column === "left") leftCount++;
+    else if (column === "right") rightCount++;
     return { ...line, column };
   });
-  const leftCount = classified.filter((line) => line.column === "left").length;
-  const rightCount = classified.filter((line) => line.column === "right").length;
   if (leftCount < 8 || rightCount < 8) return classified;
 
   /** @type {ClassifiedLine[]} */
@@ -264,9 +301,16 @@ function orderLinesForReading(lines, pageWidth) {
   let run = [];
   const flushRun = () => {
     if (run.length === 0) return;
-    const left = run.filter((line) => line.column === "left").sort((a, b) => b.y - a.y);
-    const right = run.filter((line) => line.column === "right").sort((a, b) => b.y - a.y);
-    const other = run.filter((line) => line.column === "full").sort((a, b) => b.y - a.y || a.minX - b.minX);
+    /** @type {ClassifiedLine[]} */
+    const left = [], right = [], other = [];
+    for (const line of run) {
+      if (line.column === "left") left.push(line);
+      else if (line.column === "right") right.push(line);
+      else other.push(line);
+    }
+    left.sort((a, b) => b.y - a.y);
+    right.sort((a, b) => b.y - a.y);
+    other.sort((a, b) => b.y - a.y || a.minX - b.minX);
     if (left.length >= 3 && right.length >= 3) ordered.push(...left, ...right, ...other);
     else ordered.push(...run.sort((a, b) => b.y - a.y || a.minX - b.minX));
     run = [];

@@ -228,7 +228,7 @@ export class DirectRabbitholeHost {
     if (!targetId || targetId === this.state.root_id) return { ok: false, error: "The starting document can't be removed" };
     if (!this.state.nodes.has(targetId)) return { ok: true, deleted: [] };
 
-    const reduced = reduceHoleEvent(this.state, { type: "delete_node", node_id: targetId });
+    const reduced = reduceHoleEvent(this.state, { type: "delete_node", node_id: targetId }, { mutate: true });
     const deletedNodes = (reduced.effects?.deletedNodes || []).map((node) => ({ ...node }));
     const deletedIds = deletedNodes.map((node) => node.id);
     const parentId = deletedNodes[0]?.parent_id || null;
@@ -291,7 +291,7 @@ export class DirectRabbitholeHost {
   }
 
   dispatch(event, options) {
-    const reduced = reduceHoleEvent(this.state, event, options);
+    const reduced = reduceHoleEvent(this.state, event, { ...options, mutate: true });
     this.state = reduced.state;
     return reduced.effects || {};
   }

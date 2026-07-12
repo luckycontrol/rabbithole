@@ -51,11 +51,11 @@ export function assetsOrphanedByDeletion({ deletedNodes, remainingNodes, extract
   }
   if (!deletedRefs.size) return [];
 
-  const remainingRefs = new Set();
   for (const node of remainingNodes) {
-    for (const name of extractRefs(node)) remainingRefs.add(name);
+    for (const name of extractRefs(node)) deletedRefs.delete(name);
+    if (!deletedRefs.size) return [];
   }
-  return [...deletedRefs].filter((name) => !remainingRefs.has(name));
+  return [...deletedRefs];
 }
 
 /** @param {HoleNode} node @param {Record<string, unknown>} [overrides] */

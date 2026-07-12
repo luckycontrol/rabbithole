@@ -9,20 +9,26 @@ import { getDompurifyScript, getFrozenClientBundle, getKatexCss } from "../html/
 
 /** @param {import("./session.js").RabbitHoleSession} session */
 export async function buildSessionSnapshotProjection(session) {
-  const hole = toPersistedHole(session.toHole());
+  const hole = toPersistedHole(session.toHole(), { cloneExtensions: false });
   const referencedNames = new Set();
   for (const node of hole.nodes) {
     for (const name of extractAssetRefsFromMarkdown(node.markdown)) referencedNames.add(name);
   }
-  const assets = {};
-  for (const name of [...referencedNames].sort()) {
-    assets[name] = "";
-    if (!session.assetNames.has(name)) continue;
-    try {
-      const filePath = await resolveAsset(session.holeId, name);
-      if (filePath) assets[name] = (await fs.readFile(filePath)).toString("base64");
-    } catch {}
-  }
+  const names = [...referencedNames].sort();
+  const entries = new Array(names.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(4, names.length) }, async () => {
+    while (next < names.length) {
+      const index = next++;
+      const name = names[index];
+      if (!session.assetNames.has(name)) { entries[index] = [name, ""]; continue; }
+      try {
+        const filePath = await resolveAsset(session.holeId, name);
+        entries[index] = [name, filePath ? (await fs.readFile(filePath)).toString("base64") : ""];
+      } catch { entries[index] = [name, ""]; }
+    }
+  }));
+  const assets = Object.fromEntries(entries);
   return createSnapshotProjection(hole, session.viewState, assets);
 }
 

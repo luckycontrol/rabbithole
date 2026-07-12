@@ -6,13 +6,12 @@ import {
   flashHint,
   frozen,
   closed,
-  isUnread,
+  goToNode,
   lensLabel,
   lineageNodes,
   mode,
   motionSourceFromEvent,
   nodes,
-  peekEl,
   readerMain,
   refreshAmbient,
   rootId,
@@ -20,8 +19,7 @@ import {
   setSurfaceOrigin,
   shareMenu,
   truncate,
-  updateSince,
-  world
+  updateSince
 } from "./core.js";
 import { sendFollowup } from "./ask-followups.js";
 import {
@@ -35,9 +33,7 @@ import {
   renderBreadcrumb,
   renderSidebar
 } from "./reader.js";
-import { mountVisuals } from "./visuals.js";
 import { openPopover } from "./primitives/popover.js";
-import { openAnchoredSurface } from "./overlay/anchor.js";
 import { createModuleLifecycle } from "./lifecycle.js";
 import { teardownNode } from "./node-teardown.js";
 
@@ -56,27 +52,13 @@ export function registerBranchHooks(hooks) {
 }
 
   // ===========================================================================
-  // HOVER PEEK — glance at a branch from its mark without leaving the page
+  // MARKS ARE LINKS — a mark takes you to its branch, nothing hovers over it.
+  // The click/Enter wiring lives with the marks in reader.js.
   // ===========================================================================
-  var peekTimer = 0, peekFor = null, peekPosition = null;
 export function initBranchSurfaces(){
   disposeBranchSurfaceResources(false);
   var branchScope = branchLifecycle.beginInit();
   try {
-  branchScope.listen(readerMain, "mouseover", onReaderMarkMouseover);
-  branchScope.listen(readerMain, "mouseout", onReaderMarkMouseout);
-  branchScope.listen(world, "mouseover", onReaderMarkMouseover);
-  branchScope.listen(world, "mouseout", onReaderMarkMouseout);
-  branchScope.listen(readerMain, "focusin", onMarkFocusin);
-  branchScope.listen(readerMain, "focusout", onMarkFocusout);
-  branchScope.listen(world, "focusin", onMarkFocusin);
-  branchScope.listen(world, "focusout", onMarkFocusout);
-  branchScope.listen(peekEl, "mouseleave", function(){ hidePeek(); });
-  branchScope.listen(peekEl, "click", function(){
-    var kid = peekFor && nodes[peekFor];
-    hidePeek();
-    if (kid) openNode(kid.id);
-  });
   branchScope.listen(document.getElementById("r-share"), "click", function(e){ e.stopPropagation(); toggleShare(e.currentTarget, e.detail === 0); });
   branchScope.listen(document.getElementById("t-share"), "click", function(e){ e.stopPropagation(); toggleShare(e.currentTarget, e.detail === 0); });
   branchScope.listen(shareMenu, "keydown", onShareMenuKeydown);
@@ -106,84 +88,14 @@ export function disposeBranchSurfaces(){
 }
 
 function disposeBranchSurfaceResources(resetHooks){
-  hidePeek();
   closeShare({ restoreFocus: false });
   hideConfirm({ restoreFocus: false });
   branchLifecycle.dispose(resetHooks);
-  peekFor = null;
   shareOpen = false;
   shareAnchor = null;
   confirmFor = null;
 }
 
-export function hidePeek(){
-    if (peekTimer){ clearTimeout(peekTimer); peekTimer = 0; }
-    if (peekPosition){ peekPosition.dispose(); peekPosition = null; }
-    peekFor = null;
-    peekEl.classList.remove("visible");
-    peekEl.setAttribute("aria-hidden", "true");
-  }
-  function showPeek(mark){
-    var kid = nodes[mark.dataset.child];
-    if (!kid || kid.status !== "answered") return;
-    hidePeek();
-    peekFor = kid.id;
-    peekEl.querySelector("[data-peek-unread]").hidden = !isUnread(kid);
-    peekEl.querySelector("[data-peek-title]").textContent = kid.title || "Untitled";
-    var badge = peekEl.querySelector("[data-peek-badge]");
-    var badgeText = (kid.origin && kid.origin.synthesis) ? "✦ Synthesis"
-      : (kid.origin && kid.origin.lens) ? lensLabel(kid.origin.lens) : "";
-    badge.textContent = badgeText; badge.hidden = !badgeText;
-    var peekBody = peekEl.querySelector("[data-peek-body]");
-    var fragment = document.createRange().createContextualFragment(kid.html || "");
-    peekBody.replaceChildren(fragment);
-    if (typeof mountVisuals === "function"){
-      mountVisuals(peekBody, "peek:" + kid.id);
-    }
-    peekEl.classList.add("visible");
-    peekEl.setAttribute("aria-hidden", "false");
-    peekPosition = openAnchoredSurface({ surface: peekEl, anchor: mark,
-      placement: "bottom-start", trigger: mark, restoreFocus: false,
-      closeOnOutsidePointer: false, onClose: hidePeek });
-  }
-  function onReaderMarkMouseover(e){
-    var m = e.target.closest && e.target.closest("mark[data-child]");
-    if (!m) return;
-    var kid = nodes[m.dataset.child];
-    if (!kid || kid.status !== "answered") return;
-    if (peekTimer) clearTimeout(peekTimer);
-    peekTimer = branchLifecycle.scope
-      ? branchLifecycle.scope.timeout(function(){ peekTimer = 0; showPeek(m); }, 220)
-      : 0;
-  }
-  function onReaderMarkMouseout(e){
-    var m = e.target.closest && e.target.closest("mark[data-child]");
-    if (!m) return;
-    if (peekTimer){ clearTimeout(peekTimer); peekTimer = 0; }
-    if (!branchLifecycle.scope) return;
-    branchLifecycle.scope.timeout(function(){
-      if (!peekEl.matches(":hover") && !readerMain.querySelector("mark[data-child]:hover")) hidePeek();
-    }, 80);
-  }
-  function onMarkFocusin(e){
-    var m = e.target.closest && e.target.closest("mark[data-child]");
-    if (!m) return;
-    var kid = nodes[m.dataset.child];
-    if (!kid || kid.status !== "answered") return;
-    if (peekTimer) clearTimeout(peekTimer);
-    peekTimer = branchLifecycle.scope
-      ? branchLifecycle.scope.timeout(function(){ peekTimer = 0; if (document.activeElement === m) showPeek(m); }, 220)
-      : 0;
-  }
-  function onMarkFocusout(e){
-    var m = e.target.closest && e.target.closest("mark[data-child]");
-    if (!m) return;
-    if (peekTimer){ clearTimeout(peekTimer); peekTimer = 0; }
-    if (!branchLifecycle.scope) return;
-    branchLifecycle.scope.timeout(function(){
-      if (!peekEl.matches(":hover") && document.activeElement !== m) hidePeek();
-    }, 0);
-  }
 
   // ===========================================================================
   // SHARE — export, copy as Markdown, synthesize

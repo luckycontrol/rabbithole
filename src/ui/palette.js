@@ -14,11 +14,11 @@ import { escapeHtml } from "../core/utils.js";
 import { frameAll, tidy } from "./canvas-view.js";
 import { openDialog } from "./primitives/dialog.js";
 import { createModuleLifecycle } from "./lifecycle.js";
+import { ensureNodeHtml } from "./renderer.js";
 
 function defaultPaletteHooks(){
   return {
     hideAsk: function(){},
-    hidePeek: function(){},
     closeShare: function(){},
     hideConfirm: function(){}
   };
@@ -34,6 +34,7 @@ export function registerPaletteHooks(hooks) {
   // ⌘K PALETTE — search the whole hole, plus canvas commands when opened there.
   // ===========================================================================
   function getPlain(node){
+    ensureNodeHtml(node);
     if (node._plainFor !== node.html){
       var d = document.createElement("div");
       d.innerHTML = node.html || "";
@@ -78,7 +79,7 @@ export function togglePalette(){ if (palOpen) closePalette(); else openPalette()
 function openPalette(){
     palOpen = true;
     palCanvasCommands = mode === "canvas";
-    paletteLifecycle.hooks.hideAsk(); paletteLifecycle.hooks.hidePeek(); paletteLifecycle.hooks.closeShare(); paletteLifecycle.hooks.hideConfirm();
+    paletteLifecycle.hooks.hideAsk(); paletteLifecycle.hooks.closeShare(); paletteLifecycle.hooks.hideConfirm();
     paletteEl.classList.add("visible");
     palText.value = "";
     renderPalette("");
@@ -114,10 +115,19 @@ function closePalette(settings){
     var scored = [];
     for (var id in nodes){
       var n = nodes[id];
-      var title = (n.title || "").toLowerCase();
-      var ask = (((n.origin && n.origin.selected_text) || "") + " " + ((n.origin && n.origin.question) || "")).toLowerCase();
-      var body = getPlain(n).toLowerCase();
       var score = 0, ok = true;
+      var title = "", ask = "", body = "";
+      if (tokens.length){
+        var rawTitle = n.title || "";
+        if (n._searchTitleFor !== rawTitle){ n._searchTitleFor = rawTitle; n._searchTitle = rawTitle.toLowerCase(); }
+        title = n._searchTitle;
+        var rawAsk = ((n.origin && n.origin.selected_text) || "") + " " + ((n.origin && n.origin.question) || "");
+        if (n._searchAskFor !== rawAsk){ n._searchAskFor = rawAsk; n._searchAsk = rawAsk.toLowerCase(); }
+        ask = n._searchAsk;
+        var rawBody = getPlain(n);
+        if (n._searchBodyFor !== rawBody){ n._searchBodyFor = rawBody; n._searchBody = rawBody.toLowerCase(); }
+        body = n._searchBody;
+      }
       for (var i = 0; i < tokens.length; i++){
         var t = tokens[i];
         if (title.indexOf(t) !== -1) score += title.indexOf(t) === 0 ? 40 : 30;

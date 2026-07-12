@@ -17,12 +17,15 @@ export function pdfSelectionOffsets(range, spans) {
 }
 
 export function normalizeRectUnion(rects, pageRect) {
-  var live = Array.from(rects).filter(function(r){ return r.width > 0 && r.height > 0; });
-  if (!live.length || !pageRect.width || !pageRect.height) return null;
-  var left = Math.min.apply(null, live.map(function(r){ return r.left; }));
-  var top = Math.min.apply(null, live.map(function(r){ return r.top; }));
-  var right = Math.max.apply(null, live.map(function(r){ return r.right; }));
-  var bottom = Math.max.apply(null, live.map(function(r){ return r.bottom; }));
+  var left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity, found = false;
+  for (var i = 0; i < rects.length; i++){
+    var r = rects[i];
+    if (r.width <= 0 || r.height <= 0) continue;
+    found = true;
+    left = Math.min(left, r.left); top = Math.min(top, r.top);
+    right = Math.max(right, r.right); bottom = Math.max(bottom, r.bottom);
+  }
+  if (!found || !pageRect.width || !pageRect.height) return null;
   var clamp = function(v){ return Math.min(1, Math.max(0, v)); };
   var x = clamp((left - pageRect.left) / pageRect.width), y = clamp((top - pageRect.top) / pageRect.height);
   return { x: x, y: y, w: Math.min(clamp((right-left)/pageRect.width), 1-x), h: Math.min(clamp((bottom-top)/pageRect.height), 1-y) };

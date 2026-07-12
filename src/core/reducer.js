@@ -86,46 +86,46 @@ export function reduceHoleEvent(state, event, options = {}) {
     case "branch_request":
       return reduceBranchRequest(state, /** @type {BranchRequestEvent} */ (event), options);
     case "node_progress":
-      return reduceNodeProgress(state, /** @type {NodeProgressEvent} */ (event));
+      return reduceNodeProgress(state, /** @type {NodeProgressEvent} */ (event), options);
     case "node_answered":
       return reduceNodeAnswered(state, /** @type {NodeAnsweredEvent} */ (event), options);
     case "delete_node":
     case "node_deleted":
-      return reduceNodeDeleted(state, /** @type {DeleteNodeEvent} */ (event));
+      return reduceNodeDeleted(state, /** @type {DeleteNodeEvent} */ (event), options);
     case "node_update":
-      return reduceNodeUpdate(state, /** @type {NodeUpdateEvent} */ (event));
+      return reduceNodeUpdate(state, /** @type {NodeUpdateEvent} */ (event), options);
     case "nodes_update":
-      return reduceNodesUpdate(state, /** @type {NodesUpdateEvent} */ (event));
+      return reduceNodesUpdate(state, /** @type {NodesUpdateEvent} */ (event), options);
     case "view_state":
       return withState({ ...state, view_state: normalizeViewState(/** @type {import("./contracts/engine.js").ViewStateEvent} */ (event).state) });
     case "hole_title":
       return withState({ ...state, title: String(/** @type {import("./contracts/engine.js").HoleTitleEvent} */ (event).title ?? state.title) });
     case "node_origin":
-      return reduceNodeOrigin(state, /** @type {NodeOriginEvent} */ (event));
+      return reduceNodeOrigin(state, /** @type {NodeOriginEvent} */ (event), options);
     case "node_extensions_patch":
-      return reduceNodeExtensionsPatch(state, /** @type {NodeExtensionsPatchEvent} */ (event));
+      return reduceNodeExtensionsPatch(state, /** @type {NodeExtensionsPatchEvent} */ (event), options);
     case "block_state":
-      return reduceBlockState(state, /** @type {BlockStateEvent} */ (event));
+      return reduceBlockState(state, /** @type {BlockStateEvent} */ (event), options);
     default:
       throw new Error(`Unsupported hole event: ${type}`);
   }
 }
 
-/** @param {HoleState} state @param {NodeExtensionsPatchEvent} event */
-function reduceNodeExtensionsPatch(state, event) {
+/** @param {HoleState} state @param {NodeExtensionsPatchEvent} event @param {ReduceOptions} options */
+function reduceNodeExtensionsPatch(state, event, options) {
   const nodeId = String(event.node_id || "");
   const namespace = String(event.namespace || "");
   const node = state.nodes.get(nodeId);
   if (!node || !/^[a-z][a-z0-9_-]*$/.test(namespace)) return withState(state);
   const extensions = cloneJson(node.extensions ?? {});
   extensions[namespace] = cloneJson(event.value);
-  const nodes = cloneNodes(state);
+  const nodes = cloneNodes(state, options);
   nodes.set(nodeId, { ...node, extensions });
   return withState({ ...state, nodes }, { node_id: nodeId });
 }
 
-/** @param {HoleState} state @param {BlockStateEvent} event */
-function reduceBlockState(state, event) {
+/** @param {HoleState} state @param {BlockStateEvent} event @param {ReduceOptions} options */
+function reduceBlockState(state, event, options) {
   const nodeId = String(event.node_id || "");
   const blockId = String(event.block_id || "");
   const node = state.nodes.get(nodeId);
@@ -136,7 +136,7 @@ function reduceBlockState(state, event) {
   const previous = learn[blockId] && typeof learn[blockId] === "object" && !Array.isArray(learn[blockId])
     ? learn[blockId] : {};
   extensions.learn = { ...learn, [blockId]: { ...previous, ...cloneJson(event.state) } };
-  const nodes = cloneNodes(state);
+  const nodes = cloneNodes(state, options);
   nodes.set(nodeId, { ...node, extensions });
   return withState({ ...state, nodes }, { node_id: nodeId });
 }
@@ -146,9 +146,9 @@ function withState(state, effects = {}) {
   return { state, effects };
 }
 
-/** @param {HoleState} state */
-function cloneNodes(state) {
-  return new Map(state.nodes);
+/** @param {HoleState} state @param {ReduceOptions} options */
+function cloneNodes(state, options) {
+  return options?.mutate === true ? state.nodes : new Map(state.nodes);
 }
 
 /** @param {HoleState} state @param {BranchRequestEvent} event @param {ReduceOptions} options */
@@ -158,13 +158,13 @@ function reduceBranchRequest(state, event, options) {
   if (!parent) throw new Error(`Parent node ${parentId} not found`);
   const node = createPendingBranchNode(event, parent, options);
   if (!node.id) throw new Error("Branch request node_id is required");
-  const nodes = cloneNodes(state);
+  const nodes = cloneNodes(state, options);
   nodes.set(node.id, node);
   return withState({ ...state, nodes }, { createdNode: node });
 }
 
-/** @param {HoleState} state @param {NodeProgressEvent} event */
-function reduceNodeProgress(state, event) {
+/** @param {HoleState} state @param {NodeProgressEvent} event @param {ReduceOptions} options */
+function reduceNodeProgress(state, event, options) {
   const nodeId = String(event.node_id || "");
   const node = state.nodes.get(nodeId);
   if (!node) return withState(state);
@@ -177,7 +177,7 @@ function reduceNodeProgress(state, event) {
   // A new run supersedes the current run once. Remember superseded ids so a
   // late packet from an aborted attempt cannot become "new" again.
   if (recorded?.superseded?.has(/** @type {import("./contracts/engine.js").ProgressRun} */ (run).id)) return withState(state);
-  const nodes = cloneNodes(state);
+  const nodes = cloneNodes(state, options);
   const next = {
     ...node,
     markdown: String(event.markdown ?? node.markdown ?? ""),
@@ -233,7 +233,7 @@ function reduceNodeAnswered(state, event, options) {
   next.base_url = base.base_url;
   next.base_url_source = base.base_url_source;
   maybeUpgradeBaseUrlFromFrontmatter(next);
-  const nodes = cloneNodes(state);
+  const nodes = cloneNodes(state, options);
   nodes.set(nodeId, next);
   let progressRuns = state.progressRuns;
   if (progressRuns.has(nodeId)) {
@@ -243,14 +243,14 @@ function reduceNodeAnswered(state, event, options) {
   return withState({ ...state, nodes, progressRuns }, { answeredNode: next });
 }
 
-/** @param {HoleState} state @param {DeleteNodeEvent} event */
-function reduceNodeDeleted(state, event) {
+/** @param {HoleState} state @param {DeleteNodeEvent} event @param {ReduceOptions} options */
+function reduceNodeDeleted(state, event, options) {
   const ids = Array.isArray(event.node_ids) && event.node_ids.length
     ? event.node_ids.map(String)
     : collectSubtreeIds(state.nodes, String(event.node_id || ""));
   if (!ids.length) return withState(state, { deletedNodeIds: [], deletedNodes: [] });
   if (ids.includes(/** @type {string} */ (state.root_id))) throw new Error("The starting document can't be removed");
-  const nodes = cloneNodes(state);
+  const nodes = cloneNodes(state, options);
   const deletedNodes = [];
   for (const id of ids) {
     const node = nodes.get(id);
@@ -265,36 +265,36 @@ function reduceNodeDeleted(state, event) {
   return withState({ ...state, nodes, progressRuns }, { deletedNodeIds: ids, deletedNodes });
 }
 
-/** @param {HoleState} state @param {NodeUpdateEvent} event */
-function reduceNodeUpdate(state, event) {
+/** @param {HoleState} state @param {NodeUpdateEvent} event @param {ReduceOptions} options */
+function reduceNodeUpdate(state, event, options) {
   const nodeId = String(event.node_id || "");
   const node = state.nodes.get(nodeId);
   if (!node) return withState(state);
-  const nodes = cloneNodes(state);
+  const nodes = cloneNodes(state, options);
   nodes.set(nodeId, applyNodeUpdateFields(node, event));
   return withState({ ...state, nodes }, { node_id: nodeId });
 }
 
-/** @param {HoleState} state @param {NodesUpdateEvent} event */
-function reduceNodesUpdate(state, event) {
+/** @param {HoleState} state @param {NodesUpdateEvent} event @param {ReduceOptions} options */
+function reduceNodesUpdate(state, event, options) {
   const updates = Array.isArray(event.nodes) ? event.nodes : [];
   let nodes = null;
   for (const update of updates) {
     const nodeId = String(update?.node_id || "");
     const node = state.nodes.get(nodeId);
     if (!node) continue;
-    if (!nodes) nodes = cloneNodes(state);
+    if (!nodes) nodes = cloneNodes(state, options);
     nodes.set(nodeId, applyNodeUpdateFields(node, update));
   }
   return withState(nodes ? { ...state, nodes } : state);
 }
 
-/** @param {HoleState} state @param {NodeOriginEvent} event */
-function reduceNodeOrigin(state, event) {
+/** @param {HoleState} state @param {NodeOriginEvent} event @param {ReduceOptions} options */
+function reduceNodeOrigin(state, event, options) {
   const nodeId = String(event.node_id || "");
   const node = state.nodes.get(nodeId);
   if (!node) return withState(state);
-  const nodes = cloneNodes(state);
+  const nodes = cloneNodes(state, options);
   nodes.set(nodeId, { ...node, origin: event.origin ?? null });
   return withState({ ...state, nodes }, { node_id: nodeId });
 }

@@ -12,8 +12,8 @@ export function cloneJson(value) {
   return JSON.parse(JSON.stringify(value ?? null));
 }
 
-/** @param {Partial<PersistedHole> | null | undefined} hole @param {{ updatedAt?: string }} [options] @returns {PersistedHole} */
-export function toPersistedHole(hole, { updatedAt = new Date().toISOString() } = {}) {
+/** @param {Partial<PersistedHole> | null | undefined} hole @param {{ updatedAt?: string, cloneExtensions?: boolean }} [options] @returns {PersistedHole} */
+export function toPersistedHole(hole, { updatedAt = new Date().toISOString(), cloneExtensions = true } = {}) {
   const nodes = Array.isArray(hole?.nodes) ? hole.nodes : [];
   /** @type {PersistedHole} */
   const persisted = {
@@ -24,14 +24,14 @@ export function toPersistedHole(hole, { updatedAt = new Date().toISOString() } =
     created_at: hole?.created_at ?? null,
     updated_at: updatedAt,
     view_state: normalizeViewState(hole?.view_state),
-    nodes: nodes.map(toPersistedNode),
+    nodes: nodes.map((node) => toPersistedNode(node, { cloneExtensions })),
   };
   validatePersistedHole(persisted);
   return persisted;
 }
 
-/** @param {Partial<PersistedNode> | null | undefined} node @returns {PersistedNode} */
-export function toPersistedNode(node) {
+/** @param {Partial<PersistedNode> | null | undefined} node @param {{ cloneExtensions?: boolean }} [options] @returns {PersistedNode} */
+export function toPersistedNode(node, { cloneExtensions = true } = {}) {
   const base = normalizeStoredBaseUrlFields(node);
   return {
     id: String(node?.id ?? ""),
@@ -48,7 +48,7 @@ export function toPersistedNode(node) {
     status: node?.status === "pending" ? "pending" : "answered",
     read: !!node?.read,
     created_at: node?.created_at ?? null,
-    extensions: node?.extensions === undefined ? {} : cloneJson(node.extensions),
+    extensions: node?.extensions === undefined ? {} : (cloneExtensions ? cloneJson(node.extensions) : node.extensions),
   };
 }
 

@@ -67,10 +67,16 @@ async function fetchAssetBinary(name) {
 }
 
 async function buildAssetData(snapshotNodes) {
-  var out = {};
   var names = collectAssetNames(snapshotNodes);
-  for (var i = 0; i < names.length; i++) out[names[i]] = await binaryToBase64(await fetchAssetBinary(names[i]));
-  return out;
+  var entries = new Array(names.length);
+  var next = 0;
+  await Promise.all(Array.from({ length: Math.min(4, names.length) }, async function(){
+    while (next < names.length){
+      var index = next++, name = names[index];
+      entries[index] = [name, await binaryToBase64(await fetchAssetBinary(name))];
+    }
+  }));
+  return Object.fromEntries(entries);
 }
 
 function extractDompurifySource() {

@@ -1,4 +1,5 @@
 const WIRED = new WeakMap();
+const VARIANTS = new Set(["banner", "hint", "toast"]);
 const TIMED = new Set(["hint", "toast"]);
 
 /**
@@ -7,7 +8,7 @@ const TIMED = new Set(["hint", "toast"]);
  */
 export function wireNotice(element, { variant } = {}) {
   if (!element) throw new Error("Notice requires an element");
-  if (!new Set(["banner", "hint", "toast"]).has(variant)) throw new Error("Unknown Notice variant: " + variant);
+  if (!VARIANTS.has(variant)) throw new Error("Unknown Notice variant: " + variant);
   const existing = WIRED.get(element);
   if (existing) {
     if (existing.variant !== variant) throw new Error("Notice shell is already wired as " + existing.variant);

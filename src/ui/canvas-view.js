@@ -55,7 +55,6 @@ import { applyComposerState } from "./composer-state.js";
 function defaultCanvasHooks(){
   return {
     hideAsk: function(){},
-    hidePeek: function(){},
     sendFollowup: function(){ return null; },
     confirmDelete: function(){},
     persistNode: function(){},
@@ -467,7 +466,8 @@ function toggleCollapse(node, btn){
     renderVisibility(); drawEdges(); canvasLifecycle.hooks.persistNode(node);
   }
 export function renderVisibility(){
-    for (var id in nodes){ var n = nodes[id]; if (!n.el) continue; if (n.id === rootId){ n.el.style.display = ""; continue; } n.el.style.display = isVisible(n) ? "" : "none"; }
+    var cache = Object.create(null);
+    for (var id in nodes){ var n = nodes[id]; if (!n.el) continue; if (n.id === rootId){ n.el.style.display = ""; cache[n.id] = true; continue; } n.el.style.display = isVisible(n, cache) ? "" : "none"; }
   }
 var edgeRaf = 0;           // coalesces edge redraws during drag/resize/scroll
 export function scheduleEdges(){
@@ -571,8 +571,8 @@ function rebuildEdges(){
   }
 export function drawEdges(){
     var live = {};
-    var visCache = {};
-    function vis(node){ var k = node.id; if (k in visCache) return visCache[k]; return (visCache[k] = isVisible(node)); }
+    var visCache = Object.create(null);
+    function vis(node){ return isVisible(node, visCache); }
     for (var id in nodes){
       var n = nodes[id]; if (!n.parent_id || !n.el) continue; var p = nodes[n.parent_id]; if (!p || !p.el) continue;
       if (!vis(n) || !vis(p)) continue;
@@ -688,7 +688,8 @@ function focusOrigin(node, on){
   }
 
 export function frameAll(animate, source){
-    var ids = Object.keys(nodes).filter(function(id){ return isVisible(nodes[id]); });
+    var visCache = Object.create(null);
+    var ids = Object.keys(nodes).filter(function(id){ return isVisible(nodes[id], visCache); });
     if (!ids.length) return;
     var minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
     ids.forEach(function(id){ var n=nodes[id]; minX=Math.min(minX,n.x); minY=Math.min(minY,n.y); maxX=Math.max(maxX,n.x+n.w); maxY=Math.max(maxY,n.y+(n.collapsed?40:n.h)); });
@@ -778,7 +779,6 @@ export function setMode(m){
     setModeValue(m);
     if (m === "canvas"){
       ensureCanvasBuilt();
-      canvasLifecycle.hooks.hidePeek();
       document.body.classList.add("mode-canvas");
       requestAnimationFrame(function(){
         rebuildEdges();

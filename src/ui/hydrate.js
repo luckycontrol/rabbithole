@@ -10,6 +10,7 @@ import {
   nextOrder,
   nodes,
   refreshAmbient,
+  registerNode,
   rootId,
   setCanvasFramed,
   setCurrentNodeId,
@@ -20,7 +21,7 @@ import {
 } from "./core.js";
 import { openNode } from "./reader.js";
 import { setMode } from "./canvas-view.js";
-import { refreshNodeHtml, setRendererAssetData } from "./renderer.js";
+import { setRendererAssetData } from "./renderer.js";
 
 export function hydrateInitialState({ connectSse = null, post = null, refreshStatus = null } = {}) {
   setRendererAssetData(hydration.asset_data || null);
@@ -28,7 +29,7 @@ export function hydrateInitialState({ connectSse = null, post = null, refreshSta
   (hydration.nodes || []).forEach(function(raw){
     var isRoot = raw.id === rootId;
     var size = raw.size || (isRoot ? DEFAULT_ROOT : DEFAULT_CHILD);
-    var node = nodes[raw.id] = {
+    var node = registerNode({
       id: raw.id, parent_id: raw.parent_id, title: raw.title,
       html: "", md: raw.markdown || "",
       base_url: raw.base_url || null, base_url_source: raw.base_url_source || null,
@@ -38,8 +39,7 @@ export function hydrateInitialState({ connectSse = null, post = null, refreshSta
       status: raw.status || "answered", _order: 0,
       extensions: raw.extensions || {},
       _startTs: (raw.status === "pending") ? Date.now() : 0
-    };
-    refreshNodeHtml(node);
+    });
   });
   Object.keys(nodes).forEach(function(id){ nodes[id]._order = nextOrder(); });
   // Holes saved before read-tracking would wake up all-unread. If nothing was

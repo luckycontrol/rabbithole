@@ -417,7 +417,7 @@ export class RabbitHoleSession {
   // ---- node tree ----------------------------------------------------------
 
   dispatchHoleEvent(event, options = {}) {
-    const reduced = reduceHoleEvent(this.state, event, options);
+    const reduced = reduceHoleEvent(this.state, event, { ...options, mutate: true });
     this.state = reduced.state;
     this.nodes = this.state.nodes;
     this.viewState = this.state.view_state;

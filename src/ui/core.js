@@ -32,6 +32,7 @@ export var hydration = null;
 export var rootId = null;
 export var frozen = false; // read-only exported snapshot
 export var nodes = {};
+var childrenByParent = Object.create(null);
 export var currentNodeId = null;
 export var mode = "reader";
 export var view = { x: 0, y: 0, scale: 1 };
@@ -45,6 +46,7 @@ export var canvasBuilt = false;   // canvas DOM is built lazily on first entry
 export var canvasFramed = false;  // frame-all runs once; afterwards the view is preserved
 export var viewAdjusted = false;  // only user-adjusted camera state is persisted
 var orderCounter = 0;
+var loadingTimers = new Set();
 
 // refs
 export var readerMain = null;
@@ -72,7 +74,6 @@ var sinceMsg = null;
 export var paletteEl = null;
 export var palText = null;
 export var palResults = null;
-export var peekEl = null;
 export var shareMenu = null;
 export var confirmEl = null;
 
@@ -82,6 +83,7 @@ function defaultCoreHooks(){
     ensureCanvasBuilt: function(){},
     diveToNode: function(){},
     openNode: function(){},
+    ensureNodeHtml: function(){},
     mountDocImages: null,
     mountPdfView: null,
     effH: function(n){ return n.h; }
@@ -103,6 +105,7 @@ export function initCore(inputHydration) {
   rootId = hydration.root_id;
   frozen = !!hydration.frozen;
   nodes = {};
+  childrenByParent = Object.create(null);
   currentNodeId = rootId;
   mode = "reader";
   view = { x: 0, y: 0, scale: 1 };
@@ -116,6 +119,7 @@ export function initCore(inputHydration) {
   canvasFramed = false;
   viewAdjusted = false;
   orderCounter = 0;
+  loadingTimers.clear();
   sinceDismissed = false;
   sinceArmed = false;
 
@@ -144,7 +148,6 @@ export function initCore(inputHydration) {
   paletteEl = document.getElementById("palette");
   palText = document.getElementById("pal-text");
   palResults = document.getElementById("pal-results");
-  peekEl = document.getElementById("peek");
   shareMenu = document.getElementById("sharemenu");
   confirmEl = document.getElementById("confirm");
 
@@ -183,6 +186,7 @@ function resetCoreState(){
   rootId = null;
   frozen = false;
   nodes = {};
+  childrenByParent = Object.create(null);
   currentNodeId = null;
   mode = "reader";
   view = { x: 0, y: 0, scale: 1 };
@@ -196,13 +200,14 @@ function resetCoreState(){
   canvasFramed = false;
   viewAdjusted = false;
   orderCounter = 0;
+  loadingTimers.clear();
   readerMain = sideEl = breadcrumbEl = viewport = world = edgesSvg = null;
   ask = askText = askGo = zoomLabel = hintEl = bannerEl = null;
   hintNotice = bannerNotice = null;
   composerInner = composerText = composerSend = null;
   actReader = actCanvas = actSep = null;
   sinceEl = sinceMsg = paletteEl = palText = palResults = null;
-  peekEl = shareMenu = confirmEl = null;
+  shareMenu = confirmEl = null;
   sinceDismissed = false;
   sinceArmed = false;
   reduceMotion = false;
@@ -230,10 +235,54 @@ export function uuid() {
     return "n-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
   }
 export function truncate(s, n){ return sharedTruncate(s, n); }
-export function childrenOf(id) { var out=[]; for (var k in nodes) if (nodes[k].parent_id === id) out.push(nodes[k]); return out; }
+export function registerNode(node) {
+    if (!node) return node;
+    var previous = nodes[node.id];
+    if (previous) unregisterNode(previous.id);
+    nodes[node.id] = node;
+    if (node.parent_id != null) {
+      var siblings = childrenByParent[node.parent_id];
+      if (!siblings) siblings = childrenByParent[node.parent_id] = [];
+      siblings.push(node);
+    }
+    return node;
+  }
+export function unregisterNode(id) {
+    var node = nodes[id];
+    if (!node) return null;
+    if (node.parent_id != null) {
+      var siblings = childrenByParent[node.parent_id];
+      if (siblings) {
+        var index = siblings.indexOf(node);
+        if (index !== -1) siblings.splice(index, 1);
+        if (!siblings.length) delete childrenByParent[node.parent_id];
+      }
+    }
+    delete nodes[id];
+    return node;
+  }
+export function childrenOf(id) { return childrenByParent[id] ? childrenByParent[id].slice() : []; }
 export function anchorStart(n){ return (n.origin && n.origin.anchor) ? n.origin.anchor.offset_start : 1e9; }
 export function lineageNodes(id){ var arr=[], n=nodes[id], guard={}; while(n && !guard[n.id]){ guard[n.id]=1; arr.push(n); n = n.parent_id ? nodes[n.parent_id] : null; } return arr.reverse(); }
-export function isVisible(node){ var p = node.parent_id ? nodes[node.parent_id] : null; while(p){ if(p.collapsed) return false; p = p.parent_id ? nodes[p.parent_id] : null; } return true; }
+export function isVisible(node, cache){
+    if (cache && Object.prototype.hasOwnProperty.call(cache, node.id)) return cache[node.id];
+    var trail = [], p = node.parent_id ? nodes[node.parent_id] : null, visible = true;
+    while(p){
+      if (cache && Object.prototype.hasOwnProperty.call(cache, p.id)){ visible = cache[p.id]; break; }
+      trail.push(p);
+      p = p.parent_id ? nodes[p.parent_id] : null;
+    }
+    if (cache){
+      for (var i = trail.length - 1; i >= 0; i--){
+        cache[trail[i].id] = visible;
+        if (trail[i].collapsed) visible = false;
+      }
+      cache[node.id] = visible;
+    } else {
+      for (var j = 0; j < trail.length; j++) if (trail[j].collapsed) return false;
+    }
+    return visible;
+  }
 export function fontPx(node, base){ return Math.round(base * (node.font_scale || 1)); }
 export function nodeOrder(a,b){
     return sharedNodeOrder(a, b);
@@ -436,6 +485,7 @@ export function buildLoading(node){
       '<span class="ll-closed">Saved — answered when you reopen this hole</span>' +
       '<span class="ll-frozen">Unanswered when this snapshot was exported</span>' +
       '<span class="loading-time" data-start="' + (node._startTs || Date.now()) + '"></span>';
+    loadingTimers.add(st.querySelector(".loading-time"));
     var sk = document.createElement("div");
     sk.innerHTML = '<div class="sk-line w1"></div><div class="sk-line w2"></div><div class="sk-line w3"></div><div class="sk-line w4"></div>';
     wrap.appendChild(st);
@@ -488,6 +538,7 @@ export function fillStreaming(dc, node, surfaceKey){
       '<span class="ll-closed">Saved — answered in full when you reopen this hole</span>' +
       '<span class="ll-frozen">Unfinished when this snapshot was exported</span>' +
       '<span class="loading-time" data-start="' + (node._startTs || Date.now()) + '"></span>';
+    loadingTimers.add(st.querySelector(".loading-time"));
     dc.appendChild(st);
     surfaceKey = surfaceKey || ("stream:" + ((node && node.id) || "unknown"));
     mountVisuals(dc, surfaceKey);
@@ -501,11 +552,12 @@ export function fillStreaming(dc, node, surfaceKey){
   }
 function updateLoadingTimers(){
     if (closed) return; // freeze timers once the session is over
-    var els = document.querySelectorAll(".loading-time");
-    for (var i = 0; i < els.length; i++){
-      var t = Number(els[i].getAttribute("data-start")) || 0;
-      if (t) els[i].textContent = formatElapsed(Date.now() - t);
-    }
+    var now = Date.now();
+    loadingTimers.forEach(function(el){
+      if (!el || !el.isConnected){ loadingTimers.delete(el); return; }
+      var t = Number(el.getAttribute("data-start")) || 0;
+      if (t) el.textContent = formatElapsed(now - t);
+    });
 }
 
   // ---------- shared document content ----------
@@ -515,6 +567,7 @@ export function disposeNodeContent(node){
     node._contentDisposers.clear();
   }
 export function buildDocContent(node, base){
+    coreHooks.ensureNodeHtml(node);
     var dc = document.createElement("div");
     dc.className = "doc-content md";
     dc.dataset.nodeId = node.id;

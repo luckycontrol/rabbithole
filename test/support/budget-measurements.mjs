@@ -5,6 +5,8 @@ import { chromium } from "playwright";
 import { ensureWebDist } from "./build.mjs";
 import { routeProvider, seedConfiguredOpenRouter } from "./provider-mock.mjs";
 import { serveStatic } from "./static-server.mjs";
+import { collectSubtreeIds } from "../../src/core/model.js";
+import { createHoleState, reduceHoleEvent } from "../../src/core/reducer.js";
 
 const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const WEB_DIST = path.join(ROOT, "web/dist");
@@ -24,6 +26,8 @@ export const budgetDefinitions = [
   ["save_window_ms", "Elapsed time from final streamed DOM update until the final markdown is persisted", "ms", 1, "Minimum of repeated samples; 2x ceiling with a 100ms floor (poll quantization) still catches a lost flush-on-complete, which costs 400ms+.", 100],
   ["pdf_hole_serialized_bytes", "Serialized size of a representative 40-page native PDF hole", "bytes", 0.2, "Exact JSON byte size catches provenance growth."],
   ["pdf_save_latency_ms", "JSON clone/serialize latency for a representative native PDF save", "ms", 4, "Minimum of repeated 20-save loops with a 20ms floor absorbs timer noise.", 20],
+  ["owned_stream_reducer_ms", "One hundred owned-state stream updates in a 20,000-node hole", "ms", 4, "Minimum of repeated runs; a 10ms floor catches accidental whole-Map cloning while absorbing timer noise.", 10],
+  ["subtree_collect_ms", "Collect all descendants in a 20,000-node ternary tree", "ms", 4, "Minimum of repeated runs; a 25ms floor catches repeated whole-graph scans while absorbing timer noise.", 25],
 ].map(([id, description, unit, tolerance, rationale, floor]) => ({ id, description, unit, tolerance, rationale, ...(floor ? { floor } : {}) }));
 
 export async function measureBudgets({ samples = 3, onSample = () => {} } = {}) {
@@ -34,6 +38,8 @@ export async function measureBudgets({ samples = 3, onSample = () => {} } = {}) 
     bundle_frozen_client_bytes: (await fs.stat(path.join(ROOT, "dist/frozen-client.js"))).size,
   };
   const pdfHole = representativePdfHole();
+  const scaleNodes = Array.from({ length: 20000 }, (_, i) => ({ id: `scale-${i}`, parent_id: i ? `scale-${Math.floor((i - 1) / 3)}` : null, markdown: "" }));
+  const scaleMap = new Map(scaleNodes.map((node) => [node.id, node]));
   exact.pdf_hole_serialized_bytes = Buffer.byteLength(JSON.stringify(pdfHole));
   const server = await serveStatic(WEB_DIST);
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -43,6 +49,15 @@ export async function measureBudgets({ samples = 3, onSample = () => {} } = {}) 
     const start = performance.now();
     for (let run = 0; run < 20; run++) JSON.parse(JSON.stringify(pdfHole));
     values.pdf_save_latency_ms.push((performance.now() - start) / 20);
+    let state = createHoleState({ root_id: "scale-0", nodes: scaleNodes });
+    const reducerStart = performance.now();
+    for (let update = 0; update < 100; update++) {
+      state = reduceHoleEvent(state, { type: "node_progress", node_id: "scale-19999", markdown: `chunk ${update}` }, { mutate: true }).state;
+    }
+    values.owned_stream_reducer_ms.push(performance.now() - reducerStart);
+    const subtreeStart = performance.now();
+    collectSubtreeIds(scaleMap, "scale-0");
+    values.subtree_collect_ms.push(performance.now() - subtreeStart);
   }
   try {
     const fixtureResults = await measureSnapshots(browser, baseUrl, samples, onSample);

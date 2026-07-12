@@ -3,8 +3,9 @@ import { CURRENT_SCHEMA_VERSION, migratePersistedHole, toPersistedHole } from ".
 import { randomUuidOrFallback } from "../../core/utils.js";
 
 const DB_NAME = "rabbithole-web";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const HOLES = "holes";
+const HOLE_SUMMARIES = "hole-summaries";
 const ASSETS = "assets";
 const STAGING = "staging";
 const META = "meta";
@@ -23,11 +24,6 @@ function assertSafeIngestId(ingestId) {
     throw new Error(`Invalid ingest id: ${JSON.stringify(ingestId)}`);
   }
   return id;
-}
-
-function cloneJson(value) {
-  if (typeof structuredClone === "function") return structuredClone(value);
-  return JSON.parse(JSON.stringify(value ?? null));
 }
 
 function requestToPromise(request) {
@@ -74,17 +70,22 @@ export class IdbStore {
 
   async listHoles() {
     const db = await this.open();
-    const tx = db.transaction(HOLES, "readonly");
-    const holes = await requestToPromise(tx.objectStore(HOLES).getAll());
+    let tx = db.transaction([HOLES, HOLE_SUMMARIES], "readonly");
+    const holesStore = tx.objectStore(HOLES);
+    let [summaries, holeCount] = await Promise.all([
+      requestToPromise(tx.objectStore(HOLE_SUMMARIES).getAll()),
+      requestToPromise(holesStore.count()),
+    ]);
     await txDone(tx);
-    return holes
-      .map((hole) => ({
-        hole_id: hole.hole_id,
-        title: hole.title,
-        updated_at: hole.updated_at,
-        node_count: Array.isArray(hole.nodes) ? hole.nodes.length : 0,
-      }))
-      .sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
+    if (summaries.length !== holeCount) {
+      tx = db.transaction([HOLES, HOLE_SUMMARIES], "readwrite");
+      const holes = await requestToPromise(tx.objectStore(HOLES).getAll());
+      const summaryStore = tx.objectStore(HOLE_SUMMARIES);
+      summaries = holes.map(holeSummary);
+      for (const summary of summaries) summaryStore.put(summary);
+      await txDone(tx);
+    }
+    return summaries.sort(compareSummaries);
   }
 
   async loadHole(holeId) {
@@ -102,10 +103,11 @@ export class IdbStore {
   async saveHole(hole, options = {}) {
     assertSafeHoleId(hole?.hole_id);
     await this.requestPersistenceOnce();
-    const persisted = toPersistedHole(hole, options);
+    const persisted = toPersistedHole(hole, { ...options, cloneExtensions: false });
     const db = await this.open();
-    const tx = db.transaction(HOLES, "readwrite");
-    tx.objectStore(HOLES).put(cloneJson(persisted));
+    const tx = db.transaction([HOLES, HOLE_SUMMARIES], "readwrite");
+    tx.objectStore(HOLES).put(persisted);
+    tx.objectStore(HOLE_SUMMARIES).put(holeSummary(persisted));
     await txDone(tx);
   }
 
@@ -113,8 +115,9 @@ export class IdbStore {
     const safeHoleId = assertSafeHoleId(holeId);
     await this.requestPersistenceOnce();
     const db = await this.open();
-    const tx = db.transaction([HOLES, ASSETS], "readwrite");
+    const tx = db.transaction([HOLES, HOLE_SUMMARIES, ASSETS], "readwrite");
     tx.objectStore(HOLES).delete(safeHoleId);
+    tx.objectStore(HOLE_SUMMARIES).delete(safeHoleId);
     await deleteByHoleId(tx.objectStore(ASSETS), safeHoleId, this.IDBKeyRange);
     await txDone(tx);
   }
@@ -123,9 +126,13 @@ export class IdbStore {
     const safeHoleId = assertSafeHoleId(holeId);
     const db = await this.open();
     const tx = db.transaction(ASSETS, "readonly");
-    const rows = await getAllForHole(tx.objectStore(ASSETS), safeHoleId, this.IDBKeyRange);
+    const store = tx.objectStore(ASSETS);
+    const keys = this.IDBKeyRange
+      ? await requestToPromise(store.getAllKeys(this.IDBKeyRange.bound([safeHoleId, ""], [safeHoleId, "\uffff"])))
+      : null;
+    const rows = keys ? [] : await requestToPromise(store.getAll());
     await txDone(tx);
-    return rows.map((row) => row.name).sort();
+    return (keys ? keys.map((key) => key[1]) : rows.filter((row) => row.hole_id === safeHoleId).map((row) => row.name)).sort();
   }
 
   async getAsset(holeId, name) {
@@ -208,8 +215,7 @@ export class IdbStore {
     const safeIngestId = assertSafeIngestId(ingestId);
     const db = await this.open();
     const tx = db.transaction([STAGING, META], "readwrite");
-    const rows = await requestResult(tx.objectStore(STAGING).getAll());
-    for (const row of rows) if (row.ingest_id === safeIngestId) tx.objectStore(STAGING).delete([safeIngestId, row.name]);
+    await deleteByPrefix(tx.objectStore(STAGING), safeIngestId, this.IDBKeyRange, "ingest_id");
     tx.objectStore(META).delete(`staging:${safeIngestId}`);
     await txDone(tx);
   }
@@ -221,6 +227,7 @@ export class IdbStore {
       request.onupgradeneeded = () => {
         const db = request.result;
         if (!db.objectStoreNames.contains(HOLES)) db.createObjectStore(HOLES, { keyPath: "hole_id" });
+        if (!db.objectStoreNames.contains(HOLE_SUMMARIES)) db.createObjectStore(HOLE_SUMMARIES, { keyPath: "hole_id" });
         if (!db.objectStoreNames.contains(ASSETS)) db.createObjectStore(ASSETS, { keyPath: ["hole_id", "name"] });
         if (!db.objectStoreNames.contains(STAGING)) db.createObjectStore(STAGING, { keyPath: ["ingest_id", "name"] });
         if (!db.objectStoreNames.contains(META)) db.createObjectStore(META, { keyPath: "key" });
@@ -240,6 +247,19 @@ export class IdbStore {
   }
 }
 
+function holeSummary(hole) {
+  return {
+    hole_id: hole.hole_id,
+    title: hole.title,
+    updated_at: hole.updated_at,
+    node_count: Array.isArray(hole.nodes) ? hole.nodes.length : 0,
+  };
+}
+
+function compareSummaries(a, b) {
+  return String(b.updated_at).localeCompare(String(a.updated_at));
+}
+
 async function getAllForHole(store, holeId, IDBKeyRangeCtor) {
   if (!IDBKeyRangeCtor) {
     const rows = await requestToPromise(store.getAll());
@@ -257,6 +277,14 @@ async function getAllForIngest(store, ingestId, IDBKeyRangeCtor) {
 }
 
 async function deleteByHoleId(store, holeId, IDBKeyRangeCtor) {
-  const rows = await getAllForHole(store, holeId, IDBKeyRangeCtor);
-  for (const row of rows) store.delete([row.hole_id, row.name]);
+  return deleteByPrefix(store, holeId, IDBKeyRangeCtor, "hole_id");
+}
+
+async function deleteByPrefix(store, prefix, IDBKeyRangeCtor, field) {
+  if (IDBKeyRangeCtor) {
+    store.delete(IDBKeyRangeCtor.bound([prefix, ""], [prefix, "\uffff"]));
+    return;
+  }
+  const rows = await requestToPromise(store.getAll());
+  for (const row of rows) if (row[field] === prefix) store.delete([prefix, row.name]);
 }

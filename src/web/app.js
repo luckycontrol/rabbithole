@@ -15,6 +15,7 @@ import { escapeHtml } from "../core/utils.js";
 import { wireNotice } from "../ui/primitives/notice.js";
 import { setSnapshotHooks, buildSnapshotProjection, buildSnapshotHtml } from "../ui/snapshot.js";
 import { flushPendingSaves } from "../ui/transport-status.js";
+import { registerRendererAssetName } from "../ui/renderer.js";
 import { openUrlToStoredHole } from "./ingest/url.js";
 import { buildRabbitholeExport, downloadRabbitholeExport, importRabbitholeFile, importSnapshotFile, rabbitholeFilename } from "./portable.js";
 
@@ -32,6 +33,7 @@ let composerDialog = null;
 let settingsController = null;
 let composerPath = "";
 let lastHoleCount = 0;
+let railSummaries = null;
 let toastNotice = null;
 
 ensureCanonical();
@@ -49,7 +51,7 @@ async function boot() {
   initGlobalDrops();
 
   const initial = await chooseInitialHole();
-  await renderRail();
+  await renderRail({ refresh: railSummaries == null });
   if (initial) {
     await startHole(initial, { replace: true });
   } else {
@@ -140,6 +142,7 @@ async function chooseInitialHole() {
     if (stored) return stored;
   }
   const holes = await store.listHoles();
+  railSummaries = holes;
   lastHoleCount = holes.length;
   if (!holes.length) return null;
   return store.loadHole(holes[0].hole_id);
@@ -633,7 +636,7 @@ async function mountHole(hole, { replace = false } = {}) {
       exportPortable: exportCurrentRabbithole,
     });
     document.getElementById("r-canvas")?.click();
-    await renderRail();
+    await renderRail({ refresh: !railSummaries?.some((summary) => summary.hole_id === hole.hole_id) });
     host.startRootAnswer();
   } catch (error) {
     await disposeCurrentHole();
@@ -707,10 +710,11 @@ async function exportCurrentRabbithole() {
   return { filename: rabbitholeFilename(payload.hole?.title), payload };
 }
 
-async function renderRail() {
+async function renderRail({ refresh = true } = {}) {
   const rail = document.getElementById("web-rail");
   if (!rail) return;
-  const summaries = await store.listHoles();
+  if (refresh || !railSummaries) railSummaries = await store.listHoles();
+  const summaries = railSummaries;
   lastHoleCount = summaries.length;
   let inner = rail.querySelector(":scope > .rail-inner");
   let list = inner?.querySelector(":scope > .rail-list");
@@ -876,14 +880,19 @@ async function createLiveAssetData(holeId) {
   const data = {};
   const urls = [];
   try {
-    for (const name of await store.listAssets(holeId)) {
-      const blob = await store.getAsset(holeId, name);
-      if (blob) {
-        const url = URL.createObjectURL(blob);
-        data[name] = url;
-        urls.push(url);
+    const names = await store.listAssets(holeId);
+    let next = 0;
+    await Promise.all(Array.from({ length: Math.min(4, names.length) }, async () => {
+      while (next < names.length) {
+        const name = names[next++];
+        const blob = await store.getAsset(holeId, name);
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          data[name] = url;
+          urls.push(url);
+        }
       }
-    }
+    }));
   } catch (error) {
     urls.forEach((url) => URL.revokeObjectURL(url));
     throw error;
@@ -895,6 +904,7 @@ async function createLiveAssetData(holeId) {
       if (disposed) return;
       if (data[name]) URL.revokeObjectURL(data[name]);
       const url = URL.createObjectURL(blob); data[name] = url; urls.push(url);
+      registerRendererAssetName(name);
     },
     dispose() {
       if (disposed) return;

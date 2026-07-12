@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
 import { assertRabbitholeStore } from "../../src/core/store.js";
@@ -33,5 +34,15 @@ await runStoreContract(store, {
     };
   },
 });
+
+const concurrentBase = { hole_id: "concurrent-hole", root_id: "root", nodes: [{ id: "root", markdown: "body" }] };
+await Promise.all([
+  store.saveHole({ ...concurrentBase, title: "First" }),
+  store.saveHole({ ...concurrentBase, title: "Second" }),
+]);
+const concurrentHole = await store.loadHole("concurrent-hole");
+const concurrentSummary = JSON.parse(await fs.readFile(path.join(process.env.RABBITHOLE_DIR, "concurrent-hole.summary.json"), "utf8"));
+assert.equal(concurrentHole.title, "Second");
+assert.equal(concurrentSummary.title, concurrentHole.title, "serialized save queue keeps the sidecar atomic with its hole");
 
 console.log("filesystem store contract verification passed");

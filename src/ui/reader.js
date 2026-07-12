@@ -15,6 +15,7 @@ import {
   fontPx,
   isFollowup,
   isUnread,
+  goToNode,
   lensBadgeHtml,
   lineageNodes,
   markRead,
@@ -39,7 +40,6 @@ import { applyChildHighlights } from "./text-marks.js";
 function defaultReaderHooks(){
   return {
     hideAsk: function(){},
-    hidePeek: function(){},
     updateComposerState: function(){},
     scheduleViewSave: function(){},
     setMode: function(){},
@@ -74,7 +74,6 @@ export function openNode(id){
     setModeValue("reader");
     document.body.classList.remove("mode-canvas");
     readerLifecycle.hooks.hideAsk();
-    readerLifecycle.hooks.hidePeek();
     kbdMarkIdx = -1;
     renderBreadcrumb();
     renderReaderBody();
@@ -133,9 +132,10 @@ export function initReader(){
     });
     readerScope.listen(readerMain, "scroll", onReaderScroll, { passive: true });
     readerScope.listen(readerMain, "click", onMarkClick);
-    readerScope.listen(world, "click", onMarkClick);
     readerScope.listen(readerMain, "keydown", onMarkKeydown);
-    readerScope.listen(world, "keydown", onMarkKeydown);
+    // Canvas marks dive to the answer card in place — never yank into the reader.
+    readerScope.listen(world, "click", onCanvasMarkClick);
+    readerScope.listen(world, "keydown", onCanvasMarkKeydown);
     readerScope.listen(sideEl, "click", onSidebarClick);
     readerScope.listen(sideEl, "keydown", onSidebarKeydown);
     readerScope.listen(document.getElementById("r-textdown"), "click", function(){ setReaderFontScale(-0.1); });
@@ -234,7 +234,6 @@ export function jumpToOrigin(node, source){
   function onReaderScroll(){
     var n = nodes[currentNodeId];
     if (n) n._scrollTop = readerMain.scrollTop;
-    readerLifecycle.hooks.hidePeek();
     readerLifecycle.hooks.scheduleViewSave();
   }
 
@@ -320,6 +319,22 @@ export function removeThreadItem(childId){
     if (!k) return;
     e.preventDefault();
     openNode(k.id);
+  }
+  function onCanvasMarkClick(e){
+    var m = e.target.closest && e.target.closest("mark[data-child]");
+    if (!m) return;
+    if (!window.getSelection().isCollapsed) return; // the human was selecting, not clicking
+    var k = nodes[m.dataset.child];
+    if (k) goToNode(k, motionSourceFromEvent(e));
+  }
+  function onCanvasMarkKeydown(e){
+    if (e.key !== "Enter") return;
+    var m = e.target.closest && e.target.closest("mark[data-child]");
+    if (!m) return;
+    var k = nodes[m.dataset.child];
+    if (!k) return;
+    e.preventDefault();
+    goToNode(k, motionSourceFromEvent(e));
   }
 export function renderSidebar(){
     var kids = childrenOf(currentNodeId).filter(function(k){ return !isFollowup(k); }).sort(function(a,b){

@@ -126,4 +126,13 @@ assert.strictEqual(staleTagged.state.progressRuns, priorRuns);
 assert.equal(Object.hasOwn(holeStateToHole(acceptedTagged.state), "progressRuns"), false);
 assert.equal(JSON.stringify(holeStateToHole(acceptedTagged.state)).includes("progressRuns"), false);
 
+// Production hosts exclusively own their state and opt into map reuse so a
+// long stream does not clone every node for every chunk. The public/default
+// path above remains copy-on-write for embedders.
+const ownedState = createHoleState({ root_id: "root", nodes: [{ id: "root", markdown: "before" }] });
+const ownedNodes = ownedState.nodes;
+const ownedResult = reduceHoleEvent(ownedState, { type: "node_progress", node_id: "root", markdown: "after" }, { mutate: true });
+assert.strictEqual(ownedResult.state.nodes, ownedNodes);
+assert.equal(ownedResult.state.nodes.get("root").markdown, "after");
+
 console.log(`ok reducer: ${cases.length} goldens conform in node; frozen-input immutability enforced`);

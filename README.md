@@ -153,8 +153,8 @@ and opening that content with `base_url` instead of ingesting the PDF.
 ## What's inside
 
 - **Reader mode (default):** fullscreen reading, branches sidebar, breadcrumbs;
-  selections become inline marks (pending → ready); hover a ready mark for a
-  peek preview; child docs carry a FROM strip that jumps back to the exact origin.
+  selections become inline marks (pending → ready); clicking a mark jumps to
+  its answer; child docs carry a FROM strip that jumps back to the exact origin.
 - **Streamed answers:** words appear live with a breathing caret — in the
   reader, the thread, and the canvas card.
 - **Rich Markdown:** answers can use math, highlighted language code fences,

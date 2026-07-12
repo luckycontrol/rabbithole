@@ -23,12 +23,11 @@ import {
   confirmDelete,
   disposeBranchSurfaces,
   hideConfirm,
-  hidePeek,
   initBranchSurfaces,
   registerBranchHooks
 } from "./branch-surfaces.js";
 import { disposeChrome, initChrome } from "./chrome-init.js";
-import { setRendererAssetData } from "./renderer.js";
+import { ensureNodeHtml, setRendererAssetData } from "./renderer.js";
 
 var activeRuntime = null;
 
@@ -61,12 +60,12 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
     registerCoreHooks({
       post: post,
       openNode: openNode,
+      ensureNodeHtml: ensureNodeHtml,
       mountDocImages: mountDocImages
       ,mountPdfView: capabilities.mountPdfView || null
     });
     registerReaderHooks({
       hideAsk: hideAsk,
-      hidePeek: hidePeek,
       updateComposerState: updateComposerState,
       scheduleViewSave: host.scheduleViewSave || noop,
       setMode: setMode,
@@ -77,17 +76,15 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
     });
     registerCanvasHooks({
       hideAsk: hideAsk,
-      hidePeek: hidePeek,
       sendFollowup: sendFollowup,
       confirmDelete: confirmDelete,
       persistNode: host.persistNode || noop,
       persistNodesBulk: host.persistNodesBulk || noop,
       scheduleViewSave: host.scheduleViewSave || noop
     });
-    registerAskHooks({ post: post, hideConfirm: hideConfirm, hidePeek: hidePeek });
+    registerAskHooks({ post: post, hideConfirm: hideConfirm });
     registerPaletteHooks({
       hideAsk: hideAsk,
-      hidePeek: hidePeek,
       closeShare: closeShare,
       hideConfirm: hideConfirm
     });
