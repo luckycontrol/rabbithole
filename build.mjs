@@ -159,8 +159,6 @@ function buildWebIndexHtml({ proxyOrigin = "" } = {}) {
   const connectSrc = [
     "'self'",
     "https://openrouter.ai",
-    "https://api.openai.com",
-    "https://api.anthropic.com",
     "https://arxiv.org",
     "https://www.arxiv.org",
     "https://ar5iv.labs.arxiv.org",
