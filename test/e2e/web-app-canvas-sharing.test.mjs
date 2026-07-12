@@ -419,7 +419,6 @@ async function verifyCanvasBranching() {
   await legacyPage.close();
 
   await page.evaluate(() => {
-    window.__askFocusBefore = document.activeElement;
     window.__askRangeRect = Range.prototype.getBoundingClientRect;
     Range.prototype.getBoundingClientRect = function() {
       return { left: -24, right: 76, top: innerHeight - 24, bottom: innerHeight - 4, width: 100, height: 20, x: -24, y: innerHeight - 24 };
@@ -428,7 +427,7 @@ async function verifyCanvasBranching() {
   await selectText(page, "Euler identity");
   await page.waitForSelector("#ask.visible");
   await page.waitForTimeout(180);
-  assert.equal(await page.evaluate(() => document.activeElement === window.__askFocusBefore), true, "opening the selection bar must not steal document focus");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "ask-text", "opening the selection bar must focus its input for immediate typing");
   const askEdge = await page.evaluate(() => {
     const anchor = window.getSelection().getRangeAt(0).getBoundingClientRect();
     const bar = document.getElementById("ask").getBoundingClientRect();
@@ -447,12 +446,10 @@ async function verifyCanvasBranching() {
   assert.equal(await page.evaluate(() => window.getSelection().toString()), "Euler identity", "selection-bar Escape should preserve the live text selection");
   assert.equal(await page.evaluate(() => document.body.classList.contains("mode-canvas")), true, "selection-bar Escape must not leak to the canvas reader shortcut");
 
-  await page.evaluate(() => { window.__askFocusBefore = document.activeElement; });
   await selectText(page, "Euler identity");
   await page.waitForSelector("#ask.visible");
-  assert.equal(await page.evaluate(() => document.activeElement === window.__askFocusBefore), true, "reopening the selection bar should retain selection-context focus");
-  await page.keyboard.press("Tab");
-  await page.waitForFunction(() => document.activeElement?.id === "ask-text");
+  await page.waitForFunction(() => document.activeElement?.id === "ask-text", null, { timeout: 5000 })
+    .catch(() => { throw new Error("the selection bar must focus its input on open"); });
   await page.keyboard.type("Why does this matter?");
   await page.keyboard.press("Enter");
   await page.click("#t-reader");

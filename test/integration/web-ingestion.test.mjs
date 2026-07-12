@@ -112,8 +112,9 @@ try {
     const text = span.firstChild, start = text.data.indexOf("e^(i*pi)+1=0"), range = document.createRange();
     range.setStart(text, start); range.setEnd(text, start + "e^(i*pi)+1=0".length);
     const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
+    const picked = selection.toString(); // the ask box focuses on open, collapsing the native selection
     span.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
-    return selection.toString();
+    return picked;
   });
   assert.equal(selected, "e^(i*pi)+1=0");
   await page.waitForSelector("#ask.visible");
@@ -306,8 +307,9 @@ try {
     const text = span.firstChild, range = document.createRange();
     range.setStart(text, 0); range.setEnd(text, 5);
     const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
+    const picked = selection.toString(); // the ask box focuses on open, collapsing the native selection
     span.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
-    return selection.toString();
+    return picked;
   });
   assert.equal(askSelected, "Abort");
   await page.waitForSelector("#ask.visible");

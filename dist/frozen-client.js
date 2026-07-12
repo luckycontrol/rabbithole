@@ -4913,13 +4913,25 @@ var RabbitholeFrozenClient = (() => {
       preventOutsidePointerDefault: false,
       onClose: function(reason) {
         var escapeOwner = reason === "escape" ? owner : null;
+        var keepRange = reason === "escape" && pendingAsk ? pendingAsk.range : null;
         hideAsk();
         if (escapeOwner) focusAskOwner(escapeOwner);
+        restoreSelectionRange(keepRange);
       }
     });
     autoGrowEl(askText, 110);
+    askText.focus({ preventScroll: true });
   }
   var pendingAsk = null;
+  function restoreSelectionRange(range) {
+    if (!range) return;
+    try {
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } catch (e) {
+    }
+  }
   function hideAsk() {
     if (askPosition) {
       askPosition.dispose();

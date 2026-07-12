@@ -153,17 +153,21 @@ function inAsk(e){ return e.target && e.target.closest && e.target.closest("#ask
     askOwnerCleanup = askLifecycle.scope
       ? askLifecycle.scope.listen(document, "keydown", onAskOwnerKeydown)
       : function(){ document.removeEventListener("keydown", onAskOwnerKeydown); };
-    // The selection bar is non-focus-stealing: only an explicit Tab/click enters
-    // it. Escape is layer-owned, preserves the Range, and returns focus here.
+    // The box takes focus on open so the question can be typed immediately —
+    // focusing collapses the native selection, so the cloned Range plus the
+    // painted highlight carry it, and Escape puts the selection back.
     askPosition = openAnchoredSurface({ surface: ask, anchor: virtualAnchor,
       placement: "bottom-start", restoreFocus: false,
       preventOutsidePointerDefault: false, onClose: function(reason){
         var escapeOwner = reason === "escape" ? owner : null;
+        var keepRange = reason === "escape" && pendingAsk ? pendingAsk.range : null;
         hideAsk();
         if (escapeOwner) focusAskOwner(escapeOwner);
+        restoreSelectionRange(keepRange);
       } });
     // Grow only once visible — scrollHeight reads 0 inside display:none.
     autoGrowEl(askText, 110);
+    askText.focus({ preventScroll: true });
   }
   var pendingAsk = null;
 export function showAskFromSelection(options){
@@ -192,9 +196,20 @@ export function showAskFromSelection(options){
       : function(){ document.removeEventListener("keydown", onAskOwnerKeydown); };
     askPosition = openAnchoredSurface({ surface: ask, anchor: anchorEl,
       placement: "bottom-start", restoreFocus: false, preventOutsidePointerDefault: false,
-      onClose: function(reason){ var escapeOwner = reason === "escape" ? owner : null; hideAsk(); if (escapeOwner) focusAskOwner(escapeOwner); } });
+      onClose: function(reason){
+        var escapeOwner = reason === "escape" ? owner : null;
+        var keepRange = reason === "escape" && pendingAsk ? pendingAsk.range : null;
+        hideAsk();
+        if (escapeOwner) focusAskOwner(escapeOwner);
+        restoreSelectionRange(keepRange);
+      } });
     autoGrowEl(askText, 110);
+    askText.focus({ preventScroll: true });
     return true;
+  }
+  function restoreSelectionRange(range){
+    if (!range) return;
+    try { var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range); } catch(e){}
   }
 export function hideAsk(){
     if (askPosition){ askPosition.dispose(); askPosition = null; }

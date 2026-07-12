@@ -196,7 +196,7 @@ async function selectAndAsk(page, phrase, question) {
     let node;
     while ((node = walker.nextNode())) {
       const index = node.data.indexOf(needle);
-      if (index >= 0) { const range = document.createRange(); range.setStart(node, index); range.setEnd(node, index + needle.length); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range); root.dispatchEvent(new MouseEvent("mouseup", { bubbles: true })); return sel.toString(); }
+      if (index >= 0) { const range = document.createRange(); range.setStart(node, index); range.setEnd(node, index + needle.length); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range); const picked = sel.toString(); root.dispatchEvent(new MouseEvent("mouseup", { bubbles: true })); return picked; }
     }
     return "";
   }, phrase);
