@@ -13,7 +13,7 @@ export async function bootWebApp() {
   } catch {
     ensureWebDist();
   }
-  const server = await serveStatic(WEB_DIST);
+  const server = await serveStatic(WEB_DIST, { spaFallback: true });
   const browser = await chromium.launch();
   return {
     browser,

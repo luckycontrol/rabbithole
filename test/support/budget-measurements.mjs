@@ -41,7 +41,7 @@ export async function measureBudgets({ samples = 3, onSample = () => {} } = {}) 
   const scaleNodes = Array.from({ length: 20000 }, (_, i) => ({ id: `scale-${i}`, parent_id: i ? `scale-${Math.floor((i - 1) / 3)}` : null, markdown: "" }));
   const scaleMap = new Map(scaleNodes.map((node) => [node.id, node]));
   exact.pdf_hole_serialized_bytes = Buffer.byteLength(JSON.stringify(pdfHole));
-  const server = await serveStatic(WEB_DIST);
+  const server = await serveStatic(WEB_DIST, { spaFallback: true });
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
   const browser = await chromium.launch();
   const values = Object.fromEntries(budgetDefinitions.map(({ id }) => [id, []]));

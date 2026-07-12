@@ -5,6 +5,7 @@ import { extractNodeAssetRefs } from "../../core/assets.js";
 import { GenerationRun } from "../../core/generation-run.js";
 import { applyPersistedBrowserEvent, assetsOrphanedByDeletion, buildNodeAnsweredEvent, createSaveChain, dispatchBrowserEvent } from "../../core/hole-host.js";
 import { randomId } from "../../core/utils.js";
+import { createWhimsicalHoleId } from "../hole-id.js";
 import { ProviderError, fallbackTitleForNode, normalizeProviderError } from "../brain/index.js";
 import { MAX_PDF_FIGURE_ASSET_BYTES, normalizePdfExtension, parseFigureRefs, rewriteFigureRefs } from "../../core/pdf-shared.js";
 import { cropPdfAssetToBlob, cropPdfAssetToDataUrl } from "../pdf-crop.js";
@@ -665,7 +666,7 @@ function blobDataUrl(blob) {
 
 export function createHoleFromMarkdown({ title, markdown, baseUrl = null } = {}) {
   const now = new Date().toISOString();
-  const holeId = randomId("hole");
+  const holeId = createWhimsicalHoleId();
   const rootId = randomId("root");
   const inferredTitle = title || titleFromMarkdown(markdown) || "Untitled";
   return {

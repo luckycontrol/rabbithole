@@ -22,9 +22,15 @@ the provider origin you configure. Holes persist in IndexedDB, so the app keeps
 working offline-ish after it loads, and `.rabbithole` export/import keeps your
 work portable.
 
+Each browser-created document gets a memorable local URL such as
+`rabbithole.ing/curious-teacup-abcdef`. The path identifies a record in that
+browser's IndexedDB; it is not a public sharing link and will not open the same
+document on another browser unless the `.rabbithole` file is imported there.
+
 Self-hosting is static: `web/dist` can be served by any host. The optional
 `workers/fetch-proxy` Cloudflare Worker enables URL ingestion for sources that
-block browser CORS.
+block browser CORS. Hosts must serve `index.html` as the fallback for unknown
+single-segment paths so document URLs survive a direct visit or refresh.
 
 ## Quick start
 

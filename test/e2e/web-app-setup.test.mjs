@@ -174,7 +174,7 @@ async function verifyLandingAndComposer() {
   await page.reload({ waitUntil: "networkidle" });
   await page.waitForFunction((id) => window.__rabbitholeTest?.currentHoleId() === id, second);
 
-  await page.goto(`${baseUrl}/?hash-wins=1#hole=${encodeURIComponent(first)}`, { waitUntil: "networkidle" });
+  await page.goto(`${baseUrl}/${first}?path-wins=1`, { waitUntil: "networkidle" });
   await page.waitForFunction((id) => window.__rabbitholeTest?.currentHoleId() === id, first);
 
   await page.evaluate((deletedId) => localStorage.setItem("rh-last-hole", deletedId), second);
@@ -203,6 +203,10 @@ async function verifyLandingAndComposer() {
   await ensureRailOpen(page);
   await page.locator(`.rail-row[data-hole="${first}"] .rail-open`).click();
   await page.waitForFunction((id) => window.__rabbitholeTest?.currentHoleId() === id, first);
+  await page.goBack({ waitUntil: "commit" });
+  await page.waitForFunction((id) => window.__rabbitholeTest?.currentHoleId() === id, second);
+  await page.goForward({ waitUntil: "commit" });
+  await page.waitForFunction((id) => window.__rabbitholeTest?.currentHoleId() === id, first);
   assert.equal(postBaselineLoads, 0, "rail switching must not navigate or reload the document");
   assert.equal(await page.evaluate(() => window.__rabbitholeDocumentToken), documentToken, "rail switching must preserve document identity");
   assert.deepEqual(
@@ -211,7 +215,7 @@ async function verifyLandingAndComposer() {
     "repeated switching must retain one stable set of document key handlers and intervals",
   );
   assert.equal(ownedResourceBaseline.intervals, 1, "one hole runtime must own exactly one loading-status interval");
-  assert.equal(new URL(page.url()).hash, `#hole=${encodeURIComponent(first)}`);
+  assert.equal(new URL(page.url()).pathname, `/${first}`);
   assert.equal(await page.locator(".rail-row.current").getAttribute("data-hole"), first);
   await ensureRailOpen(page);
   await page.locator(`.rail-row[data-hole="${second}"]`).hover();
@@ -710,4 +714,3 @@ async function selectText(page, needle) {
     throw new Error(`Text not found: ${text}`);
   }, needle);
 }
-

@@ -20,7 +20,7 @@ try {
 }
 
 const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-artifact-portability-"));
-const server = await serveStatic(WEB_DIST);
+const server = await serveStatic(WEB_DIST, { spaFallback: true });
 const baseUrl = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch();
 
@@ -293,6 +293,7 @@ async function verifyPublishOutput() {
   }
   const redirects = await fs.readFile(path.join(publishDir, "_redirects"), "utf8");
   assert(redirects.includes("/app / 301"));
+  assert(redirects.includes("/* /index.html 200"), "publish fallback should make Rabbithole pathnames refreshable");
   assert(redirects.includes("/app/* /:splat 301"));
   const html = await fs.readFile(path.join(publishDir, "index.html"), "utf8");
   assert(html.includes("Rabbithole — an infinite canvas for learning"));

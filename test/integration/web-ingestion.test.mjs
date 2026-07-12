@@ -17,7 +17,7 @@ try {
 }
 
 let proxyCalls = 0;
-const server = await serveStatic(WEB_DIST, { routes: {
+const server = await serveStatic(WEB_DIST, { spaFallback: true, routes: {
   "/proxy": (_req, res) => { proxyCalls += 1; res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" }); res.end(articleHtml("Proxy fallback article")); },
   "/dead-proxy": (_req, res) => { res.writeHead(503, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }); res.end("proxy unavailable"); },
   "/reject-proxy": (_req, res) => { res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }); res.end("Host is not allowlisted: arxiv.org"); },

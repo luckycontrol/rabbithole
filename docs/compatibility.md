@@ -142,6 +142,14 @@ document store:
 - `rh-theme` and `rh-last-hole` retain the selected theme and most recently used
   hole.
 
+Browser documents use a whimsical, URL-safe `hole_id` as the single path
+segment (for example `/curious-teacup-abcdef`). The path is a device-local
+IndexedDB locator, not a network share token. Browser database version 3 is an
+intentional clean break: upgrading from versions 1 or 2 clears documents,
+summaries, assets, and staging metadata so UUID-backed records cannot produce
+invalid paths. Preferences and credentials remain intact. Portable imports are
+assigned a fresh browser ID; the portable format itself remains compatible.
+
 On startup, settings are canonicalized before use. Historical `anthropic` and
 `openai` provider IDs resolve to `openrouter`, with canonical endpoint and model
 settings. A complete older provider setup gains a versioned setup-readiness

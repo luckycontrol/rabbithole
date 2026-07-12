@@ -39,7 +39,7 @@ ensureWebDist();
 const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-compatibility-security-"));
 const hostilePath = path.join(tmp, "hostile.rabbithole");
 await fs.writeFile(hostilePath, JSON.stringify(portableFixture()), "utf8");
-const server = await serveStatic(WEB_DIST);
+const server = await serveStatic(WEB_DIST, { spaFallback: true });
 const baseUrl = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch();
 

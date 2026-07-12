@@ -25,7 +25,7 @@ const BRANCH_MARKDOWN = "First streamed paragraph.\n\nSecond final paragraph wit
 const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-cross-host-journey-"));
 const assetPath = path.join(tmp, "journey.png");
 await fs.writeFile(assetPath, ASSET_BYTES);
-const server = await serveStatic(WEB_DIST);
+const server = await serveStatic(WEB_DIST, { spaFallback: true });
 const webUrl = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch({ headless: true });
 

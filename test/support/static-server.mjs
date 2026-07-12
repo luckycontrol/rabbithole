@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 
-export async function serveStatic(rootDir, { routes = {} } = {}) {
+export async function serveStatic(rootDir, { routes = {}, spaFallback = false } = {}) {
   const root = path.resolve(rootDir);
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || "/", "http://127.0.0.1");
@@ -22,6 +22,14 @@ export async function serveStatic(rootDir, { routes = {} } = {}) {
       res.writeHead(200, { "Content-Type": contentType(file), "Cache-Control": "no-store" });
       res.end(bytes);
     } catch {
+      if (spaFallback) {
+        try {
+          const bytes = await fs.readFile(path.join(root, "index.html"));
+          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+          res.end(bytes);
+          return;
+        } catch {}
+      }
       res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("Not Found");
     }

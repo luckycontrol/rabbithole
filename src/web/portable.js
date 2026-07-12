@@ -6,7 +6,8 @@ import {
 } from "../core/portable-projection.js";
 import { migratePersistedHole } from "../core/schema.js";
 import { normalizeBlockIds } from "../core/blocks.js";
-import { randomId, slugifyTitle } from "../core/utils.js";
+import { slugifyTitle } from "../core/utils.js";
+import { createWhimsicalHoleId } from "./hole-id.js";
 import {
   extractSnapshotPayload,
   MAX_IMPORT_FILE_BYTES,
@@ -42,30 +43,32 @@ export async function downloadRabbitholeExport(store, holeId) {
   return payload;
 }
 
-export async function importRabbitholeFile(store, fileOrText) {
+export async function importRabbitholeFile(store, fileOrText, options = {}) {
   if (!store) throw new Error("Import needs a store.");
   assertImportFileSize(fileOrText);
   const text = typeof fileOrText === "string" ? fileOrText : await fileOrText.text();
   const parsed = parseRabbitholeFile(text);
-  return persistPortableImport(store, parsed);
+  return persistPortableImport(store, parsed, options);
 }
 
-export async function importSnapshotFile(store, fileOrText) {
+export async function importSnapshotFile(store, fileOrText, options = {}) {
   if (!store) throw new Error("Import needs a store.");
   assertImportFileSize(fileOrText);
   const html = typeof fileOrText === "string" ? fileOrText : await fileOrText.text();
   const parsed = parsePortableImportPayload(extractSnapshotPayload(html), "snapshot");
-  return persistPortableImport(store, parsed);
+  return persistPortableImport(store, parsed, options);
 }
 
-async function persistPortableImport(store, parsed) {
+async function persistPortableImport(store, parsed, { mintHoleId = null } = {}) {
   const migrated = migratePersistedHole(parsed.hole).hole;
   for (const node of migrated.nodes) node.markdown = normalizeBlockIds(node.markdown).markdown;
   removeCredentialShapedKeys(migrated);
   const assets = await decodeAssets(parsed.assets);
   let hole = migrated;
   let collision = false;
-  if (await store.loadHole(hole.hole_id)) {
+  if (mintHoleId) {
+    hole = { ...hole, hole_id: await freshHoleId(store, mintHoleId) };
+  } else if (await store.loadHole(hole.hole_id)) {
     collision = true;
     hole = { ...hole, hole_id: await freshHoleId(store) };
   }
@@ -124,14 +127,14 @@ function removeCredentialShapedKeys(value) {
   for (const child of Object.values(value)) removeCredentialShapedKeys(child);
 }
 
-async function freshHoleId(store) {
+async function freshHoleId(store, mintHoleId = newHoleId) {
   for (let i = 0; i < 20; i += 1) {
-    const id = newHoleId();
+    const id = mintHoleId();
     if (!(await store.loadHole(id))) return id;
   }
   throw new Error("Import failed: could not generate a fresh hole id.");
 }
 
 function newHoleId() {
-  return randomId("hole");
+  return createWhimsicalHoleId();
 }

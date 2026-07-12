@@ -3,7 +3,7 @@ import { CURRENT_SCHEMA_VERSION, migratePersistedHole, toPersistedHole } from ".
 import { randomUuidOrFallback } from "../../core/utils.js";
 
 const DB_NAME = "rabbithole-web";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const HOLES = "holes";
 const HOLE_SUMMARIES = "hole-summaries";
 const ASSETS = "assets";
@@ -224,13 +224,18 @@ export class IdbStore {
     if (this.dbPromise) return this.dbPromise;
     this.dbPromise = new Promise((resolve, reject) => {
       const request = this.indexedDB.open(this.dbName, DB_VERSION);
-      request.onupgradeneeded = () => {
+      request.onupgradeneeded = (event) => {
         const db = request.result;
         if (!db.objectStoreNames.contains(HOLES)) db.createObjectStore(HOLES, { keyPath: "hole_id" });
         if (!db.objectStoreNames.contains(HOLE_SUMMARIES)) db.createObjectStore(HOLE_SUMMARIES, { keyPath: "hole_id" });
         if (!db.objectStoreNames.contains(ASSETS)) db.createObjectStore(ASSETS, { keyPath: ["hole_id", "name"] });
         if (!db.objectStoreNames.contains(STAGING)) db.createObjectStore(STAGING, { keyPath: ["ingest_id", "name"] });
         if (!db.objectStoreNames.contains(META)) db.createObjectStore(META, { keyPath: "key" });
+        if (event.oldVersion > 0 && event.oldVersion < 3) {
+          for (const name of [HOLES, HOLE_SUMMARIES, ASSETS, STAGING, META]) {
+            request.transaction.objectStore(name).clear();
+          }
+        }
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error || new Error("Failed to open IndexedDB"));

@@ -18,6 +18,7 @@ import { flushPendingSaves } from "../ui/transport-status.js";
 import { registerRendererAssetName } from "../ui/renderer.js";
 import { openUrlToStoredHole } from "./ingest/url.js";
 import { buildRabbitholeExport, downloadRabbitholeExport, importRabbitholeFile, importSnapshotFile, rabbitholeFilename } from "./portable.js";
+import { createWhimsicalHoleId, holeIdFromPathname, pathnameForHole } from "./hole-id.js";
 
 const LAST_HOLE_KEY = "rh-last-hole";
 
@@ -131,13 +132,12 @@ function renderShell() {
 }
 
 async function chooseInitialHole() {
-  const hashHole = holeIdFromHash();
-  if (hashHole) {
-    const hole = await store.loadHole(hashHole);
-    if (hole) return hole;
+  const pathHole = holeIdFromPathname(location.pathname);
+  if (pathHole) {
+    return store.loadHole(pathHole);
   }
   const storedId = safeLocalStorageGet(LAST_HOLE_KEY);
-  if (storedId && storedId !== hashHole) {
+  if (storedId) {
     const stored = await store.loadHole(storedId);
     if (stored) return stored;
   }
@@ -151,6 +151,7 @@ async function chooseInitialHole() {
 function initAppChrome() {
   const rail = document.getElementById("web-rail");
   window.addEventListener("resize", syncRailPosition, { passive: true });
+  window.addEventListener("popstate", () => { void openHistoryLocation(); });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") void currentHost?.flushSave();
   });
@@ -226,6 +227,22 @@ function initAppChrome() {
       toggleRail();
     }
   });
+}
+
+async function openHistoryLocation() {
+  const holeId = holeIdFromPathname(location.pathname);
+  if (holeId === currentHoleId) return;
+  await currentHost?.flushSave();
+  if (holeId) {
+    const hole = await store.loadHole(holeId);
+    if (hole) {
+      await startHole(hole, { replace: true });
+      return;
+    }
+  }
+  await disposeCurrentHole();
+  resetHoleSurface();
+  showBlankCanvas();
 }
 
 function initComposer() {
@@ -504,7 +521,7 @@ async function createFromFile(file) {
 async function createFromSnapshotFile(file) {
   try {
     setIngestStatus("Importing Rabbithole snapshot...", "busy");
-    const imported = await importSnapshotFile(store, file);
+    const imported = await importSnapshotFile(store, file, { mintHoleId: createWhimsicalHoleId });
     setIngestStatus("");
     const hole = await store.loadHole(imported.hole_id);
     if (!hole) throw new Error("Imported snapshot could not be loaded.");
@@ -517,7 +534,7 @@ async function createFromSnapshotFile(file) {
 async function createFromRabbitholeFile(file) {
   try {
     setIngestStatus("Importing Rabbithole file...", "busy");
-    const imported = await importRabbitholeFile(store, file);
+    const imported = await importRabbitholeFile(store, file, { mintHoleId: createWhimsicalHoleId });
     setIngestStatus("");
     const hole = await store.loadHole(imported.hole_id);
     if (!hole) throw new Error("Imported file could not be loaded.");
@@ -592,8 +609,8 @@ async function mountHole(hole, { replace = false } = {}) {
   document.getElementById("blank-start").hidden = true;
   closeComposerSilently();
   safeLocalStorageSet(LAST_HOLE_KEY, hole.hole_id);
-  if (replace) history.replaceState(null, "", `#hole=${encodeURIComponent(hole.hole_id)}`);
-  else history.pushState(null, "", `#hole=${encodeURIComponent(hole.hole_id)}`);
+  if (replace) history.replaceState(null, "", pathnameForHole(hole.hole_id));
+  else history.pushState(null, "", pathnameForHole(hole.hole_id));
 
   setSnapshotHooks({
     fetchAssetBinary: async (name) => store.getAsset(currentHoleId, name),
@@ -973,11 +990,6 @@ function isSingleHttpUrl(value) {
   } catch {
     return false;
   }
-}
-
-function holeIdFromHash() {
-  const match = /^#hole=(.+)$/.exec(location.hash || "");
-  return match ? decodeURIComponent(match[1]) : "";
 }
 
 function formatRelativeDate(value) {
