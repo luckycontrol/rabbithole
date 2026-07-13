@@ -21,6 +21,8 @@ const { browser, baseUrl } = app;
 try {
   await verifyThemeBeforeAppRuntime();
   await verifyMobileSetupExperience();
+  await verifySetupWaitsForProviderChoice();
+  await verifyLocalFailureRequiresTroubleshootChoice();
   await verifyLandingAndComposer();
   await verifySetupReadinessInvalidation();
   await verifyComboboxCatalogStates();
@@ -28,6 +30,77 @@ try {
   console.log("web app verification passed");
 } finally {
   await app.close();
+}
+
+async function verifySetupWaitsForProviderChoice() {
+  const context = await browser.newContext();
+  await context.addInitScript(() => localStorage.setItem("rh-web-settings", JSON.stringify({
+    preset: "custom",
+    base_url: "http://localhost:11434/v1",
+    model: "llama3.2",
+    transcribe_model: "llama3.2",
+    session_only: true,
+  })));
+  try {
+    const page = await context.newPage();
+    let localModelRequests = 0;
+    await page.route(LOCAL_MODEL_URL, (route) => {
+      localModelRequests += 1;
+      return route.fulfill({ status: 502, headers: corsHeaders(), body: "failed" });
+    });
+    await page.route(LOCAL_VERSION_URL, (route) => route.abort());
+    await page.goto(baseUrl, { waitUntil: "networkidle" });
+    await page.click("#blank-start-setup");
+    await page.waitForSelector("#web-settings-popover");
+    await page.waitForTimeout(180);
+
+    assert.equal(localModelRequests, 0, "opening setup must not probe Local before the user chooses it");
+    assert.equal(await page.locator("#ollama-recovery-modal").count(), 0, "opening setup must not force OpenRouter users into Ollama setup");
+    assert.deepEqual(await page.locator(".provider-choice button").allTextContents(), ["OpenRouter", "Local"]);
+
+    await page.click('[data-provider="openrouter"]');
+    await page.waitForTimeout(50);
+    assert.equal(localModelRequests, 0, "choosing OpenRouter must not start Local setup");
+    assert.equal(await page.locator("#ollama-recovery-modal").count(), 0, "choosing OpenRouter must keep Ollama setup closed");
+
+    await page.click('[data-provider="custom"]');
+    await page.waitForFunction(() => document.querySelector("#ollama-recovery-modal:not([hidden])"));
+    assert.equal(localModelRequests, 1, "choosing Local should start Local model discovery");
+  } finally {
+    await context.close();
+  }
+}
+
+async function verifyLocalFailureRequiresTroubleshootChoice() {
+  const context = await browser.newContext();
+  await context.addInitScript(() => localStorage.setItem("rh-web-settings", JSON.stringify({
+    preset: "custom",
+    base_url: "http://localhost:11434/v1",
+    model: "llama3.2",
+    transcribe_model: "llama3.2",
+    session_only: true,
+    generation_setup: { version: 1, preset: "custom", base_url: "http://localhost:11434/v1", model: "llama3.2" },
+  })));
+  try {
+    const page = await context.newPage();
+    await page.route(LOCAL_CHAT_URL, (route) => route.abort());
+    await page.route(LOCAL_VERSION_URL, (route) => route.abort());
+    await page.goto(baseUrl, { waitUntil: "networkidle" });
+    await createDocument(page, "# Local failure\n\nThis selection verifies opt-in troubleshooting.");
+    await selectText(page, "opt-in troubleshooting");
+    await page.waitForSelector("#ask.visible");
+    await page.fill("#ask-text", "Explain this");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector("#web-toast.visible");
+
+    assert.equal(await page.locator("#ollama-recovery-modal").count(), 0, "a Local generation failure must not auto-open diagnostics");
+    assert.equal(await page.locator("#web-toast [data-notice-action]").innerText(), "Troubleshoot", "a Local failure should offer an explicit troubleshooting choice");
+
+    await page.click("#web-toast [data-notice-action]");
+    await page.waitForSelector("#ollama-recovery-modal:not([hidden])");
+  } finally {
+    await context.close();
+  }
 }
 
 async function verifyMobileSetupExperience() {
@@ -43,6 +116,7 @@ async function verifyMobileSetupExperience() {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
     await page.click("#blank-start-setup");
     await page.waitForSelector("#web-settings-popover");
+    await page.click('[data-provider="openrouter"]');
 
     const initial = await page.locator("#web-settings-popover").evaluate((surface) => {
       const input = document.getElementById("api-key");
@@ -181,6 +255,9 @@ async function verifyLandingAndComposer() {
   await page.keyboard.press("N");
   await page.waitForSelector("#web-settings-popover");
   assert.deepEqual(await page.locator(".provider-choice button").allTextContents(), ["OpenRouter", "Local"]);
+  assert.deepEqual(await page.locator(".provider-choice button").evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-pressed"))), ["false", "false"], "setup should wait for an explicit provider choice");
+  assert.equal(await page.locator("#api-key, #local-model, #ollama-recovery-modal").count(), 0, "provider-specific setup must stay hidden until a provider is chosen");
+  await page.click('[data-provider="openrouter"]');
   assert.equal(await page.locator(".settings-info-trigger").count(), 1);
   assert.equal(await page.locator("#transcribe-model-help").textContent(), "Uses a vision model to turn PDF pages into searchable Markdown. Page images go to OpenRouter.");
   await page.locator(".settings-info-trigger").focus();
@@ -613,6 +690,7 @@ async function verifyAskKeyUxAndRail() {
 
   await page.goto(baseUrl, { waitUntil: "networkidle" });
   await page.click("#blank-start-setup");
+  await page.click('[data-provider="openrouter"]');
   assert.equal(await page.getAttribute("#api-key-toggle", "aria-pressed"), "false");
   await page.click("#api-key-toggle");
   assert.equal(await page.getAttribute("#api-key", "type"), "text", "shared settings should reveal the key");
@@ -830,6 +908,7 @@ async function verifyAskKeyUxAndRail() {
   });
   await sessionPage.goto(baseUrl, { waitUntil: "networkidle" });
   await sessionPage.click("#blank-start-setup");
+  await sessionPage.click('[data-provider="openrouter"]');
   await sessionPage.locator("#session-only").setChecked(false, { force: true });
   await sessionPage.fill("#api-key", MOCK_KEY);
   await sessionPage.waitForSelector("#api-key-status.valid");

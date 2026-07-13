@@ -30,6 +30,7 @@ export function createSettingsPopover(options) {
   let localDiscoveryMessage = "";
   let localDiscoveryToken = 0;
   let pendingLocalReadyCallback = null;
+  let awaitingProviderChoice = false;
 
   function applyPatch(patch) {
     const current = loadSettings();
@@ -73,6 +74,12 @@ export function createSettingsPopover(options) {
     if (!host) return;
     const settings = loadSettings();
     const preset = providerFor(settings.preset);
+    surface.querySelector("#settings-panel").dataset.preset = awaitingProviderChoice ? "" : preset.id;
+    if (awaitingProviderChoice) {
+      host.innerHTML = `<div class="settings-section settings-provider-prompt"><span class="field-hint">Choose how Rabbithole should run AI.</span></div>`;
+      popover?.update();
+      return;
+    }
     const currentModel = settings.model || preset.model;
     const transcribeModel = settings.transcribe_model || preset.transcribe_model || currentModel;
     const localCapability = preset.id === "custom"
@@ -84,7 +91,6 @@ export function createSettingsPopover(options) {
     const transcribeLabel = transcribeDisabled
       ? (localCapability.status === "checking" ? "Checking…" : "Unavailable")
       : transcribeModel;
-    surface.querySelector("#settings-panel").dataset.preset = preset.id;
     host.innerHTML = `${recoveryStatus ? `<div class="settings-section settings-recovery" role="status">${escapeHtml(recoveryStatus)}</div>` : ""}
       ${preset.model_source === "catalog" ? `<div class="settings-section model-section"><div class="settings-row"><span class="settings-label" id="model-select-label">Model</span>${comboboxMarkup({ id: "model-select", valueId: "model-select-name", labelledBy: "model-select-label", value: currentModel, label: currentModel, title: currentModel, iconHtml: chevron })}</div></div>` : `<div class="settings-section model-section local-model-section"><div class="settings-row"><span class="settings-label" id="local-model-label">Model</span>${comboboxMarkup({ id: "local-model", labelledBy: "local-model-label", value: currentModel, label: currentModel, title: currentModel, iconHtml: chevron })}</div><small class="field-hint">${escapeHtml(localDiscoveryCopy())}${localDiscovery === "error" || localDiscovery === "empty" ? ` <button id="local-model-retry" class="settings-text-action" type="button">Try again</button>` : ""}</small></div>`}
       ${preset.requires_key ? `<div class="settings-section key-section">${fieldMarkup({ id: "api-key", type: "password", label: `${preset.label} key`, value: getApiKey(settings), placeholder: apiKeyPlaceholder(settings.preset), autocomplete: "off", autocapitalize: "none", autocorrect: "off", inputmode: "text", enterkeyhint: "done", spellcheck: "false", toggleId: "api-key-toggle", toggleHtml: options.eyeSvg(false), labelAfterHtml: preset.id === "openrouter" ? `<a class="key-get" href="${OPENROUTER_KEYS_URL}" target="_blank" rel="noreferrer">Get a key →</a>` : "", status: { id: "api-key-status", className: "key-status idle visible", text: keyIdleWhisper(preset) } })}<label class="settings-row remember-row" for="session-only"><span class="switch-copy"><strong>Remember on this device</strong><small>Turn off on shared computers.</small></span><span class="switch" aria-hidden="true"><input id="session-only" type="checkbox" role="switch" ${settings.session_only === false ? "checked" : ""}><span class="switch-track"></span></span></label></div>` : ""}
@@ -122,9 +128,15 @@ export function createSettingsPopover(options) {
     surface.querySelectorAll("[data-provider]").forEach((button) => button.addEventListener("click", () => {
       const id = button.dataset.provider;
       const current = loadSettings();
-      if (!id || id === current.preset) return;
-      saveSettings({ ...current, api_key: getApiKey(current) });
-      applyPatch(settingsForProvider(id, current));
+      if (!id) return;
+      const explicitSetupChoice = awaitingProviderChoice;
+      if (id === current.preset && !explicitSetupChoice) return;
+      localDiscoveryToken += 1;
+      if (id !== current.preset) {
+        saveSettings({ ...current, api_key: getApiKey(current) });
+        applyPatch(settingsForProvider(id, current));
+      }
+      awaitingProviderChoice = false;
       surface.querySelectorAll("[data-provider]").forEach((choice) => choice.setAttribute("aria-pressed", choice.dataset.provider === id ? "true" : "false"));
       recoveryStatus = ""; localModels = null; localDiscovery = "idle";
       renderConditionalSections();
@@ -232,9 +244,14 @@ export function createSettingsPopover(options) {
     if (surface) { const target = focusSelector ? surface.querySelector(focusSelector) : null; target?.focus({ preventScroll: true }); return; }
     activeTrigger = trigger || defaultTrigger; purpose = nextPurpose; readyCallback = onReady; recoveryStatus = status;
     const settings = loadSettings(); const preset = providerFor(settings.preset);
+    awaitingProviderChoice = purpose === "setup" && !getGenerationSetupStatus(settings).ready;
+    if (awaitingProviderChoice) {
+      localDiscoveryToken += 1;
+      localModels = null; localDiscovery = "idle"; localDiscoveryMessage = "";
+    }
     surface = document.createElement("div"); surface.id = "web-settings-popover"; surface.className = "web-settings-dialog popover-surface"; surface.tabIndex = -1; surface.setAttribute("aria-label", "Model settings");
     const title = purpose === "recovery" ? "Reconnect AI" : purpose === "setup" ? "Set up AI" : "Model settings";
-    surface.innerHTML = `<section id="settings-panel" class="settings-panel" aria-labelledby="settings-title"><header class="settings-header"><h2 id="settings-title">${title}</h2></header><div class="settings-inner"><div class="settings-section provider-section"><span class="settings-label" id="provider-choice-label">Provider</span><div class="provider-choice" role="group" aria-labelledby="provider-choice-label">${Object.values(PROVIDERS).map((provider) => `<button type="button" data-provider="${provider.id}" aria-pressed="${provider.id === preset.id}">${escapeHtml(provider.label)}</button>`).join("")}</div></div><div id="settings-conditional-sections"></div></div></section>`;
+    surface.innerHTML = `<section id="settings-panel" class="settings-panel" aria-labelledby="settings-title"><header class="settings-header"><h2 id="settings-title">${title}</h2></header><div class="settings-inner"><div class="settings-section provider-section"><span class="settings-label" id="provider-choice-label">Provider</span><div class="provider-choice" role="group" aria-labelledby="provider-choice-label">${Object.values(PROVIDERS).map((provider) => `<button type="button" data-provider="${provider.id}" aria-pressed="${!awaitingProviderChoice && provider.id === preset.id}">${escapeHtml(provider.label)}</button>`).join("")}</div></div><div id="settings-conditional-sections"></div></div></section>`;
     document.body.append(surface); activeTrigger.setAttribute("aria-controls", surface.id); wireProviderControl(); renderConditionalSections();
     if (activeTrigger?.id === "blank-start-setup") {
       surface.classList.add("settings-setup-surface");
@@ -247,9 +264,10 @@ export function createSettingsPopover(options) {
     const placement = activeTrigger?.id === "blank-start-setup" ? "center" : "bottom-end";
     const coarsePointer = window.matchMedia?.("(pointer: coarse)")?.matches;
     popover = openPopover({ trigger: activeTrigger, surface, placement, initialFocus: explicit || (focusKey && !coarsePointer ? surface.querySelector("#api-key") : surface), onClose: close });
-    if (preset.id === "custom") {
-      void runLocalDiscovery({ recoverOnError: !getGenerationSetupStatus(settings).ready || purpose !== "settings" });
-    }
+    // Existing Local settings may be checked in the background, but a failed
+    // check must stay in this surface. Only explicit Local/retry/finish actions
+    // are allowed to open the diagnostic wizard.
+    if (preset.id === "custom" && !awaitingProviderChoice) void runLocalDiscovery();
   }
 
   function close() {
@@ -258,7 +276,7 @@ export function createSettingsPopover(options) {
     scrim?.remove(); scrim = null;
     const activePopover = popover; popover = null; activePopover?.close(); old.remove();
     activeTrigger?.removeAttribute("aria-controls"); activeTrigger?.setAttribute("aria-expanded", "false");
-    readyCallback = null; options.onClose?.();
+    awaitingProviderChoice = false; readyCallback = null; options.onClose?.();
   }
 
   function completeLocalSetup() {

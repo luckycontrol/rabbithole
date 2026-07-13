@@ -935,16 +935,23 @@ function handleBranchAuthRequired({ node, error, retry }) {
   });
 }
 
-function handleBranchProviderFailure({ node, retry }) {
+function handleBranchProviderFailure({ node, error, retry }) {
   const settings = loadSettings();
   if (providerFor(settings.preset).id !== "custom") return;
-  ollamaRecoveryController.open({
-    settings,
-    trigger: document.getElementById("t-settings"),
-    onResolved: async () => {
-      refreshCurrentBrain();
-      retry?.();
-      showToast({ message: `Retrying "${node?.title || "ask"}".` });
+  showToast({
+    message: error?.message || "Couldn't reach the local model.",
+    actionLabel: "Troubleshoot",
+    timeoutMs: 10000,
+    onAction: () => {
+      ollamaRecoveryController.open({
+        settings: loadSettings(),
+        trigger: document.getElementById("t-settings"),
+        onResolved: async () => {
+          refreshCurrentBrain();
+          retry?.();
+          showToast({ message: `Retrying "${node?.title || "ask"}".` });
+        },
+      });
     },
   });
 }
