@@ -59,7 +59,7 @@ body.agent-down .activity.writing { display: none; }
 .send-btn svg { display: block; }
 
 /* ---------- shared document typography (em-based so text zoom scales it) ---------- */
-.md { font-family: var(--font-doc); line-height: 1.72; color: var(--fg); font-kerning: normal; overflow-wrap: break-word; }
+.md { font-family: var(--font-doc); line-height: 1.72; color: var(--fg); font-kerning: normal; overflow-wrap: break-word; word-break: keep-all; }
 .md h1, .md h2, .md h3 { font-family: var(--font-ui); font-weight: 600; color: var(--fg-bold); line-height: 1.3; }
 .md h1 { font-size: 1.45em; letter-spacing: -0.018em; margin: 1.5em 0 0.55em; }
 .md h2 { font-size: 1.22em; letter-spacing: -0.012em; margin: 1.6em 0 0.5em; }
