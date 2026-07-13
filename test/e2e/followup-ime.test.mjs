@@ -47,7 +47,9 @@ try {
   await page.click("#r-canvas");
   const cardSelector = ".node.root .nc-inner textarea";
   const nodeCountBefore = await page.locator(".node").count();
-  await page.click(".node.root .nc-handle");
+  await page.locator(".node.root .nc-handle").focus();
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.activeElement?.matches(".node.root .nc-inner textarea"));
   await dispatchComposingEnter(page, cardSelector, "트");
   assert.equal(await page.locator(".node").count(), nodeCountBefore,
     "card composing Enter must not create an intermediate follow-up branch");
