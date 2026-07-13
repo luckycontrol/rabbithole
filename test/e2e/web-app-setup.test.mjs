@@ -21,7 +21,7 @@ const { browser, baseUrl } = app;
 try {
   await verifyThemeBeforeAppRuntime();
   await verifyMobileSetupExperience();
-  await verifySetupWaitsForProviderChoice();
+  await verifySetupDefaultsToOpenRouterAndGatesLocalGuide();
   await verifyLocalFailureRequiresTroubleshootChoice();
   await verifyLandingAndComposer();
   await verifySetupReadinessInvalidation();
@@ -32,7 +32,7 @@ try {
   await app.close();
 }
 
-async function verifySetupWaitsForProviderChoice() {
+async function verifySetupDefaultsToOpenRouterAndGatesLocalGuide() {
   const context = await browser.newContext();
   await context.addInitScript(() => localStorage.setItem("rh-web-settings", JSON.stringify({
     preset: "custom",
@@ -54,18 +54,22 @@ async function verifySetupWaitsForProviderChoice() {
     await page.waitForSelector("#web-settings-popover");
     await page.waitForTimeout(180);
 
-    assert.equal(localModelRequests, 0, "opening setup must not probe Local before the user chooses it");
+    assert.equal(localModelRequests, 0, "opening OpenRouter setup must not probe Local");
+    assert.equal(await page.getAttribute('[data-provider="openrouter"]', "aria-pressed"), "true", "Set up AI should open the complete OpenRouter path by default");
+    assert.equal(await page.locator("#api-key").count(), 1, "default setup should immediately show the OpenRouter form");
+    assert.equal(await page.locator("#local-model").count(), 0, "Local controls should stay hidden until Local is selected");
     assert.equal(await page.locator("#ollama-recovery-modal").count(), 0, "opening setup must not force OpenRouter users into Ollama setup");
     assert.deepEqual(await page.locator(".provider-choice button").allTextContents(), ["OpenRouter", "Local"]);
 
-    await page.click('[data-provider="openrouter"]');
-    await page.waitForTimeout(50);
-    assert.equal(localModelRequests, 0, "choosing OpenRouter must not start Local setup");
-    assert.equal(await page.locator("#ollama-recovery-modal").count(), 0, "choosing OpenRouter must keep Ollama setup closed");
-
     await page.click('[data-provider="custom"]');
-    await page.waitForFunction(() => document.querySelector("#ollama-recovery-modal:not([hidden])"));
+    await page.waitForSelector("#local-model-setup");
     assert.equal(localModelRequests, 1, "choosing Local should start Local model discovery");
+    assert.equal(await page.locator("#ollama-recovery-modal").count(), 0, "failed Local discovery should stay in the Local settings screen");
+    assert.equal(await page.locator("#local-model-setup").innerText(), "Set up Local", "the Local screen should offer an explicit setup guide");
+    assert.equal(await page.locator("#complete-model-setup").isDisabled(), true, "Local setup cannot finish before a model is connected");
+
+    await page.click("#local-model-setup");
+    await page.waitForSelector("#ollama-recovery-modal:not([hidden])");
   } finally {
     await context.close();
   }
@@ -116,7 +120,6 @@ async function verifyMobileSetupExperience() {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
     await page.click("#blank-start-setup");
     await page.waitForSelector("#web-settings-popover");
-    await page.click('[data-provider="openrouter"]');
 
     const initial = await page.locator("#web-settings-popover").evaluate((surface) => {
       const input = document.getElementById("api-key");
@@ -255,9 +258,8 @@ async function verifyLandingAndComposer() {
   await page.keyboard.press("N");
   await page.waitForSelector("#web-settings-popover");
   assert.deepEqual(await page.locator(".provider-choice button").allTextContents(), ["OpenRouter", "Local"]);
-  assert.deepEqual(await page.locator(".provider-choice button").evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-pressed"))), ["false", "false"], "setup should wait for an explicit provider choice");
-  assert.equal(await page.locator("#api-key, #local-model, #ollama-recovery-modal").count(), 0, "provider-specific setup must stay hidden until a provider is chosen");
-  await page.click('[data-provider="openrouter"]');
+  assert.equal(await page.getAttribute('[data-provider="openrouter"]', "aria-pressed"), "true", "setup should select OpenRouter by default");
+  assert.equal(await page.locator("#api-key").count(), 1, "setup should open the full OpenRouter form immediately");
   assert.equal(await page.locator(".settings-info-trigger").count(), 1);
   assert.equal(await page.locator("#transcribe-model-help").textContent(), "Uses a vision model to turn PDF pages into searchable Markdown. Page images go to OpenRouter.");
   await page.locator(".settings-info-trigger").focus();
@@ -573,6 +575,7 @@ async function verifySetupReadinessInvalidation() {
   await localPage.goto(baseUrl, { waitUntil: "networkidle" });
   assert.equal(await localPage.locator("#blank-start-new").isDisabled(), false, "matching local endpoint fingerprint should unlock creation");
   await localPage.click("#blank-start-setup");
+  await localPage.waitForFunction(() => document.querySelector(".local-model-section .field-hint")?.textContent.includes("installed model"));
   await localPage.locator(".settings-advanced summary").click();
   await localPage.fill("#provider-base", "http://localhost:12345/v1");
   await localPage.press("#provider-base", "Tab");
@@ -617,7 +620,9 @@ async function verifyLocalComboboxStates(openRouterFixture) {
 
   const none = await run((route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [] }) }));
   await none.page.waitForFunction(() => document.querySelector(".local-model-section .field-hint")?.textContent.includes("No installed models"));
-  assert.equal(await none.page.locator("#local-model-retry").count(), 1);
+  assert.equal(await none.page.locator("#local-model-setup").innerText(), "Set up Local");
+  assert.equal(await none.page.locator("#ollama-recovery-modal").count(), 0, "an empty Local install should offer guidance without auto-opening it");
+  assert.equal(await none.page.locator("#complete-model-setup").isDisabled(), true);
   assert.equal(await none.page.locator("#transcribe-model").isDisabled(), true);
   assert.match(await none.page.locator("#transcribe-model-status").innerText(), /disabled.*no local models/i);
   await none.context.close();
@@ -628,6 +633,9 @@ async function verifyLocalComboboxStates(openRouterFixture) {
     return route.fulfill(attempts === 1 ? { status: 500, headers: corsHeaders(), body: "failed" }
       : { status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [{ id: "recovered:latest" }] }) });
   });
+  await failed.page.waitForSelector("#local-model-setup");
+  assert.equal(await failed.page.locator("#ollama-recovery-modal").count(), 0, "a failed Local probe must not auto-open the guide");
+  await failed.page.click("#local-model-setup");
   await failed.page.waitForSelector("#ollama-recovery-modal:not([hidden])");
   await failed.page.click("#ollama-primary-action");
   await failed.page.waitForSelector("#ollama-recovery-modal", { state: "detached" });
@@ -636,6 +644,9 @@ async function verifyLocalComboboxStates(openRouterFixture) {
   await failed.context.close();
 
   const free = await run((route) => route.fulfill({ status: 502, headers: corsHeaders(), body: "failed" }));
+  await free.page.waitForSelector("#local-model-setup");
+  assert.equal(await free.page.locator("#ollama-recovery-modal").count(), 0, "Local connection errors should remain inline until setup is requested");
+  await free.page.click("#local-model-setup");
   await free.page.waitForSelector("#ollama-recovery-modal:not([hidden])");
   await free.page.click("#ollama-primary-action");
   await free.page.waitForFunction(() => /Allow rabbithole\.ing|list models/i.test(document.querySelector("#ollama-recovery-content")?.textContent || ""));
@@ -656,6 +667,9 @@ async function verifyLocalComboboxStates(openRouterFixture) {
   await absentPage.route(LOCAL_VERSION_URL, (route) => route.abort());
   await openFreshSettings(absentPage);
   await absentPage.click('[data-provider="custom"]');
+  await absentPage.waitForSelector("#local-model-setup");
+  assert.equal(await absentPage.locator("#ollama-recovery-modal").count(), 0, "missing Ollama should first produce an inline setup action");
+  await absentPage.click("#local-model-setup");
   await absentPage.waitForSelector("#ollama-recovery-modal:not([hidden])");
   await absentPage.waitForSelector("#ollama-recovery-content >> text=Start Ollama");
   assert.equal(await absentPage.getAttribute(`a[href="https://ollama.com/download/mac"]`, "target"), "_blank", "missing Ollama guidance should offer the official Mac download");
@@ -690,7 +704,6 @@ async function verifyAskKeyUxAndRail() {
 
   await page.goto(baseUrl, { waitUntil: "networkidle" });
   await page.click("#blank-start-setup");
-  await page.click('[data-provider="openrouter"]');
   assert.equal(await page.getAttribute("#api-key-toggle", "aria-pressed"), "false");
   await page.click("#api-key-toggle");
   assert.equal(await page.getAttribute("#api-key", "type"), "text", "shared settings should reveal the key");
@@ -908,7 +921,6 @@ async function verifyAskKeyUxAndRail() {
   });
   await sessionPage.goto(baseUrl, { waitUntil: "networkidle" });
   await sessionPage.click("#blank-start-setup");
-  await sessionPage.click('[data-provider="openrouter"]');
   await sessionPage.locator("#session-only").setChecked(false, { force: true });
   await sessionPage.fill("#api-key", MOCK_KEY);
   await sessionPage.waitForSelector("#api-key-status.valid");
