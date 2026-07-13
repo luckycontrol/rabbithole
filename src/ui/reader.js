@@ -37,6 +37,7 @@ import { createModuleLifecycle } from "./lifecycle.js";
 import { captureContentPosition, restoreContentPosition } from "./scroll-position.js";
 import { mountVisuals } from "./visuals.js";
 import { applyChildHighlights } from "./text-marks.js";
+import { buildOriginCrop } from "./origin-provenance.js";
 
 function defaultReaderHooks(){
   return {
@@ -206,6 +207,8 @@ export function renderReaderBody(){
       }
       col.appendChild(ctx);
     }
+    var crop = buildOriginCrop(node, "reader");
+    if (crop) col.appendChild(crop);
     var dc = buildDocContent(node, READER_BASE);
     col.appendChild(dc);
     applyChildHighlights(dc, node);

@@ -55,7 +55,18 @@ assert.equal(path.isAbsolute(branch.region.image_path), true);
 const regionBytes = await fs.readFile(branch.region.image_path);
 assert.equal(regionBytes[0], 0xff); assert.equal(regionBytes[1], 0xd8, "region path should point at a readable JPEG");
 const regionPath = branch.region.image_path;
+assert.equal(path.basename(regionPath), "crop-pdf-child.jpg", "agent region must point at the branch-owned durable crop");
 session.inFlightBranchRequests.delete("pdf-request");
+await session.handleBrowserEvent({ type: "branch_request", request_id: "clip-followup", node_id: "clip-followup-child", parent_id: "pdf-child",
+  selected_text: "", question: "And what follows?", branch_type: "followup", anchor: null, position: { x: 20, y: 20 } });
+const inheritedFollowup = await session.waitForEvent();
+assert.equal(inheritedFollowup.region.image_path, regionPath, "follow-ups must expose the immediate parent's durable clip");
+session.inFlightBranchRequests.delete("clip-followup");
+await session.handleBrowserEvent({ type: "branch_request", request_id: "clip-selection", node_id: "clip-selection-child", parent_id: "pdf-child",
+  selected_text: "answer text", question: "Explain this", branch_type: "selection", anchor: { offset_start: 0, offset_end: 6 }, position: { x: 20, y: 40 } });
+const inheritedSelection = await session.waitForEvent();
+assert.equal(inheritedSelection.region.image_path, regionPath, "text selections must expose the immediate parent's durable clip");
+session.inFlightBranchRequests.delete("clip-selection");
 await fs.writeFile(await resolveAsset(holeId, staged.pdfExtension.pages[0].asset), Buffer.from("broken"));
 await session.handleBrowserEvent({ type: "branch_request", request_id: "pdf-fallback", node_id: "pdf-child-fallback", parent_id: session.rootId,
   selected_text: "fallback", question: "Explain", anchor: { offset_start: 0, offset_end: 1,
@@ -70,17 +81,17 @@ assert.equal(root.markdown, staged.markdown, "node host must use the shared cano
 assert.deepEqual(root.extensions.pdf.lines, staged.pdfExtension.lines, "line geometry must match the shared host fixture");
 assert.deepEqual(hole.nodes.find((node) => node.id === "pdf-child").origin.anchor.pdf,
   { page: 1, rect: { x: .1, y: .2, w: .3, h: .04 } });
+assert.equal(hole.nodes.find((node) => node.id === "pdf-child").origin.crop_asset, "crop-pdf-child.jpg");
 assert.equal(root.extensions.pdf.pages.length, 2);
-assert.deepEqual(await defaultFsStore.listAssets(holeId), ["page-001.jpg", "page-002.jpg"], "transient region crops must not outlive the session");
-await assert.rejects(() => fs.access(regionPath), undefined, "the region JPEG file itself must be unlinked at close");
+assert.deepEqual(await defaultFsStore.listAssets(holeId), ["crop-pdf-child.jpg", "page-001.jpg", "page-002.jpg"], "branch-owned region crops must outlive the session");
+await fs.access(regionPath);
 for (const page of root.extensions.pdf.pages) {
   assert(page.w > 0 && page.h > 0);
   assert.equal(page.asset.endsWith(".jpg"), true);
 }
 
-// A saved PDF ask re-crops its region on resume, so a reconnecting agent sees
-// the same image a live one would have. (Heal the page asset the fallback case
-// corrupted above first.)
+// A saved PDF ask reuses its durable crop on resume, so a reconnecting agent
+// sees byte-identical image context without re-cropping the page.
 await fs.copyFile(await resolveAsset(holeId, staged.pdfExtension.pages[1].asset), await resolveAsset(holeId, staged.pdfExtension.pages[0].asset));
 const resumeController = new AbortController();
 setTimeout(() => resumeController.abort(), 4000);
@@ -88,8 +99,9 @@ const resumed = await openRabbithole({ holeId, signal: resumeController.signal }
 assert.equal(resumed.status, "branch_request");
 assert.equal(resumed.saved, true);
 for (let i = 0; i < 100 && !resumed.region; i++) await new Promise((resolve) => setTimeout(resolve, 20));
-assert.equal(resumed.region?.page, 1, "saved PDF asks must re-crop their region on resume");
+assert.equal(resumed.region?.page, 1, "saved PDF asks must expose their durable region on resume");
+assert.equal(resumed.region?.image_path, regionPath);
 const recropBytes = await fs.readFile(resumed.region.image_path);
 assert.equal(recropBytes[0], 0xff); assert.equal(recropBytes[1], 0xd8);
 await closeAllSessions("recrop_done");
-console.log("ok native PDF: file_path builds shared markdown/geometry, JPEG assets, metadata title fallback, persisted extension, and region-crop lifecycle");
+console.log("ok native PDF: shared ingest plus durable, byte-identical branch crop lifecycle");

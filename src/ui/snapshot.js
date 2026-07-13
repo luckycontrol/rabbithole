@@ -1,4 +1,4 @@
-import { extractAssetRefsFromMarkdown } from "../core/assets.js";
+import { extractNodeAssetRefs } from "../core/assets.js";
 import { binaryToBase64 } from "../core/portable-projection.js";
 import { createSnapshotProjection } from "../core/snapshot-projection.js";
 import { buildSnapshotHtml as assembleSnapshotHtml } from "../core/snapshot-html.js";
@@ -44,7 +44,7 @@ function snapshotViewState() {
 function collectAssetNames(snapshotNodes) {
   var names = {};
   snapshotNodes.forEach(function(node){
-    extractAssetRefsFromMarkdown(node.markdown).forEach(function(name){ names[name] = true; });
+    extractNodeAssetRefs(node).forEach(function(name){ names[name] = true; });
   });
   return Object.keys(names).sort();
 }

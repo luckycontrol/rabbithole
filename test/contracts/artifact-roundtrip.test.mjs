@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { FsStore } from "../../src/node/fs-store.js";
-import { extractAssetRefsFromMarkdown } from "../../src/core/assets.js";
+import { extractNodeAssetRefs } from "../../src/core/assets.js";
 import { createSnapshotProjection } from "../../src/core/snapshot-projection.js";
 import { buildSnapshotHtml } from "../../src/core/snapshot-html.js";
 import { binaryToBase64 } from "../../src/core/portable-projection.js";
@@ -35,7 +35,7 @@ function normalized(payload) {
 async function exporterSnapshot(store, hole) {
   const referencedSet = new Set();
   for (const node of hole.nodes) {
-    for (const name of extractAssetRefsFromMarkdown(node.markdown)) referencedSet.add(name);
+    for (const name of extractNodeAssetRefs(node)) referencedSet.add(name);
   }
   const referenced = [...referencedSet].sort();
   const assets = {};
@@ -124,5 +124,31 @@ console.log("ok artifact round trip: extension bags survive portable round trips
   assert.deepEqual(normalized(snapshotFixedPoint), normalized(before), "snapshot import exports to the canonical .rabbithole fixed point");
 }
 console.log("ok artifact round trip: portable and snapshot import collisions mint fresh ids and preserve the .rabbithole fixed point");
+
+{
+  const source = JSON.parse(await fs.readFile(new URL("01-empty-root.rabbithole", corpusDir), "utf8"));
+  source.hole.nodes.push({
+    id: "clip", parent_id: source.hole.root_id, title: "Clip", markdown: "Clean answer body",
+    base_url: null, base_url_source: null,
+    origin: { selected_text: "", question: "What is shown?", lens: null, synthesis: false, anchor: null, branch_type: "followup", crop_asset: "crop-clip.jpg" },
+    position: { x: 400, y: 0 }, size: null, font_scale: 1, collapsed: false,
+    status: "answered", read: false, created_at: "2026-07-13T00:00:00.000Z", extensions: {},
+  });
+  source.assets["crop-clip.jpg"] = Buffer.from("byte-identical crop").toString("base64");
+  const target = await storeAt("crop-origin");
+  const imported = await importRabbitholeFile(target.store, JSON.stringify(source));
+  const exported = await buildRabbitholeExport(target.store, imported.hole_id);
+  assert.equal(exported.hole.nodes.find((node) => node.id === "clip").origin.crop_asset, "crop-clip.jpg");
+  assert.equal(exported.assets["crop-clip.jpg"], source.assets["crop-clip.jpg"]);
+  selectDir(target.dir);
+  const snapshot = await exporterSnapshot(target.store, await target.store.loadHole(imported.hole_id));
+  assert.deepEqual(snapshot.referenced, ["crop-clip.jpg"]);
+  const snapshotStore = await storeAt("crop-origin-snapshot");
+  const snapshotImported = await importSnapshotFile(snapshotStore.store, snapshot.html);
+  const snapshotExport = await buildRabbitholeExport(snapshotStore.store, snapshotImported.hole_id);
+  assert.equal(snapshotExport.hole.nodes.find((node) => node.id === "clip").origin.crop_asset, "crop-clip.jpg");
+  assert.equal(snapshotExport.assets["crop-clip.jpg"], source.assets["crop-clip.jpg"]);
+}
+console.log("ok artifact round trip: crop origin and bytes survive portable and frozen snapshot round trips");
 
 console.log("artifact round-trip verification passed");

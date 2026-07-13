@@ -1,7 +1,7 @@
 import { createHoleState, holeStateToHole, holeStateToHydrationNodes, reduceHoleEvent } from "../../core/reducer.js";
 import { normalizeBlockIds } from "../../core/blocks.js";
-import { lineageNodesFromMap, truncate } from "../../core/model.js";
-import { extractNodeAssetRefs } from "../../core/assets.js";
+import { lineageNodesFromMap, normalizePdfAnchor, truncate } from "../../core/model.js";
+import { cropAssetNameForNode, extractNodeAssetRefs } from "../../core/assets.js";
 import { GenerationRun } from "../../core/generation-run.js";
 import { applyPersistedBrowserEvent, assetsOrphanedByDeletion, buildNodeAnsweredEvent, createSaveChain, dispatchBrowserEvent } from "../../core/hole-host.js";
 import { randomId } from "../../core/utils.js";
@@ -129,11 +129,36 @@ export class DirectRabbitholeHost {
     // Raw flag on purpose — normalization fails against the mid-run streamed
     // body, and the lock must hold precisely then.
     if (parent?.extensions?.pdf?.converting) throw new Error("This PDF is being converted. Wait for conversion to finish before branching.");
-    const result = this.dispatch({ ...payload, type: "branch_request" }, { now: new Date().toISOString() });
+    let preparedCrop = null;
+    try { preparedCrop = await this.preparePdfCrop(payload, parent); } catch {}
+    let result;
+    try {
+      result = this.dispatch({ ...payload, type: "branch_request", ...(preparedCrop ? { crop_asset: preparedCrop.name } : {}) }, { now: new Date().toISOString() });
+    } catch (error) {
+      if (preparedCrop) {
+        try { await this.store.deleteAsset(this.holeId, preparedCrop.name); } catch {}
+      }
+      throw error;
+    }
     const node = result.createdNode;
     await this.flushSave();
     this.startAnswer(node.id, { reset: false });
-    return { ok: true, node_id: node.id, request_id: payload.request_id };
+    return { ok: true, node_id: node.id, request_id: payload.request_id, ...(preparedCrop ? { crop_asset: preparedCrop.name } : {}) };
+  }
+
+  async preparePdfCrop(payload, parent) {
+    const nodeId = String(payload.node_id || "");
+    const anchor = normalizePdfAnchor(payload.anchor?.pdf);
+    const pdf = normalizePdfExtension(parent);
+    const page = pdf && anchor ? pdf.pages.find((entry) => entry.n === anchor.page) : null;
+    if (!nodeId || !page) return null;
+    const names = await this.store.listAssets(this.holeId);
+    if (names.length >= 200) throw new Error("asset limit");
+    const blob = await cropPdfAssetToBlob(await this.store.getAsset(this.holeId, page.asset), anchor.rect);
+    const name = cropAssetNameForNode(nodeId);
+    await this.store.putAsset(this.holeId, name, blob);
+    this.registerAssetUrl?.(name, blob);
+    return { name, blob };
   }
 
   handleConvertCancel(payload) {
@@ -268,7 +293,10 @@ export class DirectRabbitholeHost {
     for (const node of deletedNodes) nodes.set(node.id, { ...node });
     this.state = { ...this.state, nodes };
     for (const asset of deletedAssets) {
-      if (asset.blob) await this.store.putAsset(this.holeId, asset.name, asset.blob);
+      if (asset.blob) {
+        await this.store.putAsset(this.holeId, asset.name, asset.blob);
+        this.registerAssetUrl?.(asset.name, asset.blob);
+      }
     }
     await this.flushSave();
   }
@@ -407,7 +435,7 @@ export class DirectRabbitholeHost {
 
     const brain = this.brain;
     const context = this.buildBranchContext(node);
-    await this.attachPdfSelection(node, context);
+    await this.attachBranchImage(node, context);
     const fallbackTitle = fallbackTitleForNode(node);
     context.fallbackTitle = fallbackTitle;
     // Each attempt, including a retry, gets a fresh run id. The reducer can
@@ -460,17 +488,31 @@ export class DirectRabbitholeHost {
     await this.flushSave();
   }
 
-  async attachPdfSelection(node, context) {
+  async attachBranchImage(node, context) {
     const parent = this.state.nodes.get(node.parent_id);
-    const pdf = normalizePdfExtension(parent);
     const anchor = node.origin?.anchor?.pdf;
-    if (!pdf || !anchor) return;
-    const page = pdf.pages.find((entry) => entry.n === anchor.page);
-    if (!page) return;
-    try {
+    const ownCrop = node.origin?.crop_asset;
+    if (ownCrop) try {
+      const dataUrl = await blobDataUrl(await this.store.getAsset(this.holeId, ownCrop));
+      context.attachment = { kind: "image", data_url: dataUrl, page: anchor?.page || 1, source: "selection_crop" };
+      return;
+    } catch {}
+
+    // Compatibility/failure fallback for an ask created before durable crop
+    // provenance existed, or when crop persistence failed at creation time.
+    const pdf = normalizePdfExtension(parent);
+    const page = pdf && anchor ? pdf.pages.find((entry) => entry.n === anchor.page) : null;
+    if (page) try {
       const blob = await this.store.getAsset(this.holeId, page.asset);
       const dataUrl = await cropPdfAssetToDataUrl(blob, anchor.rect);
-      context.attachment = { kind: "image", data_url: dataUrl, page: anchor.page };
+      context.attachment = { kind: "image", data_url: dataUrl, page: anchor.page, source: "selection_crop" };
+      return;
+    } catch {}
+
+    const inheritedCrop = parent?.origin?.crop_asset;
+    if (inheritedCrop) try {
+      const dataUrl = await blobDataUrl(await this.store.getAsset(this.holeId, inheritedCrop));
+      context.attachment = { kind: "image", data_url: dataUrl, page: parent.origin?.anchor?.pdf?.page || 1, source: "parent_crop" };
     } catch {}
   }
 
@@ -664,9 +706,13 @@ function defaultGenerationRunId() {
   return randomId("generation");
 }
 
-function blobDataUrl(blob) {
+async function blobDataUrl(blob) {
   if (!blob) throw new Error("PDF page asset is missing.");
-  return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsDataURL(blob); });
+  const buffer = typeof blob.arrayBuffer === "function" ? await blob.arrayBuffer() : blob;
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return `data:${blob.type || "application/octet-stream"};base64,${btoa(binary)}`;
 }
 
 export function createHoleFromMarkdown({ title, markdown, baseUrl = null } = {}) {

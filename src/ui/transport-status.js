@@ -315,6 +315,7 @@ function handleServer(msg){
       node.md = msg.markdown || node.md || "";
       node.base_url = msg.base_url || null;
       node.base_url_source = msg.base_url_source || null;
+      node.origin = msg.origin || node.origin || null;
       if (hasStreamSurface(node)) refreshNodeHtml(node);
       node.read = false; // unread until the human actually reaches it
       if (node.titleEl){ node.titleEl.textContent = node.title; node.titleEl.title = node.title; }

@@ -21,10 +21,117 @@ assert.deepEqual(JSON.parse(hostilePayloadJson), hostilePayloadValue, "escaped i
 const app = await bootWebApp();
 const { browser, baseUrl } = app;
 try {
+  await verifyMobileSelectionSurface();
   await verifyCanvasBranching();
   console.log("web app verification passed");
 } finally {
   await app.close();
+}
+
+async function verifyMobileSelectionSurface() {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 3,
+    hasTouch: true,
+    isMobile: true,
+  });
+  await seedConfiguredOpenRouter(context);
+  const page = await context.newPage();
+  await routeProvider(page, {
+    streams: [
+      ["TITLE: Mobile lens branch\n", "Mobile lens action completed."],
+      ["TITLE: Mobile custom branch\n", "Mobile custom question completed."],
+    ],
+    providerDelayMs: 220,
+  });
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await createDocument(page, "# Mobile selection\n\nLong-press selection should open a reliable action sheet.");
+
+  await page.evaluate(() => {
+    const root = document.querySelector(".node .doc-content[data-node-id]");
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      const start = node.nodeValue.indexOf("Long-press selection");
+      if (start < 0) continue;
+      const range = document.createRange();
+      range.setStart(node, start);
+      range.setEnd(node, start + "Long-press selection".length);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return;
+    }
+    throw new Error("Mobile selection fixture text not found");
+  });
+  await page.waitForSelector("#ask.visible.mobile-sheet");
+
+  const initial = await page.locator("#ask").evaluate((surface) => {
+    const rect = surface.getBoundingClientRect();
+    const viewport = window.visualViewport;
+    const input = document.getElementById("ask-text");
+    const lenses = Array.from(surface.querySelectorAll(".lens"));
+    return {
+      active: document.activeElement?.id || "",
+      placement: surface.dataset.placement,
+      selection: window.getSelection().toString(),
+      rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
+      viewport: { left: viewport.offsetLeft, right: viewport.offsetLeft + viewport.width, top: viewport.offsetTop, bottom: viewport.offsetTop + viewport.height },
+      inputFont: parseFloat(getComputedStyle(input).fontSize),
+      lensColumns: getComputedStyle(document.getElementById("ask-lenses")).gridTemplateColumns.split(" ").length,
+      lensMinHeight: Math.min(...lenses.map((lens) => lens.getBoundingClientRect().height)),
+      keyHintsHidden: lenses.every((lens) => getComputedStyle(lens.querySelector("kbd")).display === "none"),
+    };
+  });
+  assert.notEqual(initial.active, "ask-text", "mobile selection must not summon the keyboard before the user asks a custom question");
+  assert.equal(initial.placement, "top-center", "mobile selection actions should anchor to the visual viewport bottom");
+  assert.equal(initial.selection, "Long-press selection", "opening the mobile sheet must preserve the selected text");
+  assert(initial.rect.left >= initial.viewport.left && initial.rect.right <= initial.viewport.right, `mobile selection sheet must fit the visual viewport (${JSON.stringify(initial)})`);
+  assert(initial.rect.top >= initial.viewport.top && initial.rect.bottom <= initial.viewport.bottom, `mobile selection sheet must stay visible (${JSON.stringify(initial)})`);
+  assert(initial.inputFont >= 16, "mobile custom-question input must not trigger iOS focus zoom");
+  assert.equal(initial.lensColumns, 2, "mobile lenses should use a thumb-friendly two-column grid");
+  assert(initial.lensMinHeight >= 44, `mobile lens targets must be at least 44px tall (got ${initial.lensMinHeight})`);
+  assert.equal(initial.keyHintsHidden, true, "desktop keyboard shortcut hints should be hidden on touch surfaces");
+
+  await page.click('.lens[data-lens="explain"]');
+  await page.waitForSelector("#ask:not(.visible)");
+  await page.waitForSelector(".node.pending");
+
+  await page.click("#t-reader");
+  await page.waitForFunction(() => !document.body.classList.contains("mode-canvas"));
+  await page.evaluate(() => {
+    const root = document.querySelector("#reader-main .doc-content[data-node-id]");
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      const start = node.nodeValue.indexOf("reliable action sheet");
+      if (start < 0) continue;
+      const range = document.createRange();
+      range.setStart(node, start);
+      range.setEnd(node, start + "reliable action sheet".length);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return;
+    }
+    throw new Error("Mobile reader selection fixture text not found");
+  });
+  await page.waitForSelector("#ask.visible.mobile-sheet");
+  assert.equal(await page.evaluate(() => window.getSelection().toString()), "reliable action sheet", "reader selection should also open the mobile sheet without collapsing the range");
+
+  await page.click("#ask-text");
+  await page.fill("#ask-text", "Why is this reliable?");
+  await page.setViewportSize({ width: 390, height: 430 });
+  await page.waitForFunction(() => {
+    const surface = document.getElementById("ask").getBoundingClientRect();
+    const viewport = window.visualViewport;
+    return document.activeElement?.id === "ask-text" && surface.top >= viewport.offsetTop && surface.bottom <= viewport.offsetTop + viewport.height;
+  });
+  assert.equal(await page.evaluate(() => window.visualViewport?.scale), 1, "focusing the mobile question field must not zoom the page");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector("#ask:not(.visible)");
+  await page.waitForSelector(".side-item.pending");
+  await context.close();
 }
 
 async function verifyCanvasBranching() {

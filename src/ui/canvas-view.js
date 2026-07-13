@@ -49,6 +49,7 @@ import { openNode } from "./reader.js";
 import { applyChildHighlights } from "./text-marks.js";
 import { easeInOutMotion, easeOutMotion } from "./easing.js";
 import { buttonMarkup, iconButtonMarkup } from "../core/html/button-markup.js";
+import { buildOriginCrop } from "./origin-provenance.js";
 import { BUNNY_MARK_SVG } from "../core/html/bunny-markup.js";
 import { createModuleLifecycle } from "./lifecycle.js";
 import { captureContentPosition, restoreContentPosition } from "./scroll-position.js";
@@ -401,6 +402,8 @@ export function fillBody(node){
       fq.textContent = node.origin.lens ? "Follow-up — " + lensLabel(node.origin.lens) : node.origin.question;
       body.appendChild(fq);
     }
+    var crop = buildOriginCrop(node, "card");
+    if (crop) body.appendChild(crop);
     var dc = buildDocContent(node, CANVAS_BASE);
     body.appendChild(dc);
     applyChildHighlights(dc, node);

@@ -36,9 +36,9 @@ var RabbitholeFrozenClient = (() => {
   var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
   var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/lib/core.js
+  // node_modules/highlight.js/lib/core.js
   var require_core = __commonJS({
-    "../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/lib/core.js"(exports, module) {
+    "node_modules/highlight.js/lib/core.js"(exports, module) {
       function deepFreeze(obj) {
         if (obj instanceof Map) {
           obj.clear = obj.delete = obj.set = function() {
@@ -3231,2484 +3231,7 @@ var RabbitholeFrozenClient = (() => {
     }
   }
 
-  // src/ui/reader.js
-  function defaultReaderHooks() {
-    return {
-      hideAsk: function() {
-      },
-      updateComposerState: function() {
-      },
-      scheduleViewSave: function() {
-      },
-      setMode: function() {
-      },
-      post: function() {
-        return Promise.resolve({ ok: true });
-      },
-      mountDocImages: null,
-      persistNode: function() {
-      },
-      animateScroll: function() {
-      }
-    };
-  }
-  var readerLifecycle = createModuleLifecycle({ defaults: defaultReaderHooks });
-  function registerReaderHooks(hooks) {
-    readerLifecycle.register(hooks);
-  }
-  var breadcrumbNodes = {};
-  var sidebarNodes = {};
-  function openNode(id) {
-    if (!nodes[id]) return;
-    var transferredPosition = document.body.classList.contains("mode-canvas") ? captureContentPosition(nodes[id].bodyEl) : null;
-    var prev = nodes[currentNodeId];
-    if (prev && !document.body.classList.contains("mode-canvas")) prev._scrollTop = readerMain.scrollTop;
-    setCurrentNodeId(id);
-    setModeValue("reader");
-    document.body.classList.remove("mode-canvas");
-    readerLifecycle.hooks.hideAsk();
-    kbdMarkIdx = -1;
-    renderBreadcrumb();
-    renderReaderBody();
-    if (transferredPosition) {
-      restoreContentPosition(readerMain, transferredPosition);
-      nodes[id]._scrollTop = readerMain.scrollTop;
-    }
-    renderSidebar();
-    readerLifecycle.hooks.updateComposerState();
-    if (nodes[id].status === "answered") markRead(nodes[id]);
-    readerLifecycle.hooks.scheduleViewSave();
-  }
-  function renderBreadcrumb() {
-    var path2 = lineageNodes(currentNodeId);
-    var fragment = document.createDocumentFragment();
-    path2.forEach(function(n, i2) {
-      var crumb = breadcrumbNodes[n.id];
-      if (!crumb) {
-        crumb = document.createElement("span");
-        crumb.className = "crumb";
-        crumb.dataset.id = n.id;
-        crumb._sep = document.createElement("span");
-        crumb._sep.className = "crumb-sep";
-        crumb._sep.textContent = "\u203A";
-        breadcrumbNodes[n.id] = crumb;
-      }
-      var cur = i2 === path2.length - 1;
-      crumb.textContent = n.title || "Untitled";
-      crumb.classList.toggle("current", cur);
-      if (cur) {
-        crumb.removeAttribute("role");
-        crumb.removeAttribute("tabindex");
-        crumb.setAttribute("aria-current", "page");
-      } else {
-        crumb.setAttribute("role", "link");
-        crumb.tabIndex = 0;
-        crumb.removeAttribute("aria-current");
-      }
-      if (i2 > 0) fragment.appendChild(crumb._sep);
-      fragment.appendChild(crumb);
-    });
-    breadcrumbEl.replaceChildren(fragment);
-  }
-  function initReader() {
-    disposeReaderResources(false);
-    var readerScope = readerLifecycle.beginInit();
-    try {
-      readerScope.listen(breadcrumbEl, "click", function(e) {
-        var c2 = e.target.closest(".crumb");
-        if (!c2 || c2.classList.contains("current")) return;
-        openNode(c2.dataset.id);
-      });
-      readerScope.listen(breadcrumbEl, "keydown", function(e) {
-        if (e.key !== "Enter") return;
-        var c2 = e.target.closest && e.target.closest('.crumb[role="link"]');
-        if (!c2) return;
-        e.preventDefault();
-        openNode(c2.dataset.id);
-      });
-      readerScope.listen(readerMain, "scroll", onReaderScroll, { passive: true });
-      readerScope.listen(readerMain, "click", onMarkClick);
-      readerScope.listen(readerMain, "keydown", onMarkKeydown);
-      readerScope.listen(world, "click", onCanvasMarkClick);
-      readerScope.listen(world, "keydown", onCanvasMarkKeydown);
-      readerScope.listen(sideEl, "click", onSidebarClick);
-      readerScope.listen(sideEl, "keydown", onSidebarKeydown);
-      readerScope.listen(document.getElementById("r-textdown"), "click", function() {
-        setReaderFontScale(-0.1);
-      });
-      readerScope.listen(document.getElementById("r-textup"), "click", function() {
-        setReaderFontScale(0.1);
-      });
-      readerScope.listen(document.getElementById("r-canvas"), "click", function() {
-        readerLifecycle.hooks.setMode("canvas");
-      });
-      readerScope.listen(document.getElementById("r-done"), "click", function() {
-        if (!closed) readerLifecycle.hooks.post({ type: "done" });
-      });
-      readerScope.listen(document.getElementById("r-theme"), "click", toggleTheme);
-      readerScope.listen(document.getElementById("t-theme"), "click", toggleTheme);
-      return disposeReader;
-    } catch (error) {
-      disposeReader();
-      throw error;
-    }
-  }
-  function disposeReader() {
-    disposeReaderResources(true);
-  }
-  function disposeReaderResources(resetHooks) {
-    readerLifecycle.dispose(resetHooks);
-    breadcrumbNodes = {};
-    sidebarNodes = {};
-    kbdMarkIdx = -1;
-  }
-  function renderReaderBody() {
-    var node = nodes[currentNodeId];
-    var previous = readerMain.querySelector(".doc-content");
-    if (previous && previous._rhDispose) previous._rhDispose();
-    readerMain.innerHTML = "";
-    var col = document.createElement("div");
-    col.className = "reader-col";
-    if (node.origin && (node.origin.selected_text || node.origin.question)) {
-      var ctx = document.createElement("div");
-      ctx.className = "reader-context";
-      if (node.origin.synthesis) {
-        ctx.innerHTML = '<span class="rc-label">Synthesis</span>The journey so far, distilled';
-      } else if (node.origin.selected_text) {
-        var tail = node.origin.lens ? " \u2014 " + lensBadgeHtml(node.origin.lens) : node.origin.question ? " \u2014 " + escapeHtml(node.origin.question) : "";
-        ctx.innerHTML = '<span class="rc-label">From</span>\u201C' + escapeHtml(truncate2(node.origin.selected_text, 200)) + "\u201D" + tail + '<span class="rc-go">\u2192</span>';
-      } else {
-        ctx.innerHTML = '<span class="rc-label">Follow-up</span>' + (node.origin.lens ? lensBadgeHtml(node.origin.lens) : escapeHtml(node.origin.question || ""));
-      }
-      if (node.parent_id && nodes[node.parent_id] && !node.origin.synthesis) {
-        ctx.classList.add("linked");
-        ctx.title = "See this in its original context";
-        ctx.setAttribute("role", "link");
-        ctx.tabIndex = 0;
-        ctx.setAttribute("aria-label", "See this in its original context");
-        ctx.addEventListener("click", function(e) {
-          jumpToOrigin(node, motionSourceFromEvent(e));
-        });
-        ctx.addEventListener("keydown", function(e) {
-          if (e.key !== "Enter") return;
-          e.preventDefault();
-          jumpToOrigin(node, "keyboard");
-        });
-      }
-      col.appendChild(ctx);
-    }
-    var dc = buildDocContent(node, READER_BASE);
-    col.appendChild(dc);
-    applyChildHighlights(dc, node);
-    var fups = followupsOf(node.id);
-    if (fups.length) {
-      var thread = document.createElement("div");
-      thread.id = "thread";
-      thread.appendChild(buildThreadRule());
-      fups.forEach(function(k) {
-        thread.appendChild(buildThreadItem(k));
-      });
-      col.appendChild(thread);
-      fups.forEach(function(k) {
-        if (k.status === "answered") markRead(k);
-      });
-    }
-    readerMain.appendChild(col);
-    readerMain.scrollTop = node._scrollTop || 0;
-  }
-  function jumpToOrigin(node, source2) {
-    var parent = nodes[node.parent_id];
-    if (!parent) return;
-    openNode(parent.id);
-    var target = readerMain.querySelector('mark[data-child="' + node.id + '"]') || readerMain.querySelector('[data-turn="' + node.id + '"]');
-    if (!target) return;
-    var top = target.getBoundingClientRect().top - readerMain.getBoundingClientRect().top + readerMain.scrollTop;
-    readerLifecycle.hooks.animateScroll(readerMain, Math.max(0, top - readerMain.clientHeight * 0.38), source2);
-    if (target.tagName === "MARK") {
-      var marks = readerMain.querySelectorAll('mark[data-child="' + node.id + '"]');
-      for (var i2 = 0; i2 < marks.length; i2++) playLandingCue(marks[i2], "mark-flash");
-    }
-  }
-  function onReaderScroll() {
-    var n = nodes[currentNodeId];
-    if (n) n._scrollTop = readerMain.scrollTop;
-    readerLifecycle.hooks.scheduleViewSave();
-  }
-  function buildThreadRule() {
-    var r2 = document.createElement("div");
-    r2.className = "thread-rule";
-    r2.textContent = "Conversation";
-    return r2;
-  }
-  function buildThreadItem(k) {
-    var item = document.createElement("div");
-    item.className = "turn";
-    item.dataset.turn = k.id;
-    var q = document.createElement("div");
-    q.className = "turn-q";
-    var qs = document.createElement("span");
-    if (k.origin && k.origin.lens) qs.innerHTML = lensBadgeHtml(k.origin.lens);
-    else qs.textContent = k.origin && k.origin.question || "";
-    q.appendChild(qs);
-    var a = document.createElement("div");
-    a.className = "turn-a";
-    fillTurnAnswer(a, k);
-    item.appendChild(q);
-    item.appendChild(a);
-    return item;
-  }
-  function fillTurnAnswer(a, k) {
-    a.innerHTML = "";
-    if (k.status === "pending" && !k.html) {
-      a.appendChild(buildLoading(k));
-      return;
-    }
-    var dc = buildDocContent(k, READER_BASE);
-    var host = nodes[currentNodeId];
-    if (host) dc.style.fontSize = fontPx(host, READER_BASE) + "px";
-    a.appendChild(dc);
-    if (k.status === "answered") applyChildHighlights(dc, k);
-  }
-  function ensureThread() {
-    var t = readerMain.querySelector("#thread");
-    if (t) return t;
-    var col = readerMain.querySelector(".reader-col");
-    if (!col) return null;
-    t = document.createElement("div");
-    t.id = "thread";
-    t.appendChild(buildThreadRule());
-    col.appendChild(t);
-    return t;
-  }
-  function removeThreadItem(childId) {
-    var item = readerMain.querySelector('[data-turn="' + childId + '"]');
-    if (item && item.parentNode) item.parentNode.removeChild(item);
-    var t = readerMain.querySelector("#thread");
-    if (t && !t.querySelector(".turn")) t.parentNode.removeChild(t);
-  }
-  function onMarkClick(e) {
-    var m = e.target.closest("mark[data-child]");
-    if (!m) return;
-    if (!window.getSelection().isCollapsed) return;
-    var k = nodes[m.dataset.child];
-    if (k) openNode(k.id);
-  }
-  function onMarkKeydown(e) {
-    if (e.key !== "Enter") return;
-    var m = e.target.closest && e.target.closest("mark[data-child]");
-    if (!m) return;
-    var k = nodes[m.dataset.child];
-    if (!k) return;
-    e.preventDefault();
-    openNode(k.id);
-  }
-  function onCanvasMarkClick(e) {
-    var m = e.target.closest && e.target.closest("mark[data-child]");
-    if (!m) return;
-    if (!window.getSelection().isCollapsed) return;
-    var k = nodes[m.dataset.child];
-    if (k) goToNode(k, motionSourceFromEvent(e));
-  }
-  function onCanvasMarkKeydown(e) {
-    if (e.key !== "Enter") return;
-    var m = e.target.closest && e.target.closest("mark[data-child]");
-    if (!m) return;
-    var k = nodes[m.dataset.child];
-    if (!k) return;
-    e.preventDefault();
-    goToNode(k, motionSourceFromEvent(e));
-  }
-  function renderSidebar() {
-    var kids = childrenOf(currentNodeId).filter(function(k) {
-      return !isFollowup(k);
-    }).sort(function(a, b) {
-      return anchorStart(a) - anchorStart(b) || (a._order || 0) - (b._order || 0);
-    });
-    if (!kids.length) {
-      var emptyHeading = document.createElement("h3");
-      emptyHeading.textContent = "Branches";
-      var empty = document.createElement("div");
-      empty.className = "side-empty";
-      empty.textContent = "Select any text in the document and ask about it \u2014 the answer opens as a branch here. Or ask a follow-up in the box below the document.";
-      sideEl.replaceChildren(emptyHeading, empty);
-      return;
-    }
-    var heading2 = sideEl.querySelector(":scope > h3");
-    if (!heading2) heading2 = document.createElement("h3");
-    heading2.textContent = "Branches (" + kids.length + ")";
-    var fragment = document.createDocumentFragment();
-    fragment.appendChild(heading2);
-    var newLivePanes = [];
-    kids.forEach(function(k, i2) {
-      var pending = k.status !== "answered";
-      var qHtml = k.origin && k.origin.synthesis ? '<span class="lens-badge">\u2726 Synthesis</span>' : k.origin && k.origin.lens ? lensBadgeHtml(k.origin.lens) : escapeHtml(k.origin && k.origin.question ? k.origin.question : k.title || "Untitled");
-      var quote = k.origin && k.origin.selected_text ? k.origin.selected_text : "";
-      var status = pending ? pendingStatusHtml(k) : isUnread(k) ? '<span class="si-new">new \u2014 open \u2192</span>' : "open \u2192";
-      var tile = sidebarNodes[k.id];
-      if (!tile) {
-        tile = document.createElement("div");
-        tile.className = "side-item";
-        tile.dataset.child = k.id;
-        tile.setAttribute("role", "link");
-        tile.tabIndex = 0;
-        tile._question = document.createElement("div");
-        tile._question.className = "si-q";
-        tile._num = document.createElement("span");
-        tile._num.className = "si-num";
-        tile._questionText = document.createElement("span");
-        tile._question.append(tile._num, tile._questionText);
-        tile._quote = document.createElement("div");
-        tile._quote.className = "si-quote";
-        tile._status = document.createElement("div");
-        tile._status.className = "si-status";
-        tile.append(tile._question, tile._quote, tile._status);
-        sidebarNodes[k.id] = tile;
-      }
-      tile.classList.toggle("pending", pending);
-      tile._num.textContent = i2 + 1;
-      tile._questionText.innerHTML = qHtml;
-      tile._quote.textContent = quote ? "\u201C" + truncate2(quote, 80) + "\u201D" : "";
-      tile._quote.hidden = !quote;
-      tile._status.innerHTML = status;
-      var name = k.origin && k.origin.synthesis ? "Synthesis" : k.origin && k.origin.question || k.title || "Untitled";
-      tile.setAttribute("aria-label", "Open branch: " + name + (pending ? ", pending" : isUnread(k) ? ", new" : ""));
-      if (pending && k.html) {
-        if (!tile._live) {
-          tile._live = document.createElement("div");
-          tile._live.className = "si-live";
-          tile._livePane = document.createElement("div");
-          tile._livePane.className = "md";
-          tile._live.appendChild(tile._livePane);
-          tile.appendChild(tile._live);
-          newLivePanes.push({ pane: tile._livePane, node: k });
-        }
-        tile._livePane.innerHTML = k.html;
-      } else if (tile._live) {
-        tile._live.remove();
-        tile._live = null;
-        tile._livePane = null;
-      }
-      fragment.appendChild(tile);
-    });
-    sideEl.replaceChildren(fragment);
-    mountSidebarVisuals(newLivePanes);
-  }
-  function mountSidebarVisuals(panes) {
-    for (var i2 = 0; i2 < panes.length; i2++) {
-      var key = "reader-side:" + panes[i2].node.id;
-      mountVisuals(panes[i2].pane, key);
-      if (typeof readerLifecycle.hooks.mountDocImages === "function") readerLifecycle.hooks.mountDocImages(panes[i2].pane, panes[i2].node, null, key);
-    }
-  }
-  function pendingStatusHtml(k) {
-    var copy = {
-      frozen: '<span class="si-muted">unanswered in this snapshot</span>',
-      closed: '<span class="si-muted">saved \u2014 answered when you reopen</span>',
-      away: '<span class="si-muted">saved \u2014 waiting for the agent</span>',
-      live: k && k.html ? '<span class="shimmer-text">Writing\u2026</span>' : '<span class="shimmer-text">Thinking\u2026</span>'
-    };
-    return copy[sessionPhase()];
-  }
-  function onSidebarClick(e) {
-    var it = e.target.closest(".side-item");
-    if (!it) return;
-    openNode(it.dataset.child);
-  }
-  function onSidebarKeydown(e) {
-    if (e.key !== "Enter") return;
-    var it = e.target.closest && e.target.closest('.side-item[role="link"]');
-    if (!it) return;
-    e.preventDefault();
-    openNode(it.dataset.child);
-  }
-  function setReaderFontScale(delta) {
-    var node = nodes[currentNodeId];
-    node.font_scale = Math.min(MAX_FS, Math.max(MIN_FS, (node.font_scale || 1) + delta));
-    var dcs = readerMain.querySelectorAll(".doc-content");
-    for (var i2 = 0; i2 < dcs.length; i2++) dcs[i2].style.fontSize = fontPx(node, READER_BASE) + "px";
-    if (node.bodyEl) {
-      var cdc = node.bodyEl.querySelector(".doc-content");
-      if (cdc) cdc.style.fontSize = fontPx(node, CANVAS_BASE) + "px";
-    }
-    readerLifecycle.hooks.persistNode(node);
-  }
-  var kbdMarkIdx = -1;
-  function allMarks() {
-    return readerMain.querySelectorAll("mark[data-child]");
-  }
-  function focusedMark() {
-    var marks = allMarks();
-    return kbdMarkIdx >= 0 && kbdMarkIdx < marks.length ? marks[kbdMarkIdx] : null;
-  }
-  function stepMark(delta) {
-    var marks = allMarks();
-    if (!marks.length) return;
-    var prev = focusedMark();
-    if (prev) prev.classList.remove("mark-focus");
-    kbdMarkIdx = kbdMarkIdx < 0 ? delta > 0 ? 0 : marks.length - 1 : Math.max(0, Math.min(marks.length - 1, kbdMarkIdx + delta));
-    var m = marks[kbdMarkIdx];
-    m.classList.add("mark-focus");
-    var top = m.getBoundingClientRect().top - readerMain.getBoundingClientRect().top + readerMain.scrollTop;
-    readerLifecycle.hooks.animateScroll(readerMain, Math.max(0, top - readerMain.clientHeight * 0.42), "keyboard");
-  }
-
-  // src/ui/easing.js
-  function bezierCoord(t, a, b) {
-    var mt = 1 - t;
-    return 3 * mt * mt * t * a + 3 * mt * t * t * b + t * t * t;
-  }
-  function bezierSlope(t, a, b) {
-    return 3 * (1 - t) * (1 - t) * a + 6 * (1 - t) * t * (b - a) + 3 * t * t * (1 - b);
-  }
-  function cubicBezier(x1, y1, x2, y2, x) {
-    if (x <= 0) return 0;
-    if (x >= 1) return 1;
-    var t = x, i2, xAt, slope;
-    for (i2 = 0; i2 < 5; i2++) {
-      xAt = bezierCoord(t, x1, x2) - x;
-      slope = bezierSlope(t, x1, x2);
-      if (Math.abs(xAt) < 1e-3 || !slope) break;
-      t -= xAt / slope;
-    }
-    if (t < 0 || t > 1) {
-      var lo = 0, hi = 1;
-      t = x;
-      for (i2 = 0; i2 < 8; i2++) {
-        xAt = bezierCoord(t, x1, x2);
-        if (xAt < x) lo = t;
-        else hi = t;
-        t = (lo + hi) / 2;
-      }
-    }
-    return bezierCoord(t, y1, y2);
-  }
-  function easeOutMotion(k) {
-    return cubicBezier(0.23, 1, 0.32, 1, k);
-  }
-  function easeInOutMotion(k) {
-    return cubicBezier(0.77, 0, 0.175, 1, k);
-  }
-
-  // src/core/html/button-markup.js
-  var STATEFUL_ARIA = ["aria-haspopup", "aria-controls", "aria-expanded", "aria-pressed"];
-  function attribute(name, value) {
-    if (value === void 0 || value === false || value === null) return "";
-    return " " + name + (value === true ? "" : '="' + escapeHtml(String(value)) + '"');
-  }
-  function buttonAttributes(options2, iconOnly) {
-    var _a2;
-    const label = String(options2.label || "").trim();
-    const ariaLabel = String(options2.ariaLabel || "").trim();
-    if (iconOnly && !ariaLabel) throw new Error("IconButton requires aria-label");
-    if (!iconOnly && !label && !ariaLabel) throw new Error("Button requires an accessible name");
-    const baseClass = options2.bare ? "" : iconOnly ? "tool-btn tool-icon" : "tool-btn";
-    const className = [baseClass, options2.className].filter(Boolean).join(" ");
-    let result = attribute("class", className || void 0) + attribute("id", options2.id) + attribute("type", "button") + attribute("role", options2.role) + attribute("tabindex", options2.tabIndex) + attribute("title", options2.title) + attribute("aria-label", ariaLabel || void 0);
-    for (const [name, value] of Object.entries(options2.dataAttrs || {})) {
-      const attrName = "data-" + String(name).replace(/[A-Z]/g, (letter) => "-" + letter.toLowerCase());
-      result += attribute(attrName, value);
-    }
-    for (const name of STATEFUL_ARIA) {
-      const camelName = name.replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase());
-      result += attribute(name, (_a2 = options2[name]) != null ? _a2 : options2[camelName]);
-    }
-    const aria = options2.aria || {};
-    for (const [name, value] of Object.entries(aria)) {
-      const attrName = name.startsWith("aria-") ? name : "aria-" + name;
-      if (!STATEFUL_ARIA.includes(attrName) && attrName !== "aria-label") result += attribute(attrName, value);
-    }
-    return result + attribute("hidden", options2.hidden) + attribute("disabled", options2.disabled);
-  }
-  function buttonMarkup(options2 = {}) {
-    const content = (options2.svgIconHtml || "") + escapeHtml(String(options2.label || "")) + (options2.kbdHint ? "<kbd>" + escapeHtml(String(options2.kbdHint)) + "</kbd>" : "");
-    return "<button" + buttonAttributes(options2, false) + ">" + content + "</button>";
-  }
-  function iconButtonMarkup(options2 = {}) {
-    const content = options2.svgIconHtml || escapeHtml(String(options2.icon || ""));
-    return "<button" + buttonAttributes(options2, true) + ">" + content + "</button>";
-  }
-
-  // src/ui/composer-state.js
-  function applyComposerState(elements, state, copy) {
-    var down = state.phase === "frozen" || state.phase === "closed" || state.pending;
-    elements.text.disabled = down;
-    elements.wrap.classList.toggle("disabled", down);
-    var placeholderPhase = state.pending && state.phase !== "frozen" && state.phase !== "closed" ? "pending" : state.phase;
-    elements.text.placeholder = copy[placeholderPhase];
-    elements.send.disabled = down || !elements.text.value.trim();
-  }
-
-  // src/ui/canvas-view.js
-  function defaultCanvasHooks() {
-    return {
-      hideAsk: function() {
-      },
-      sendFollowup: function() {
-        return null;
-      },
-      confirmDelete: function() {
-      },
-      persistNode: function() {
-      },
-      persistNodesBulk: function() {
-      },
-      scheduleViewSave: function() {
-      }
-    };
-  }
-  var canvasLifecycle = createModuleLifecycle({ defaults: defaultCanvasHooks });
-  var filmCameraHandle = null;
-  var activePointerGestures = /* @__PURE__ */ new Set();
-  function registerCanvasHooks(hooks) {
-    canvasLifecycle.register(hooks);
-  }
-  function initCanvasView() {
-    cleanupCanvasView(false);
-    var canvasScope = canvasLifecycle.beginInit();
-    registerCoreHooks({
-      ensureCanvasBuilt,
-      diveToNode,
-      effH
-    });
-    canvasScope.listen(world, "mouseover", onWorldMouseOver);
-    canvasScope.listen(world, "mouseout", onWorldMouseOut);
-    initViewportPan();
-    canvasScope.listen(viewport, "wheel", onViewportWheel, { passive: false });
-    canvasScope.listen(viewport, "dblclick", onViewportDblClick);
-    canvasScope.listen(document.getElementById("t-reader"), "click", function() {
-      openNode(currentNodeId);
-    });
-    canvasScope.listen(document.getElementById("t-frame"), "click", function(e) {
-      frameAll(true, motionSourceFromEvent(e));
-    });
-    canvasScope.listen(document.getElementById("t-tidy"), "click", function(e) {
-      tidy(motionSourceFromEvent(e));
-    });
-    canvasScope.listen(document.getElementById("t-zin"), "click", function() {
-      zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, 1.15);
-    });
-    canvasScope.listen(document.getElementById("t-zout"), "click", function() {
-      zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, 0.87);
-    });
-    canvasScope.listen(zoomLabel, "click", function() {
-      zoomTo(viewport.clientWidth / 2, viewport.clientHeight / 2, 1);
-    });
-    exposeFilmCameraHook();
-    return disposeCanvasView;
-  }
-  function disposeCanvasView() {
-    cleanupCanvasView(true);
-  }
-  function cleanupCanvasView(resetHooks) {
-    var _a2;
-    canvasLifecycle.dispose(resetHooks);
-    activePointerGestures.forEach(function(cancel) {
-      cancel();
-    });
-    activePointerGestures.clear();
-    cancelViewAnimation();
-    if (edgeRaf) {
-      cancelAnimationFrame(edgeRaf);
-      edgeRaf = 0;
-    }
-    if (filmCameraHandle && window.__rhFilmCamera === filmCameraHandle) {
-      try {
-        delete window.__rhFilmCamera;
-      } catch (_e) {
-      }
-    }
-    filmCameraHandle = null;
-    if (edgesSvg) while (edgesSvg.firstChild) edgesSvg.removeChild(edgesSvg.firstChild);
-    edgeEls = {};
-    edgeGeometry = {};
-    edgeHl = {};
-    wheelKind = null;
-    wheelCard = null;
-    wheelTs = 0;
-    (_a2 = viewport) == null ? void 0 : _a2.classList.remove("panning");
-    if (resetHooks) {
-      registerCoreHooks({
-        ensureCanvasBuilt: function() {
-        },
-        diveToNode: function() {
-        },
-        effH: function(n) {
-          return n.h;
-        }
-      });
-    }
-  }
-  function applyTransform() {
-    world.style.transform = "translate(" + view.x + "px," + view.y + "px) scale(" + view.scale + ")";
-    zoomLabel.textContent = Math.round(view.scale * 100) + "%";
-    canvasLifecycle.hooks.scheduleViewSave();
-  }
-  function exposeFilmCameraHook() {
-    var enabled = false;
-    try {
-      enabled = localStorage.getItem("rh-film") === "1";
-    } catch (e) {
-    }
-    if (!enabled) return;
-    filmCameraHandle = {
-      getView: function() {
-        return { x: view.x, y: view.y, scale: view.scale };
-      },
-      setView: function(x, y, scale) {
-        cancelViewAnimation();
-        setViewAdjusted(true);
-        view.x = Number(x);
-        view.y = Number(y);
-        view.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Number(scale)));
-        applyTransform();
-        drawEdges();
-        return { x: view.x, y: view.y, scale: view.scale };
-      }
-    };
-    Object.defineProperty(window, "__rhFilmCamera", {
-      configurable: true,
-      value: filmCameraHandle
-    });
-  }
-  function screenToWorld(sx, sy) {
-    return { x: (sx - view.x) / view.scale, y: (sy - view.y) / view.scale };
-  }
-  function zoomAt(sx, sy, factor) {
-    var next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, view.scale * factor));
-    zoomTo(sx, sy, next);
-  }
-  function zoomTo(sx, sy, next) {
-    cancelViewAnimation();
-    next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, next));
-    if (next === view.scale) return;
-    setViewAdjusted(true);
-    var w = screenToWorld(sx, sy);
-    view.scale = next;
-    view.x = sx - w.x * view.scale;
-    view.y = sy - w.y * view.scale;
-    applyTransform();
-  }
-  var NODE_EXPAND_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M9.25 3.75h3v3"/><path d="M12.25 3.75 8.75 7.25"/><path d="M6.75 12.25h-3v-3"/><path d="M3.75 12.25l3.5-3.5"/></svg>';
-  var NODE_COLLAPSE_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M3 8h10"/></svg>';
-  var NODE_RESTORE_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M3 8h10M8 3v10"/></svg>';
-  function syncCollapseButton(node, btn) {
-    var action = node.collapsed ? "Expand document" : "Collapse document";
-    btn.innerHTML = node.collapsed ? NODE_RESTORE_ICON : NODE_COLLAPSE_ICON;
-    btn.setAttribute("aria-label", action);
-    btn.title = action;
-  }
-  function createNodeEl(node, enter) {
-    var el = document.createElement("div");
-    el.className = "node" + (node.id === rootId ? " root" : "");
-    if (enter && !document.hidden && !shouldReduceMotion()) el.className += " node-enter";
-    el.dataset.id = node.id;
-    var head = document.createElement("div");
-    head.className = "node-head";
-    if (node.id === rootId) {
-      var badge = document.createElement("span");
-      badge.className = "node-badge";
-      badge.innerHTML = BUNNY_MARK_SVG;
-      badge.title = "Where this Rabbithole begins";
-      head.appendChild(badge);
-    }
-    var titleEl = document.createElement("span");
-    titleEl.className = "node-title";
-    titleEl.textContent = node.title || "\u2026";
-    titleEl.title = node.title || "";
-    var aDown = cardButton(buttonMarkup({ bare: true, className: "node-btn node-font-btn", label: "A\u2212", ariaLabel: "Smaller text", title: "Smaller text" }));
-    var aUp = cardButton(buttonMarkup({ bare: true, className: "node-btn node-font-btn", label: "A+", ariaLabel: "Larger text", title: "Larger text" }));
-    var collapseBtn = cardButton(iconButtonMarkup({ bare: true, className: "node-btn", svgIconHtml: NODE_COLLAPSE_ICON, ariaLabel: "Collapse document", title: "Collapse document" }));
-    syncCollapseButton(node, collapseBtn);
-    var openBtn = cardButton(iconButtonMarkup({ bare: true, className: "node-btn", svgIconHtml: NODE_EXPAND_ICON, ariaLabel: "Expand document", title: "Expand document" }));
-    var divider = document.createElement("span");
-    divider.className = "node-act-divider";
-    divider.setAttribute("aria-hidden", "true");
-    var acts = document.createElement("span");
-    acts.className = "node-acts";
-    if (node.id !== rootId) {
-      var delBtn = cardButton(buttonMarkup({ bare: true, className: "node-btn danger", label: "\u2715", ariaLabel: "Remove this branch", title: "Remove this branch" }));
-      delBtn.addEventListener("click", function(e) {
-        e.stopPropagation();
-        canvasLifecycle.hooks.confirmDelete(node, delBtn);
-      });
-      acts.appendChild(delBtn);
-    }
-    acts.appendChild(aDown);
-    acts.appendChild(aUp);
-    acts.appendChild(divider);
-    acts.appendChild(collapseBtn);
-    acts.appendChild(openBtn);
-    head.appendChild(titleEl);
-    head.appendChild(acts);
-    var body = document.createElement("div");
-    body.className = "node-body";
-    var comp = buildCardComposer(node);
-    var resize = document.createElement("div");
-    resize.className = "node-resize";
-    el.appendChild(head);
-    el.appendChild(body);
-    el.appendChild(comp);
-    el.appendChild(resize);
-    world.appendChild(el);
-    node.el = el;
-    node.bodyEl = body;
-    node.titleEl = titleEl;
-    fillBody(node);
-    updateCardComposer(node);
-    if (node.collapsed) el.classList.add("collapsed");
-    if (isUnread(node)) el.classList.add("unread");
-    enableDrag(node, head);
-    enableResize(node, resize);
-    head.addEventListener("dblclick", function() {
-      openNode(node.id);
-    });
-    openBtn.addEventListener("click", function(e) {
-      e.stopPropagation();
-      openNode(node.id);
-    });
-    collapseBtn.addEventListener("click", function(e) {
-      e.stopPropagation();
-      toggleCollapse(node, collapseBtn);
-    });
-    aDown.addEventListener("click", function(e) {
-      e.stopPropagation();
-      setNodeFontScale(node, -0.1);
-    });
-    aUp.addEventListener("click", function(e) {
-      e.stopPropagation();
-      setNodeFontScale(node, 0.1);
-    });
-    body.addEventListener("scroll", scheduleEdges, { passive: true });
-    body.addEventListener("pointerdown", function() {
-      if (node.status === "answered") markRead(node);
-    });
-    el.addEventListener("mouseenter", function() {
-      focusOrigin(node, true);
-    });
-    el.addEventListener("mouseleave", function() {
-      focusOrigin(node, false);
-      if (node.ncComp && !node.ncText.value.trim() && document.activeElement !== node.ncText) closeCardDrawer(node);
-    });
-    layoutNode(node);
-    if (el.classList.contains("node-enter")) {
-      requestAnimationFrame(function() {
-        el.classList.add("entered");
-        setTimeout(function() {
-          el.classList.remove("node-enter");
-          el.classList.remove("entered");
-        }, 220);
-      });
-    }
-    return node;
-  }
-  function diveToNode(node, source2) {
-    var vw = viewport.clientWidth, vh = viewport.clientHeight;
-    var ts = Math.min(1, Math.max(0.75, Math.min((vw - 120) / node.w, (vh - 120) / effH(node))));
-    var tx = vw / 2 - (node.x + node.w / 2) * ts;
-    var ty = vh / 2 - (node.y + effH(node) / 2) * ts;
-    animateView(tx, ty, ts, { source: source2, duration: 270, ease: "inOut" });
-  }
-  function cardButton(markup) {
-    var template = document.createElement("template");
-    template.innerHTML = markup;
-    return template.content.firstElementChild;
-  }
-  var SEND_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  function autoGrowEl(ta, max) {
-    ta.style.height = "auto";
-    ta.style.height = Math.min(max, ta.scrollHeight) + "px";
-    ta.style.overflowY = ta.scrollHeight > max ? "auto" : "hidden";
-  }
-  function buildCardComposer(node) {
-    var comp = document.createElement("div");
-    comp.className = "node-composer";
-    var clip = document.createElement("div");
-    clip.className = "nc-clip";
-    clip.id = cardDrawerId(node);
-    var inner2 = document.createElement("div");
-    inner2.className = "nc-inner";
-    var ta = document.createElement("textarea");
-    ta.rows = 1;
-    var send = cardButton(iconButtonMarkup({ bare: true, className: "send-btn", ariaLabel: "Send follow-up", title: "Send (\u21B5)", svgIconHtml: SEND_ICON }));
-    var handle = document.createElement("button");
-    handle.type = "button";
-    handle.className = "nc-handle";
-    handle.title = "Ask a follow-up about this document";
-    handle.setAttribute("aria-expanded", "false");
-    handle.setAttribute("aria-controls", clip.id);
-    var plus = document.createElement("span");
-    plus.className = "nc-plus";
-    plus.textContent = "+";
-    handle.appendChild(plus);
-    handle.appendChild(document.createTextNode(" Follow-up"));
-    inner2.appendChild(ta);
-    inner2.appendChild(send);
-    clip.appendChild(inner2);
-    comp.appendChild(clip);
-    comp.appendChild(handle);
-    node.ncComp = comp;
-    node.ncInner = inner2;
-    node.ncText = ta;
-    node.ncSend = send;
-    node.ncHandle = handle;
-    handle.addEventListener("click", function(e) {
-      e.stopPropagation();
-      openCardDrawer(node);
-    });
-    ta.addEventListener("input", function() {
-      autoGrowEl(ta, 90);
-      updateCardComposer(node);
-    });
-    ta.addEventListener("keydown", function(e) {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        submitCardFollowup(node, "keyboard");
-      } else if (e.key === "Escape") {
-        e.stopPropagation();
-        closeCardDrawer(node);
-        handle.focus({ preventScroll: true });
-      }
-    });
-    ta.addEventListener("blur", function() {
-      if (!ta.value.trim() && !(node.el && node.el.matches(":hover"))) closeCardDrawer(node);
-    });
-    send.addEventListener("click", function(e) {
-      e.stopPropagation();
-      submitCardFollowup(node, motionSourceFromEvent(e));
-    });
-    return comp;
-  }
-  function cardDrawerId(node) {
-    return "card-followup-" + String(node.id).replace(/[^A-Za-z0-9_-]/g, function(ch2) {
-      return "-" + ch2.charCodeAt(0).toString(16) + "-";
-    });
-  }
-  function openCardDrawer(node) {
-    node.ncComp.classList.add("open");
-    node.ncHandle.setAttribute("aria-expanded", "true");
-    node.ncText.focus({ preventScroll: true });
-  }
-  function closeCardDrawer(node) {
-    node.ncComp.classList.remove("open");
-    node.ncHandle.setAttribute("aria-expanded", "false");
-  }
-  function updateCardComposer(node) {
-    var _a2, _b;
-    if (!node.ncText) return;
-    node.ncComp.classList.toggle("nc-draft", !!node.ncText.value.trim());
-    applyComposerState(
-      { text: node.ncText, send: node.ncSend, wrap: node.ncInner },
-      { phase: sessionPhase(), pending: node.status === "pending" || !!((_b = (_a2 = node.extensions) == null ? void 0 : _a2.pdf) == null ? void 0 : _b.converting) },
-      {
-        frozen: "Read-only snapshot",
-        closed: "Session ended \u2014 saved",
-        pending: "Still being written\u2026",
-        away: "Asks are saved for the agent\u2026",
-        live: "Ask a follow-up\u2026"
-      }
-    );
-  }
-  function submitCardFollowup(node, source2) {
-    var _a2, _b;
-    if (closed) {
-      flashHint("Session ended \u2014 reopen this Rabbithole from your terminal to continue.");
-      return;
-    }
-    if (node.status === "pending" || ((_b = (_a2 = node.extensions) == null ? void 0 : _a2.pdf) == null ? void 0 : _b.converting)) return;
-    var question = node.ncText.value.trim();
-    if (!question) return;
-    var kid = canvasLifecycle.hooks.sendFollowup(node, question, null);
-    node.ncText.value = "";
-    autoGrowEl(node.ncText, 90);
-    closeCardDrawer(node);
-    updateCardComposer(node);
-    revealNode(kid, source2);
-  }
-  function revealNode(n, source2) {
-    if (mode !== "canvas" || !n) return;
-    var pad2 = 30, vw = viewport.clientWidth, vh = viewport.clientHeight;
-    var x1 = n.x * view.scale + view.x, y1 = n.y * view.scale + view.y;
-    var x2 = (n.x + n.w) * view.scale + view.x, y2 = (n.y + n.h) * view.scale + view.y;
-    var dx = 0, dy = 0;
-    if (x2 > vw - pad2) dx = vw - pad2 - x2;
-    if (x1 + dx < pad2) dx = pad2 - x1;
-    if (y2 > vh - pad2) dy = vh - pad2 - y2;
-    if (y1 + dy < pad2) dy = pad2 - y1;
-    if (!dx && !dy) return;
-    animatePan(view.x + dx, view.y + dy, source2, 230, "out");
-  }
-  function animatePan(tx, ty, source2, duration, ease) {
-    animateView(tx, ty, view.scale, { source: source2, duration, ease });
-  }
-  var viewAnimId = 0;
-  var viewAnimRaf = 0;
-  function cancelViewAnimation() {
-    viewAnimId++;
-    if (viewAnimRaf) {
-      cancelAnimationFrame(viewAnimRaf);
-      viewAnimRaf = 0;
-    }
-  }
-  function animateView(tx, ty, ts, opts) {
-    opts = opts || {};
-    cancelViewAnimation();
-    var myId = viewAnimId;
-    if (document.hidden || shouldReduceMotion() || opts.source !== "pointer") {
-      view.x = tx;
-      view.y = ty;
-      view.scale = ts;
-      applyTransform();
-      return;
-    }
-    var sx = view.x, sy = view.y, ss = view.scale, t0 = performance.now(), D2 = opts.duration || 270;
-    var easeFn = opts.ease === "inOut" ? easeInOutMotion : easeOutMotion;
-    function step(t) {
-      viewAnimRaf = 0;
-      if (myId !== viewAnimId) return;
-      var p = Math.min(1, (t - t0) / D2), k = easeFn(p);
-      view.x = sx + (tx - sx) * k;
-      view.y = sy + (ty - sy) * k;
-      view.scale = ss + (ts - ss) * k;
-      applyTransform();
-      if (p < 1) viewAnimRaf = requestAnimationFrame(step);
-    }
-    viewAnimRaf = requestAnimationFrame(step);
-  }
-  function fillBody(node) {
-    var body = node.bodyEl;
-    if (!body) return;
-    var previous = body.querySelector(".doc-content");
-    if (previous && previous._rhDispose) previous._rhDispose();
-    body.innerHTML = "";
-    if (node.origin && node.origin.synthesis) {
-      var sq = document.createElement("div");
-      sq.className = "origin-quote";
-      sq.textContent = "\u2726 Synthesis of this Rabbithole";
-      body.appendChild(sq);
-    } else if (node.origin && node.origin.selected_text) {
-      var q = document.createElement("div");
-      q.className = "origin-quote";
-      q.textContent = "\u201C" + node.origin.selected_text + "\u201D";
-      body.appendChild(q);
-    } else if (node.origin && (node.origin.question || node.origin.lens)) {
-      var fq = document.createElement("div");
-      fq.className = "origin-quote";
-      fq.textContent = node.origin.lens ? "Follow-up \u2014 " + lensLabel2(node.origin.lens) : node.origin.question;
-      body.appendChild(fq);
-    }
-    var dc = buildDocContent(node, CANVAS_BASE);
-    body.appendChild(dc);
-    applyChildHighlights(dc, node);
-  }
-  function setNodeFontScale(node, delta) {
-    node.font_scale = Math.min(MAX_FS, Math.max(MIN_FS, (node.font_scale || 1) + delta));
-    var dc = node.bodyEl && node.bodyEl.querySelector(".doc-content");
-    if (dc) dc.style.fontSize = fontPx(node, CANVAS_BASE) + "px";
-    if (mode === "reader" && currentNodeId === node.id) {
-      var rdc = readerMain.querySelector(".doc-content");
-      if (rdc) rdc.style.fontSize = fontPx(node, READER_BASE) + "px";
-    }
-    scheduleEdges();
-    canvasLifecycle.hooks.persistNode(node);
-  }
-  function layoutNode(node) {
-    var el = node.el;
-    el.style.left = node.x + "px";
-    el.style.top = node.y + "px";
-    el.style.width = node.w + "px";
-    if (!node.collapsed) el.style.height = node.h + "px";
-  }
-  function onPointerGesture(handle, onDown, onMove, onUp, scope) {
-    function pointerDown(e) {
-      if (!onDown(e)) return;
-      try {
-        handle.setPointerCapture(e.pointerId);
-      } catch (_e) {
-      }
-      function move(ev) {
-        onMove(ev);
-      }
-      function finish(commit) {
-        handle.removeEventListener("pointermove", move);
-        handle.removeEventListener("pointerup", done);
-        handle.removeEventListener("pointercancel", done);
-        handle.removeEventListener("lostpointercapture", done);
-        activePointerGestures.delete(cancel);
-        try {
-          handle.releasePointerCapture(e.pointerId);
-        } catch (_e) {
-        }
-        if (commit) onUp();
-      }
-      function done() {
-        finish(true);
-      }
-      function cancel() {
-        finish(false);
-      }
-      activePointerGestures.add(cancel);
-      handle.addEventListener("pointermove", move);
-      handle.addEventListener("pointerup", done);
-      handle.addEventListener("pointercancel", done);
-      handle.addEventListener("lostpointercapture", done);
-    }
-    if (scope) scope.listen(handle, "pointerdown", pointerDown);
-    else handle.addEventListener("pointerdown", pointerDown);
-  }
-  function enableDrag(node, handle) {
-    var sx, sy, ox, oy;
-    onPointerGesture(
-      handle,
-      function(e) {
-        if (e.button !== 0 || e.target.closest(".node-btn")) return false;
-        e.preventDefault();
-        canvasLifecycle.hooks.hideAsk();
-        sx = e.clientX;
-        sy = e.clientY;
-        ox = node.x;
-        oy = node.y;
-        return true;
-      },
-      function(ev) {
-        node.x = ox + (ev.clientX - sx) / view.scale;
-        node.y = oy + (ev.clientY - sy) / view.scale;
-        layoutNode(node);
-        scheduleEdges();
-      },
-      function() {
-        drawEdges();
-        canvasLifecycle.hooks.persistNode(node);
-      }
-    );
-  }
-  function enableResize(node, handle) {
-    var sx, sy, ow, oh;
-    onPointerGesture(
-      handle,
-      function(e) {
-        if (e.button !== 0) return false;
-        e.preventDefault();
-        e.stopPropagation();
-        sx = e.clientX;
-        sy = e.clientY;
-        ow = node.w;
-        oh = node.h;
-        return true;
-      },
-      function(ev) {
-        node.w = Math.max(240, ow + (ev.clientX - sx) / view.scale);
-        node.h = Math.max(160, oh + (ev.clientY - sy) / view.scale);
-        layoutNode(node);
-        scheduleEdges();
-      },
-      function() {
-        drawEdges();
-        canvasLifecycle.hooks.persistNode(node);
-      }
-    );
-  }
-  function toggleCollapse(node, btn) {
-    node.collapsed = !node.collapsed;
-    node.el.classList.toggle("collapsed", node.collapsed);
-    syncCollapseButton(node, btn);
-    if (!node.collapsed) layoutNode(node);
-    renderVisibility();
-    drawEdges();
-    canvasLifecycle.hooks.persistNode(node);
-  }
-  function renderVisibility() {
-    var cache = /* @__PURE__ */ Object.create(null);
-    for (var id in nodes) {
-      var n = nodes[id];
-      if (!n.el) continue;
-      if (n.id === rootId) {
-        n.el.style.display = "";
-        cache[n.id] = true;
-        continue;
-      }
-      n.el.style.display = isVisible(n, cache) ? "" : "none";
-    }
-  }
-  var edgeRaf = 0;
-  function scheduleEdges() {
-    if (edgeRaf) return;
-    edgeRaf = requestAnimationFrame(function() {
-      edgeRaf = 0;
-      drawEdges();
-    });
-  }
-  function effH(n) {
-    return n.collapsed && n.el ? n.el.offsetHeight || 36 : n.h;
-  }
-  function clamp2(lo, hi, v) {
-    return Math.max(lo, Math.min(hi, v));
-  }
-  function edgeSides(p, n) {
-    var ph = effH(p), nh = effH(n);
-    var dx = n.x + n.w / 2 - (p.x + p.w / 2);
-    var dy = n.y + nh / 2 - (p.y + ph / 2);
-    var fx = dx / ((p.w + n.w) / 2 + 1);
-    var fy = dy / ((ph + nh) / 2 + 1);
-    if (Math.abs(fx) >= Math.abs(fy)) return dx >= 0 ? ["right", "left"] : ["left", "right"];
-    return dy >= 0 ? ["bottom", "top"] : ["top", "bottom"];
-  }
-  function edgeStart(p, child, side) {
-    var ph = effH(p), ax = null, ay = null, anchored = false;
-    if (!p.collapsed && p.el && p.bodyEl) {
-      var mark = p.bodyEl.querySelector('mark[data-child="' + child.id + '"]');
-      if (mark) {
-        var mr = mark.getBoundingClientRect();
-        if (mr.height > 0) {
-          var er = p.el.getBoundingClientRect();
-          var br2 = p.bodyEl.getBoundingClientRect();
-          ay = p.y + clamp2(
-            (br2.top - er.top) / view.scale + 10,
-            (br2.bottom - er.top) / view.scale - 10,
-            (mr.top + mr.height / 2 - er.top) / view.scale
-          );
-          ax = p.x + clamp2(
-            (br2.left - er.left) / view.scale + 10,
-            (br2.right - er.left) / view.scale - 10,
-            (mr.left + mr.width / 2 - er.left) / view.scale
-          );
-          anchored = true;
-        }
-      } else if (isFollowup(child)) {
-        ay = p.y + ph - 22;
-      }
-    }
-    if (side === "right") return { x: p.x + p.w, y: ay != null ? ay : p.y + ph / 2, anchored };
-    if (side === "left") return { x: p.x, y: ay != null ? ay : p.y + ph / 2, anchored };
-    if (side === "bottom") return { x: ax != null ? ax : p.x + p.w / 2, y: p.y + ph, anchored };
-    return { x: ax != null ? ax : p.x + p.w / 2, y: p.y, anchored };
-  }
-  function edgeEnd(n, side) {
-    var nh = effH(n);
-    if (side === "left") return { x: n.x, y: n.y + nh / 2 };
-    if (side === "right") return { x: n.x + n.w, y: n.y + nh / 2 };
-    if (side === "top") return { x: n.x + n.w / 2, y: n.y };
-    return { x: n.x + n.w / 2, y: n.y + nh };
-  }
-  function ctrlPt(pt, side, d) {
-    if (side === "right") return pt.x + d + " " + pt.y;
-    if (side === "left") return pt.x - d + " " + pt.y;
-    if (side === "bottom") return pt.x + " " + (pt.y + d);
-    return pt.x + " " + (pt.y - d);
-  }
-  var edgeEls = {};
-  var edgeGeometry = {};
-  function ensureEdgeEls(childId) {
-    var els = edgeEls[childId];
-    if (els) return els;
-    var path2 = document.createElementNS(SVGNS, "path");
-    path2.setAttribute("data-child", childId);
-    var dot = document.createElementNS(SVGNS, "circle");
-    dot.setAttribute("r", "3");
-    dot.setAttribute("data-child", childId);
-    edgesSvg.appendChild(path2);
-    edgesSvg.appendChild(dot);
-    edgeEls[childId] = [path2, dot];
-    return edgeEls[childId];
-  }
-  function removeEdge(childId) {
-    var els = edgeEls[childId];
-    if (els) {
-      for (var i2 = 0; i2 < els.length; i2++) if (els[i2].parentNode) els[i2].parentNode.removeChild(els[i2]);
-    }
-    delete edgeEls[childId];
-    delete edgeGeometry[childId];
-    delete edgeHl[childId];
-  }
-  function applyEdgeClasses(childId, path2, dot, anchored) {
-    path2.classList.toggle("edge-hl", !!edgeHl[childId]);
-    dot.classList.toggle("edge-hl", !!edgeHl[childId]);
-    dot.classList.toggle("anchored", !!anchored);
-  }
-  function rebuildEdges() {
-    while (edgesSvg.firstChild) edgesSvg.removeChild(edgesSvg.firstChild);
-    edgeEls = {};
-    edgeGeometry = {};
-    drawEdges();
-  }
-  function drawEdges() {
-    var live = {};
-    var visCache = /* @__PURE__ */ Object.create(null);
-    function vis(node) {
-      return isVisible(node, visCache);
-    }
-    for (var id in nodes) {
-      var n = nodes[id];
-      if (!n.parent_id || !n.el) continue;
-      var p = nodes[n.parent_id];
-      if (!p || !p.el) continue;
-      if (!vis(n) || !vis(p)) continue;
-      live[n.id] = true;
-      var sides = edgeSides(p, n);
-      var start = edgeStart(p, n, sides[0]);
-      var end = edgeEnd(n, sides[1]);
-      var horiz = sides[0] === "left" || sides[0] === "right";
-      var reach = Math.max(40, (horiz ? Math.abs(end.x - start.x) : Math.abs(end.y - start.y)) / 2);
-      var d = "M " + start.x + " " + start.y + " C " + ctrlPt(start, sides[0], reach) + " " + ctrlPt(end, sides[1], reach) + " " + end.x + " " + end.y;
-      var geom = {
-        d,
-        cx: String(start.x),
-        cy: String(start.y),
-        anchored: !!start.anchored
-      };
-      var els = ensureEdgeEls(n.id);
-      var path2 = els[0], dot = els[1], prev = edgeGeometry[n.id];
-      if (!prev || prev.d !== geom.d) path2.setAttribute("d", geom.d);
-      if (!prev || prev.cx !== geom.cx) dot.setAttribute("cx", geom.cx);
-      if (!prev || prev.cy !== geom.cy) dot.setAttribute("cy", geom.cy);
-      if (!prev || prev.anchored !== geom.anchored) applyEdgeClasses(n.id, path2, dot, geom.anchored);
-      else if (!!edgeHl[n.id] !== path2.classList.contains("edge-hl")) applyEdgeClasses(n.id, path2, dot, geom.anchored);
-      edgeGeometry[n.id] = geom;
-    }
-    for (var childId in edgeEls) {
-      if (!live[childId]) removeEdge(childId);
-    }
-  }
-  var edgeHl = {};
-  function setEdgeHighlight(childId, on) {
-    if (on) edgeHl[childId] = true;
-    else delete edgeHl[childId];
-    var els = edgeEls[childId];
-    if (!els) return;
-    for (var i2 = 0; i2 < els.length; i2++) els[i2].classList.toggle("edge-hl", on);
-  }
-  function clearEdgeHighlight(childId) {
-    delete edgeHl[childId];
-  }
-  function focusOrigin(node, on) {
-    if (mode !== "canvas") return;
-    setEdgeHighlight(node.id, on);
-    var p = node.parent_id ? nodes[node.parent_id] : null;
-    if (p && p.bodyEl) {
-      var marks = p.bodyEl.querySelectorAll('mark[data-child="' + node.id + '"]');
-      for (var i2 = 0; i2 < marks.length; i2++) marks[i2].classList.toggle("mark-focus", on);
-    }
-  }
-  function onWorldMouseOver(e) {
-    var m = e.target.closest && e.target.closest("mark[data-child]");
-    if (m) setEdgeHighlight(m.dataset.child, true);
-  }
-  function onWorldMouseOut(e) {
-    var m = e.target.closest && e.target.closest("mark[data-child]");
-    if (m) setEdgeHighlight(m.dataset.child, false);
-  }
-  function initViewportPan() {
-    var sx, sy, ox, oy;
-    onPointerGesture(
-      viewport,
-      function(e) {
-        if (e.button !== 0 || e.target.closest(".node")) return false;
-        canvasLifecycle.hooks.hideAsk();
-        cancelViewAnimation();
-        viewport.classList.add("panning");
-        sx = e.clientX;
-        sy = e.clientY;
-        ox = view.x;
-        oy = view.y;
-        return true;
-      },
-      function(ev) {
-        setViewAdjusted(true);
-        view.x = ox + (ev.clientX - sx);
-        view.y = oy + (ev.clientY - sy);
-        applyTransform();
-      },
-      function() {
-        viewport.classList.remove("panning");
-      },
-      canvasLifecycle.scope
-    );
-  }
-  function canScroll(el, dx, dy) {
-    if (dx && el.scrollWidth > el.clientWidth + 1) {
-      if (dx < 0 ? el.scrollLeft > 0 : el.scrollLeft + el.clientWidth < el.scrollWidth - 1) return true;
-    }
-    if (dy && el.scrollHeight > el.clientHeight + 1) {
-      if (dy < 0 ? el.scrollTop > 0 : el.scrollTop + el.clientHeight < el.scrollHeight - 1) return true;
-    }
-    return false;
-  }
-  var wheelKind = null;
-  var wheelCard = null;
-  var wheelTs = 0;
-  function onViewportWheel(e) {
-    if (e.ctrlKey) {
-      e.preventDefault();
-      wheelKind = null;
-      zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.01));
-      return;
-    }
-    if (!wheelKind || e.timeStamp - wheelTs > 180) {
-      wheelCard = e.target.closest && e.target.closest(".node") || null;
-      wheelKind = wheelCard ? "card" : "pan";
-    }
-    wheelTs = e.timeStamp;
-    if (wheelKind === "pan") {
-      e.preventDefault();
-      cancelViewAnimation();
-      setViewAdjusted(true);
-      view.x -= e.deltaX;
-      view.y -= e.deltaY;
-      applyTransform();
-      return;
-    }
-    var over = e.target.closest && e.target.closest(".node") || null;
-    if (over !== wheelCard) {
-      e.preventDefault();
-      var nb = wheelCard ? wheelCard.querySelector(".node-body") : null;
-      if (nb) {
-        nb.scrollLeft += e.deltaX;
-        nb.scrollTop += e.deltaY;
-      }
-      return;
-    }
-    var el = e.target, consumable = false;
-    while (el && el.nodeType === 1) {
-      if (canScroll(el, e.deltaX, e.deltaY)) {
-        consumable = true;
-        break;
-      }
-      if (el === over) break;
-      el = el.parentNode;
-    }
-    if (!consumable) e.preventDefault();
-  }
-  function frameAll(animate, source2) {
-    var visCache = /* @__PURE__ */ Object.create(null);
-    var ids = Object.keys(nodes).filter(function(id) {
-      return isVisible(nodes[id], visCache);
-    });
-    if (!ids.length) return;
-    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    ids.forEach(function(id) {
-      var n = nodes[id];
-      minX = Math.min(minX, n.x);
-      minY = Math.min(minY, n.y);
-      maxX = Math.max(maxX, n.x + n.w);
-      maxY = Math.max(maxY, n.y + (n.collapsed ? 40 : n.h));
-    });
-    var fullW = viewport.clientWidth || window.innerWidth, fullH = viewport.clientHeight || window.innerHeight, pad2 = 100;
-    var rail = document.getElementById("web-rail"), toolbar = document.getElementById("toolbar");
-    var insetX = rail && rail.classList.contains("open") ? rail.getBoundingClientRect().width : 0;
-    var insetY = toolbar ? toolbar.getBoundingClientRect().height : 0;
-    var vw = fullW - insetX, vh = fullH - insetY;
-    var ts = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min((vw - pad2) / (maxX - minX), (vh - pad2) / (maxY - minY), 1.2)));
-    var tx = insetX + vw / 2 - (minX + (maxX - minX) / 2) * ts, ty = insetY + vh / 2 - (minY + (maxY - minY) / 2) * ts;
-    if (source2) setViewAdjusted(true);
-    if (animate) {
-      animateView(tx, ty, ts, { source: source2, duration: 270, ease: "inOut" });
-      return;
-    }
-    view.scale = ts;
-    view.x = tx;
-    view.y = ty;
-    applyTransform();
-  }
-  function onViewportDblClick(e) {
-    if (e.target.closest && e.target.closest(".node")) return;
-    frameAll(true, motionSourceFromEvent(e));
-  }
-  function tidy(source2) {
-    var visited = {};
-    function moveSubtree(node, dx, dy) {
-      node.x += dx;
-      node.y += dy;
-      childrenOf(node.id).filter(function(k) {
-        return visited[k.id];
-      }).sort(nodeOrder2).forEach(function(k) {
-        moveSubtree(k, dx, dy);
-      });
-    }
-    function place(node, x, y) {
-      visited[node.id] = true;
-      node.x = x;
-      node.y = y;
-      var bounds = nodeBounds2(node);
-      if (node.collapsed) return bounds;
-      var kids = childrenOf(node.id).sort(nodeOrder2);
-      var selectionKids = kids.filter(isSelectionBranch);
-      var followupKids = kids.filter(isFollowup);
-      var sideBounds = null;
-      var sideX = node.x + node.w + TREE_PARENT_GAP;
-      var sideY = node.y;
-      selectionKids.forEach(function(k) {
-        var kb = place(k, sideX, sideY);
-        sideBounds = unionBounds2(sideBounds, kb);
-        bounds = unionBounds2(bounds, kb);
-        sideY = kb.maxY + TREE_STACK_GAP;
-      });
-      var belowY = node.y + effH(node) + TREE_PARENT_GAP;
-      followupKids.forEach(function(k) {
-        var kb = place(k, node.x, belowY);
-        if (boundsOverlap2(kb, sideBounds)) {
-          var dy = sideBounds.maxY + TREE_STACK_GAP - kb.minY;
-          moveSubtree(k, 0, dy);
-          kb = shiftBounds2(kb, 0, dy);
-        }
-        bounds = unionBounds2(bounds, kb);
-        belowY = kb.maxY + TREE_STACK_GAP;
-      });
-      return bounds;
-    }
-    var root = nodes[rootId];
-    if (!root) return;
-    place(root, 0, 0);
-    var ids = Object.keys(visited);
-    var moved = [];
-    ids.forEach(function(id) {
-      var nn = nodes[id];
-      layoutNode(nn);
-      moved.push(nn);
-    });
-    canvasLifecycle.hooks.persistNodesBulk(moved);
-    rebuildEdges();
-    frameAll(true, source2);
-  }
-  function ensureCanvasBuilt() {
-    if (canvasBuilt) return;
-    setCanvasBuilt(true);
-    Object.keys(nodes).forEach(function(id) {
-      if (!nodes[id].el) createNodeEl(nodes[id]);
-    });
-    renderVisibility();
-    applyTransform();
-  }
-  function setMode(m) {
-    var transferredPosition = null;
-    if (m === "canvas" && mode === "reader") {
-      var cur = nodes[currentNodeId];
-      if (cur) {
-        cur._scrollTop = readerMain.scrollTop;
-        transferredPosition = captureContentPosition(readerMain);
-      }
-    }
-    setModeValue(m);
-    if (m === "canvas") {
-      ensureCanvasBuilt();
-      document.body.classList.add("mode-canvas");
-      requestAnimationFrame(function() {
-        var active = nodes[currentNodeId];
-        if (transferredPosition && (active == null ? void 0 : active.bodyEl)) restoreContentPosition(active.bodyEl, transferredPosition);
-        rebuildEdges();
-        if (!canvasFramed) {
-          setCanvasFramed(true);
-          frameAll();
-        }
-      });
-      canvasLifecycle.hooks.scheduleViewSave();
-    } else {
-      openNode(currentNodeId);
-    }
-  }
-
-  // src/ui/overlay/layer-stack.js
-  var layers = [];
-  function focus(element) {
-    if (!element || !element.isConnected || typeof element.focus !== "function") return false;
-    try {
-      element.focus({ preventScroll: true });
-    } catch (error) {
-      try {
-        element.focus();
-      } catch (_error) {
-        return false;
-      }
-    }
-    return true;
-  }
-  function onKeydown(event) {
-    if (event.key !== "Escape") return;
-    var layer = layers[layers.length - 1];
-    if (!layer || !layer.closeOnEscape) return;
-    event.preventDefault();
-    event.stopPropagation();
-    layer.onClose("escape");
-  }
-  function onPointerdown(event) {
-    var _a2;
-    var layer = layers[layers.length - 1];
-    if (!layer || !layer.closeOnOutsidePointer) return;
-    var path2 = typeof event.composedPath === "function" ? event.composedPath() : [];
-    if (path2.includes(layer.element) || path2.includes(layer.trigger) || layer.element.contains(event.target) || ((_a2 = layer.trigger) == null ? void 0 : _a2.contains(event.target))) return;
-    if (layer.preventOutsidePointerDefault) event.preventDefault();
-    layer.onClose("outside-pointer");
-    if (layer.restoreFocus) layer.focusTimer = setTimeout(function() {
-      layer.focusTimer = 0;
-      if (!focus(layer.trigger)) focus(layer.previousFocus);
-    }, 0);
-  }
-  function syncListeners() {
-    var method = layers.length ? "addEventListener" : "removeEventListener";
-    document[method]("keydown", onKeydown, true);
-    document[method]("pointerdown", onPointerdown, true);
-  }
-  function registerLayer(options2) {
-    var layer = {
-      element: options2.element,
-      trigger: options2.trigger || null,
-      onClose: options2.onClose,
-      closeOnEscape: options2.closeOnEscape !== false,
-      closeOnOutsidePointer: options2.closeOnOutsidePointer !== false,
-      preventOutsidePointerDefault: options2.preventOutsidePointerDefault !== false,
-      restoreFocus: options2.restoreFocus !== false,
-      previousFocus: document.activeElement,
-      focusTimer: 0
-    };
-    layers.push(layer);
-    if (layers.length === 1) syncListeners();
-    var active = true;
-    return function unregisterLayer(settings) {
-      if (!active) return;
-      active = false;
-      var index = layers.indexOf(layer);
-      if (index !== -1) layers.splice(index, 1);
-      if (!layers.length) syncListeners();
-      if (layer.focusTimer) {
-        clearTimeout(layer.focusTimer);
-        layer.focusTimer = 0;
-      }
-      if (layer.restoreFocus && (!settings || settings.restoreFocus !== false)) {
-        if (!focus(layer.trigger)) focus(layer.previousFocus);
-      }
-    };
-  }
-
-  // src/ui/overlay/anchor.js
-  function tokenPx(surface, name) {
-    var value = parseFloat(getComputedStyle(surface).getPropertyValue(name));
-    return Number.isFinite(value) ? value : 0;
-  }
-  function viewportRect() {
-    var viewport2 = window.visualViewport;
-    return {
-      left: viewport2 ? viewport2.offsetLeft : 0,
-      top: viewport2 ? viewport2.offsetTop : 0,
-      width: viewport2 ? viewport2.width : window.innerWidth,
-      height: viewport2 ? viewport2.height : window.innerHeight
-    };
-  }
-  function clampToViewport(value, min, max) {
-    if (max < min) return min;
-    return Math.min(max, Math.max(min, value));
-  }
-  function anchorSurface(trigger, surface, options2) {
-    var _a2, _b;
-    options2 = options2 || {};
-    var contextElement = trigger && trigger.contextElement;
-    var observedTrigger = contextElement || trigger;
-    var virtual = !!contextElement || !(trigger instanceof Element);
-    var placement = options2.placement || "bottom-end", disposed = false, frame = 0, updating = false;
-    var lastLeft = null, lastTop = null;
-    function updateNow() {
-      frame = 0;
-      if (disposed || !surface.isConnected || (virtual ? contextElement && !contextElement.isConnected : !trigger.isConnected)) return;
-      updating = true;
-      var viewport2 = viewportRect();
-      surface.style.setProperty("--overlay-viewport-width", viewport2.width + "px");
-      surface.style.setProperty("--overlay-viewport-height", viewport2.height + "px");
-      var anchor = trigger.getBoundingClientRect(), box = surface.getBoundingClientRect();
-      if (!anchor.width && !anchor.height && !anchor.left && !anchor.top && lastLeft !== null) {
-        updating = false;
-        return;
-      }
-      var edge = tokenPx(surface, "--surface-edge"), gap = tokenPx(surface, "--surface-gap");
-      var parts = placement.split("-"), side = parts[0], align = parts[1] || "center";
-      var left, top;
-      if (side === "center") {
-        left = viewport2.left + (viewport2.width - box.width) / 2;
-        top = viewport2.top + (viewport2.height - box.height) / 2;
-      } else {
-        var vertical = side === "top" || side === "bottom";
-        var before = vertical ? anchor.top - viewport2.top : anchor.left - viewport2.left;
-        var after = vertical ? viewport2.top + viewport2.height - anchor.bottom : viewport2.left + viewport2.width - anchor.right;
-        var mainSize = vertical ? box.height : box.width;
-        var preferredSpace = side === "top" || side === "left" ? before : after;
-        var alternateSpace = side === "top" || side === "left" ? after : before;
-        if (preferredSpace < mainSize + gap + edge && alternateSpace > preferredSpace) {
-          side = side === "top" ? "bottom" : side === "bottom" ? "top" : side === "left" ? "right" : "left";
-        }
-        if (side === "top" || side === "bottom") {
-          top = side === "bottom" ? anchor.bottom + gap : anchor.top - box.height - gap;
-          left = align === "start" ? anchor.left : align === "end" ? anchor.right - box.width : anchor.left + (anchor.width - box.width) / 2;
-        } else {
-          left = side === "right" ? anchor.right + gap : anchor.left - box.width - gap;
-          top = align === "start" ? anchor.top : align === "end" ? anchor.bottom - box.height : anchor.top + (anchor.height - box.height) / 2;
-        }
-      }
-      left = clampToViewport(left, viewport2.left + edge, viewport2.left + viewport2.width - edge - box.width);
-      top = clampToViewport(top, viewport2.top + edge, viewport2.top + viewport2.height - edge - box.height);
-      if (left !== lastLeft) surface.style.left = left + "px";
-      if (top !== lastTop) surface.style.top = top + "px";
-      lastLeft = left;
-      lastTop = top;
-      surface.dataset.placement = side === "center" ? "center" : side + "-" + align;
-      updating = false;
-    }
-    function update() {
-      if (!disposed && !frame) frame = requestAnimationFrame(updateNow);
-    }
-    window.addEventListener("resize", update, { passive: true });
-    (_a2 = window.visualViewport) == null ? void 0 : _a2.addEventListener("resize", update, { passive: true });
-    (_b = window.visualViewport) == null ? void 0 : _b.addEventListener("scroll", update, { passive: true });
-    var resizeObserver = typeof ResizeObserver === "function" ? new ResizeObserver(function() {
-      if (!updating) update();
-    }) : null;
-    if (!virtual || contextElement) resizeObserver == null ? void 0 : resizeObserver.observe(observedTrigger);
-    resizeObserver == null ? void 0 : resizeObserver.observe(surface);
-    var mutationObserver = typeof MutationObserver === "function" ? new MutationObserver(update) : null;
-    mutationObserver == null ? void 0 : mutationObserver.observe(surface, { childList: true, subtree: true, characterData: true });
-    updateNow();
-    return { update, dispose: function() {
-      var _a3, _b2;
-      disposed = true;
-      if (frame) cancelAnimationFrame(frame);
-      window.removeEventListener("resize", update);
-      (_a3 = window.visualViewport) == null ? void 0 : _a3.removeEventListener("resize", update);
-      (_b2 = window.visualViewport) == null ? void 0 : _b2.removeEventListener("scroll", update);
-      resizeObserver == null ? void 0 : resizeObserver.disconnect();
-      mutationObserver == null ? void 0 : mutationObserver.disconnect();
-    } };
-  }
-  function openAnchoredSurface(options2) {
-    var surface = options2.surface;
-    var anchor = options2.anchor;
-    setSurfaceOrigin(surface, anchor.getBoundingClientRect());
-    var position = anchorSurface(anchor, surface, { placement: options2.placement });
-    var unregister = registerLayer({
-      element: surface,
-      trigger: options2.trigger,
-      restoreFocus: options2.restoreFocus,
-      closeOnOutsidePointer: options2.closeOnOutsidePointer,
-      preventOutsidePointerDefault: options2.preventOutsidePointerDefault,
-      onClose: options2.onClose
-    });
-    return {
-      update: position.update,
-      dispose: function() {
-        position.dispose();
-        unregister({ restoreFocus: false });
-        surface.classList.remove("visible");
-      }
-    };
-  }
-
-  // src/ui/node-teardown.js
-  function teardownNode(id) {
-    var node = nodes[id];
-    if (!node) return;
-    disposeNodeContent(node);
-    if (node.el && node.el.parentNode) node.el.parentNode.removeChild(node.el);
-    removeMarks(readerMain, id);
-    removeThreadItem(id);
-    var parent = nodes[node.parent_id];
-    if (parent && parent.bodyEl) removeMarks(parent.bodyEl, id);
-    unregisterNode(id);
-  }
-
-  // src/ui/ask-followups.js
-  function defaultAskHooks() {
-    return {
-      post: function() {
-        return Promise.resolve({ ok: true });
-      }
-    };
-  }
-  var askLifecycle = createModuleLifecycle({ defaults: defaultAskHooks });
-  function registerAskHooks(hooks) {
-    askLifecycle.register(hooks);
-  }
-  function initAskFollowups() {
-    disposeAskFollowupResources(false);
-    var askScope = askLifecycle.beginInit();
-    askScope.listen(document, "mouseup", function(e) {
-      if (inAsk(e)) return;
-      askScope.timeout(maybeShowAsk, 0);
-    });
-    askScope.listen(askGo, "click", function(e) {
-      submitAsk(null, motionSourceFromEvent(e));
-    });
-    askScope.listen(document.getElementById("ask-lenses"), "click", function(e) {
-      var b = e.target.closest ? e.target.closest(".lens") : null;
-      if (b) submitAsk(b.getAttribute("data-lens"), motionSourceFromEvent(e));
-    });
-    askScope.listen(askText, "input", function() {
-      autoGrowEl(askText, 110);
-    });
-    askScope.listen(askText, "keydown", onAskTextKeydown);
-    askScope.listen(ask, "transitionend", function(e) {
-      if (e.target === ask && askPosition) askPosition.update();
-    });
-    askScope.listen(composerText, "input", function() {
-      autoGrowComposer();
-      updateComposerState();
-    });
-    askScope.listen(composerText, "keydown", function(e) {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        submitFollowup("keyboard");
-      }
-    });
-    askScope.listen(composerSend, "click", function(e) {
-      submitFollowup(motionSourceFromEvent(e));
-    });
-    askScope.listen(readerMain, "wheel", interruptScrollAnimation, { passive: true });
-    askScope.listen(readerMain, "touchstart", interruptScrollAnimation, { passive: true });
-    askScope.listen(readerMain, "pointerdown", interruptScrollAnimation, { passive: true });
-    askScope.listen(readerMain, "scroll", function() {
-      if (performance.now() > scrollAnimIgnoreUntil) cancelScrollAnimation();
-    }, { passive: true });
-    askScope.listen(document, "keydown", interruptScrollAnimation);
-    return disposeAskFollowups;
-  }
-  function inAsk(e) {
-    return e.target && e.target.closest && e.target.closest("#ask");
-  }
-  var askPosition = null;
-  var askTabOwner = null;
-  var askOwnerCleanup = null;
-  function selectionOwner(dc) {
-    return dc && dc.closest && dc.closest(".node") || readerMain;
-  }
-  function onAskOwnerKeydown(e) {
-    if (e.key !== "Tab" || e.shiftKey || !ask.classList.contains("visible")) return;
-    var active = document.activeElement;
-    if (active !== document.body && active !== askTabOwner && !askTabOwner.contains(active)) return;
-    e.preventDefault();
-    askText.focus();
-  }
-  function focusAskOwner(owner) {
-    if (!owner || !owner.isConnected) return;
-    if (!owner.hasAttribute("tabindex")) owner.setAttribute("tabindex", "-1");
-    try {
-      owner.focus({ preventScroll: true });
-    } catch (e) {
-      owner.focus();
-    }
-  }
-  function maybeShowAsk() {
-    var sel = window.getSelection();
-    if (!sel || sel.isCollapsed || !sel.toString().trim()) return;
-    var anchor = sel.anchorNode && sel.anchorNode.nodeType === 3 ? sel.anchorNode.parentNode : sel.anchorNode;
-    var dc = anchor && anchor.closest ? anchor.closest(".doc-content") : null;
-    if (!dc) return;
-    if (dc.classList.contains("rh-pdf")) return;
-    var parentId = dc.dataset.nodeId;
-    if (!parentId || !nodes[parentId] || nodes[parentId].status === "pending") return;
-    if (closed) {
-      flashHint(frozen ? "This is a read-only snapshot \u2014 asking needs the live Rabbithole." : "Session ended \u2014 reopen this Rabbithole from your terminal to keep asking.");
-      return;
-    }
-    var range = sel.getRangeAt(0);
-    if (!dc.contains(range.startContainer) || !dc.contains(range.endContainer)) return;
-    var startOff = charOffset(dc, range.startContainer, range.startOffset);
-    var endOff = charOffset(dc, range.endContainer, range.endOffset);
-    if (endOff <= startOff) return;
-    pendingAsk = {
-      parentId,
-      container: dc,
-      selectedText: sel.toString().trim(),
-      startOff,
-      endOff,
-      range: range.cloneRange()
-    };
-    paintAskHighlight(pendingAsk.range);
-    askText.value = "";
-    askText.placeholder = "Ask about this\u2026 \u21B5 = Explain";
-    ask.classList.add("visible");
-    var owner = selectionOwner(dc);
-    var virtualAnchor = { getBoundingClientRect: function() {
-      return pendingAsk.range.getBoundingClientRect();
-    }, contextElement: dc };
-    askTabOwner = owner;
-    askOwnerCleanup = askLifecycle.scope ? askLifecycle.scope.listen(document, "keydown", onAskOwnerKeydown) : function() {
-      document.removeEventListener("keydown", onAskOwnerKeydown);
-    };
-    openAskSurface(virtualAnchor, owner);
-  }
-  var pendingAsk = null;
-  function openAskSurface(anchor, owner) {
-    askPosition = openAnchoredSurface({
-      surface: ask,
-      anchor,
-      placement: "bottom-start",
-      restoreFocus: false,
-      preventOutsidePointerDefault: false,
-      onClose: function(reason) {
-        var escapeOwner = reason === "escape" ? owner : null;
-        var keepRange = reason === "escape" && pendingAsk ? pendingAsk.range : null;
-        hideAsk();
-        if (escapeOwner) focusAskOwner(escapeOwner);
-        restoreSelectionRange(keepRange);
-      }
-    });
-    autoGrowEl(askText, 110);
-    askText.focus({ preventScroll: true });
-  }
-  function restoreSelectionRange(range) {
-    if (!range) return;
-    try {
-      var sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(range);
-    } catch (e) {
-    }
-  }
-  function hideAsk() {
-    if (askPosition) {
-      askPosition.dispose();
-      askPosition = null;
-    }
-    if (askOwnerCleanup) {
-      var cleanup = askOwnerCleanup;
-      askOwnerCleanup = null;
-      cleanup();
-    }
-    askTabOwner = null;
-    ask.classList.remove("visible");
-    pendingAsk = null;
-    clearAskHighlight();
-  }
-  function disposeAskFollowups() {
-    disposeAskFollowupResources(true);
-  }
-  function disposeAskFollowupResources(resetHooks) {
-    hideAsk();
-    cancelScrollAnimation();
-    askLifecycle.dispose(resetHooks);
-    pendingAsk = null;
-    askTabOwner = null;
-    askOwnerCleanup = null;
-    scrollAnimId = 0;
-    scrollAnimIgnoreUntil = 0;
-    askText.value = "";
-    composerText.value = "";
-  }
-  function paintAskHighlight(range) {
-    try {
-      if (window.Highlight && window.CSS && CSS.highlights) CSS.highlights.set("rh-ask", new Highlight(range));
-    } catch (e) {
-    }
-  }
-  function clearAskHighlight() {
-    try {
-      if (window.CSS && CSS.highlights) CSS.highlights.delete("rh-ask");
-    } catch (e) {
-    }
-  }
-  var LENS_KEYS = { "1": "explain", "2": "eli5", "3": "example", "4": "deeper" };
-  function onAskTextKeydown(e) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      submitAsk(null, "keyboard");
-    } else if (askText.value === "" && !e.metaKey && !e.ctrlKey && !e.altKey && LENS_KEYS[e.key]) {
-      e.preventDefault();
-      submitAsk(LENS_KEYS[e.key], "keyboard");
-    }
-  }
-  function retirePdfConversionAction(parent) {
-    var _a2, _b, _c;
-    (_b = (_a2 = parent == null ? void 0 : parent.bodyEl) == null ? void 0 : _a2.querySelector(".rh-pdf-convert")) == null ? void 0 : _b.remove();
-    if (mode === "reader") (_c = readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"] .rh-pdf-convert')) == null ? void 0 : _c.remove();
-  }
-  function submitAsk(lensKey, source2) {
-    if (!pendingAsk || closed) return;
-    var parent = nodes[pendingAsk.parentId];
-    if (!parent) {
-      hideAsk();
-      return;
-    }
-    var lens = lensKey && LENSES[lensKey] ? lensKey : null;
-    var question = lens ? LENSES[lens].q : askText.value.trim();
-    var requestId = uuid(), childId = uuid();
-    var pos = placeChild2(parent, BRANCH_SELECTION);
-    var anchor = { offset_start: pendingAsk.startOff, offset_end: pendingAsk.endOff };
-    if (pendingAsk.pdfAnchor) anchor.pdf = pendingAsk.pdfAnchor;
-    var node = {
-      id: childId,
-      parent_id: parent.id,
-      title: lens ? lensLabel2(lens) : question ? truncate2(question, 48) : "\u2026",
-      html: "",
-      md: "",
-      base_url: parent.base_url || null,
-      base_url_source: parent.base_url ? "inherited" : null,
-      read: false,
-      origin: { selected_text: pendingAsk.selectedText, question, lens, anchor, branch_type: BRANCH_SELECTION },
-      x: pos.x,
-      y: pos.y,
-      w: DEFAULT_CHILD.w,
-      h: DEFAULT_CHILD.h,
-      font_scale: 1,
-      collapsed: false,
-      status: "pending",
-      _order: nextOrder(),
-      _startTs: Date.now()
-    };
-    registerNode(node);
-    retirePdfConversionAction(parent);
-    if (canvasBuilt) {
-      createNodeEl(node, true);
-      renderVisibility();
-      drawEdges();
-    }
-    if (pendingAsk.pdfAnchor) {
-      if (mode === "reader") mountPdfRectMark(readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"]'), anchor, childId, "rh-pdf-mark mark-pending");
-      if (parent.bodyEl) mountPdfRectMark(parent.bodyEl.querySelector(".doc-content"), anchor, childId, "rh-pdf-mark mark-pending");
-      scheduleEdges();
-    } else if (mode === "reader") {
-      var rdc = readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"]');
-      wrapInContainer(rdc, anchor, childId, "hl mark-pending");
-      if (currentNodeId === parent.id) renderSidebar();
-    }
-    if (parent.bodyEl) {
-      wrapInContainer(parent.bodyEl.querySelector(".doc-content"), anchor, childId, "hl mark-pending");
-      scheduleEdges();
-    }
-    var sel = window.getSelection();
-    if (sel) sel.removeAllRanges();
-    hideAsk();
-    askLifecycle.hooks.post({
-      type: "branch_request",
-      request_id: requestId,
-      node_id: childId,
-      parent_id: parent.id,
-      selected_text: node.origin.selected_text,
-      question,
-      lens,
-      anchor,
-      branch_type: BRANCH_SELECTION,
-      position: { x: node.x, y: node.y },
-      size: { w: node.w, h: node.h }
-    }).then(function(res) {
-      if (!res || !res.ok) rollbackBranch(node);
-    });
-    revealNode(node, source2);
-    refreshAmbient();
-  }
-  function updateComposerState() {
-    var _a2, _b;
-    var current = nodes[currentNodeId];
-    applyComposerState(
-      { text: composerText, send: composerSend, wrap: composerInner },
-      { phase: sessionPhase(), pending: !current || current.status === "pending" || !!((_b = (_a2 = current.extensions) == null ? void 0 : _a2.pdf) == null ? void 0 : _b.converting) },
-      {
-        frozen: "Read-only snapshot \u2014 open the live Rabbithole to keep asking",
-        closed: "Session ended \u2014 reopen this Rabbithole from your terminal; saved questions are answered there",
-        pending: "This answer is still being written\u2026",
-        away: "The agent is away \u2014 questions are saved and answered when it returns\u2026",
-        live: "Ask a follow-up about this document\u2026"
-      }
-    );
-  }
-  function autoGrowComposer() {
-    autoGrowEl(composerText, 140);
-  }
-  function sendFollowup(parent, question, lens, synthesis) {
-    var _a2, _b;
-    if ((_b = (_a2 = parent == null ? void 0 : parent.extensions) == null ? void 0 : _a2.pdf) == null ? void 0 : _b.converting) return null;
-    var requestId = uuid(), childId = uuid();
-    var pos = placeChild2(parent, BRANCH_FOLLOWUP);
-    var node = {
-      id: childId,
-      parent_id: parent.id,
-      title: synthesis ? "Synthesis" : lens ? lensLabel2(lens) : truncate2(question, 48),
-      html: "",
-      md: "",
-      base_url: parent.base_url || null,
-      base_url_source: parent.base_url ? "inherited" : null,
-      read: false,
-      origin: { selected_text: "", question, lens, synthesis: !!synthesis, anchor: null, branch_type: BRANCH_FOLLOWUP },
-      x: pos.x,
-      y: pos.y,
-      w: DEFAULT_CHILD.w,
-      h: DEFAULT_CHILD.h,
-      font_scale: 1,
-      collapsed: false,
-      status: "pending",
-      _order: nextOrder(),
-      _startTs: Date.now()
-    };
-    registerNode(node);
-    retirePdfConversionAction(parent);
-    if (canvasBuilt) {
-      createNodeEl(node, true);
-      renderVisibility();
-      drawEdges();
-    }
-    if (currentNodeId === parent.id && mode === "reader") {
-      if (synthesis) renderSidebar();
-      else {
-        var t = ensureThread();
-        if (t) t.appendChild(buildThreadItem(node));
-      }
-    }
-    var payload = {
-      type: "branch_request",
-      request_id: requestId,
-      node_id: childId,
-      parent_id: parent.id,
-      selected_text: "",
-      question,
-      lens,
-      anchor: null,
-      branch_type: BRANCH_FOLLOWUP,
-      position: { x: node.x, y: node.y },
-      size: { w: node.w, h: node.h }
-    };
-    if (synthesis) payload.synthesis = true;
-    askLifecycle.hooks.post(payload).then(function(res) {
-      if (!res || !res.ok) rollbackBranch(node);
-    });
-    refreshAmbient();
-    return node;
-  }
-  var scrollAnimId = 0;
-  var scrollAnimIgnoreUntil = 0;
-  var scrollFrameCleanup = null;
-  function cancelScrollAnimation() {
-    scrollAnimId++;
-    clearScrollFrame();
-  }
-  function clearScrollFrame() {
-    if (!scrollFrameCleanup) return;
-    var cleanup = scrollFrameCleanup;
-    scrollFrameCleanup = null;
-    cleanup();
-  }
-  function scheduleScrollFrame(callback) {
-    clearScrollFrame();
-    var id = nextFrame(run);
-    var cancel = function() {
-      cancelFrame(id);
-    };
-    scrollFrameCleanup = askLifecycle.scope ? askLifecycle.scope.addCleanup(cancel) : cancel;
-    function run(timestamp) {
-      var cleanup = scrollFrameCleanup;
-      scrollFrameCleanup = null;
-      if (cleanup) cleanup();
-      callback(timestamp);
-    }
-  }
-  function setAnimatedScrollTop(el, value) {
-    scrollAnimIgnoreUntil = performance.now() + 80;
-    el.scrollTop = value;
-  }
-  function animateScroll(el, target, source2) {
-    var myId = ++scrollAnimId;
-    if (document.hidden || shouldReduceMotion() || source2 !== "pointer") {
-      el.scrollTop = target;
-      return;
-    }
-    var s = el.scrollTop, t0 = performance.now(), D2 = 240;
-    function step(t) {
-      if (myId !== scrollAnimId) return;
-      var p = Math.min(1, (t - t0) / D2), k = easeOutMotion(p);
-      setAnimatedScrollTop(el, s + (target - s) * k);
-      if (p < 1) scheduleScrollFrame(step);
-    }
-    scheduleScrollFrame(step);
-  }
-  function interruptScrollAnimation() {
-    cancelScrollAnimation();
-  }
-  function submitFollowup(source2) {
-    var _a2, _b;
-    if (closed) {
-      flashHint(frozen ? "This is a read-only snapshot." : "Session ended \u2014 reopen this Rabbithole from your terminal to continue.");
-      return;
-    }
-    var parent = nodes[currentNodeId];
-    if (!parent || parent.status === "pending" || ((_b = (_a2 = parent.extensions) == null ? void 0 : _a2.pdf) == null ? void 0 : _b.converting)) return;
-    var question = composerText.value.trim();
-    if (!question) return;
-    sendFollowup(parent, question, null);
-    composerText.value = "";
-    autoGrowComposer();
-    updateComposerState();
-    animateScroll(readerMain, readerMain.scrollHeight, source2);
-  }
-  function rollbackBranch(node) {
-    var live = nodes[node.id];
-    if (!live || live.status === "answered") return;
-    teardownNode(node.id);
-    if (canvasBuilt) drawEdges();
-    if (mode === "reader" && currentNodeId === node.parent_id) renderSidebar();
-    refreshAmbient();
-    flashHint("Couldn't reach the agent \u2014 that ask was undone.");
-  }
-  function placeChild2(parent, branchType) {
-    return placeChild(parent, branchType, {
-      childrenOf,
-      effH,
-      sort: nodeOrder2,
-      childSize: DEFAULT_CHILD
-    });
-  }
-
-  // src/ui/primitives/dialog.js
-  var FOCUSABLE = [
-    "a[href]",
-    "button:not([disabled])",
-    "textarea:not([disabled])",
-    "input:not([disabled])",
-    "select:not([disabled])",
-    "[tabindex]:not([tabindex='-1'])"
-  ].join(",");
-  function focus2(element) {
-    if (!element || !element.isConnected || typeof element.focus !== "function") return false;
-    try {
-      element.focus({ preventScroll: true });
-    } catch (error) {
-      try {
-        element.focus();
-      } catch (_error) {
-        return false;
-      }
-    }
-    return true;
-  }
-  function visibleFocusables(dialog) {
-    return Array.prototype.slice.call(dialog.querySelectorAll(FOCUSABLE)).filter(function(element) {
-      return element.offsetParent !== null || element === document.activeElement;
-    });
-  }
-  function resolveInitialFocus(dialog, requested) {
-    var explicit = typeof requested === "string" ? dialog.querySelector(requested) : requested;
-    return (explicit == null ? void 0 : explicit.isConnected) ? explicit : visibleFocusables(dialog)[0] || dialog;
-  }
-  function openDialog(options2) {
-    options2 = options2 || {};
-    var dialog = options2.dialog || options2.element;
-    var backdrop = options2.backdrop || dialog;
-    if (!dialog || !backdrop) throw new Error("openDialog requires a dialog element");
-    var labelledby = options2.labelledby || dialog.getAttribute("aria-labelledby");
-    var label = options2.label || dialog.getAttribute("aria-label");
-    if (!labelledby && !label) throw new Error("openDialog requires label or labelledby");
-    if (labelledby && !labelledby.split(/\s+/).every(function(id) {
-      return document.getElementById(id);
-    })) {
-      throw new Error("openDialog labelledby must reference existing elements");
-    }
-    dialog.setAttribute("role", "dialog");
-    dialog.setAttribute("aria-modal", "true");
-    if (labelledby) dialog.setAttribute("aria-labelledby", labelledby);
-    else dialog.setAttribute("aria-label", label);
-    if (!dialog.hasAttribute("tabindex")) dialog.setAttribute("tabindex", "-1");
-    backdrop.hidden = false;
-    var closed2 = false;
-    var initialTimer = null;
-    function onKeydown2(event) {
-      if (event.key !== "Tab") return;
-      var items = visibleFocusables(dialog);
-      if (!items.length) {
-        event.preventDefault();
-        focus2(dialog);
-        return;
-      }
-      var first = items[0], last = items[items.length - 1];
-      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
-        event.preventDefault();
-        focus2(last);
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        focus2(first);
-      }
-    }
-    dialog.addEventListener("keydown", onKeydown2);
-    var unregister = registerLayer({
-      element: dialog,
-      trigger: options2.trigger,
-      closeOnEscape: options2.closeOnEscape,
-      closeOnOutsidePointer: options2.closeOnBackdrop,
-      restoreFocus: options2.restoreFocus,
-      onClose: function(reason) {
-        close2(reason === "outside-pointer" ? "backdrop" : reason);
-      }
-    });
-    function close2(reason, settings) {
-      var _a2;
-      if (closed2) return;
-      closed2 = true;
-      if (initialTimer !== null) clearTimeout(initialTimer);
-      dialog.removeEventListener("keydown", onKeydown2);
-      backdrop.hidden = true;
-      (_a2 = options2.onClose) == null ? void 0 : _a2.call(options2, reason || "programmatic");
-      unregister(settings);
-    }
-    function dispose(settings) {
-      close2("programmatic", settings);
-      if (options2.removeOnDispose) backdrop.remove();
-    }
-    initialTimer = setTimeout(function() {
-      initialTimer = null;
-      if (!closed2) focus2(resolveInitialFocus(dialog, options2.initialFocus));
-    }, 0);
-    return { close: close2, dispose };
-  }
-
-  // src/ui/image-ux.js
-  var imageResizeMemory = {};
-  var activeLightbox = null;
-  var activeImageResizeCleanup = null;
-  var IMAGE_MIN_WIDTH = 120;
-  var LIGHTBOX_MIN_ZOOM = 0.25;
-  var LIGHTBOX_MAX_ZOOM = 6;
-  function imageSurfaceScale(dc) {
-    if (!dc || !dc.offsetWidth) return 1;
-    var rect = dc.getBoundingClientRect();
-    return rect.width ? rect.width / dc.offsetWidth : 1;
-  }
-  function imageMemoryKey(dc, img, index, surfaceKey) {
-    var nodeId = dc && dc.dataset && dc.dataset.nodeId || "doc";
-    return String(surfaceKey || "surface") + ":" + nodeId + ":" + index + ":" + (img.getAttribute("src") || "");
-  }
-  function clampImageWidth(dc, value) {
-    var max = Math.max(IMAGE_MIN_WIDTH, dc ? dc.clientWidth : IMAGE_MIN_WIDTH);
-    return Math.max(IMAGE_MIN_WIDTH, Math.min(max, value));
-  }
-  function nearestImageScrollContainer(el) {
-    var cur = el ? el.parentElement : null;
-    while (cur && cur !== document.body && cur !== document.documentElement) {
-      var style = window.getComputedStyle(cur);
-      var oy = style.overflowY;
-      if ((oy === "auto" || oy === "scroll" || oy === "overlay") && cur.scrollHeight > cur.clientHeight + 1) return cur;
-      cur = cur.parentElement;
-    }
-    return document.scrollingElement || document.documentElement;
-  }
-  function imageScrollScale(scroller) {
-    if (!scroller || !scroller.offsetHeight) return 1;
-    var rect = scroller.getBoundingClientRect();
-    return rect.height ? rect.height / scroller.offsetHeight : 1;
-  }
-  function keepImageHandleAnchored(scroller, beforeRect, afterRect) {
-    if (!scroller || !beforeRect || !afterRect) return;
-    var delta = afterRect.bottom - beforeRect.bottom;
-    if (!delta) return;
-    scroller.scrollTop += delta / imageScrollScale(scroller);
-  }
-  function applyImageWidth(frame, width) {
-    frame.style.width = Math.round(width) + "px";
-    frame.dataset.rhResized = "1";
-  }
-  function resetImageWidth(frame, key) {
-    frame.style.width = "";
-    delete frame.dataset.rhResized;
-    if (key) delete imageResizeMemory[key];
-  }
-  function beginImageResize(e, dc, frame, key) {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-    hideAsk();
-    var scale = imageSurfaceScale(dc);
-    var startX = e.clientX;
-    var startW = frame.getBoundingClientRect().width / scale;
-    var scroller = nearestImageScrollContainer(frame);
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch (_e) {
-    }
-    function move(ev) {
-      ev.preventDefault();
-      ev.stopPropagation();
-      var next = clampImageWidth(dc, startW + (ev.clientX - startX) / scale);
-      var before = frame.getBoundingClientRect();
-      applyImageWidth(frame, next);
-      keepImageHandleAnchored(scroller, before, frame.getBoundingClientRect());
-      imageResizeMemory[key] = next;
-      scheduleEdges();
-    }
-    if (activeImageResizeCleanup) activeImageResizeCleanup();
-    function done(ev) {
-      if (ev) ev.stopPropagation();
-      window.removeEventListener("pointermove", move, true);
-      window.removeEventListener("pointerup", done, true);
-      window.removeEventListener("pointercancel", done, true);
-      try {
-        e.currentTarget.releasePointerCapture(e.pointerId);
-      } catch (_e) {
-      }
-      if (activeImageResizeCleanup === done) activeImageResizeCleanup = null;
-      scheduleEdges();
-    }
-    activeImageResizeCleanup = done;
-    window.addEventListener("pointermove", move, true);
-    window.addEventListener("pointerup", done, true);
-    window.addEventListener("pointercancel", done, true);
-  }
-  function setLightboxTransform(img, state) {
-    img.style.setProperty("--rh-zoom", state.scale);
-    img.style.setProperty("--rh-pan-x", Math.round(state.x) + "px");
-    img.style.setProperty("--rh-pan-y", Math.round(state.y) + "px");
-  }
-  function clampLightboxZoom(value) {
-    return Math.max(LIGHTBOX_MIN_ZOOM, Math.min(LIGHTBOX_MAX_ZOOM, value));
-  }
-  function pointerDistance(a, b) {
-    var dx = a.clientX - b.clientX;
-    var dy = a.clientY - b.clientY;
-    return Math.sqrt(dx * dx + dy * dy);
-  }
-  function openImageLightbox(src, alt, trigger) {
-    closeImageLightbox();
-    var overlay = document.createElement("div");
-    overlay.className = "rh-lightbox";
-    overlay.hidden = true;
-    var dialog = document.createElement("div");
-    dialog.className = "rh-lightbox-dialog";
-    var img = document.createElement("img");
-    img.className = "rh-lightbox-img";
-    img.src = src;
-    img.alt = alt || "";
-    img.draggable = false;
-    dialog.appendChild(img);
-    overlay.appendChild(dialog);
-    document.body.appendChild(overlay);
-    var state = { scale: 1, x: 0, y: 0 };
-    var drag = null;
-    var pointers = {};
-    var pinch = null;
-    setLightboxTransform(img, state);
-    activeLightbox = openDialog({
-      dialog,
-      backdrop: overlay,
-      label: alt || "Image preview",
-      initialFocus: dialog,
-      trigger,
-      removeOnDispose: true,
-      onClose: function() {
-        overlay.remove();
-        activeLightbox = null;
-      }
-    });
-    function clearPointer(id) {
-      delete pointers[id];
-      var keys = Object.keys(pointers);
-      if (keys.length < 2) pinch = null;
-      if (!keys.length) drag = null;
-    }
-    overlay.addEventListener("wheel", function(e) {
-      e.preventDefault();
-      e.stopPropagation();
-      var next = clampLightboxZoom(state.scale * (e.deltaY < 0 ? 1.12 : 0.88));
-      state.scale = next;
-      if (state.scale <= 1) {
-        state.x = 0;
-        state.y = 0;
-      }
-      setLightboxTransform(img, state);
-    }, { passive: false });
-    overlay.addEventListener("pointerdown", function(e) {
-      e.preventDefault();
-      e.stopPropagation();
-      pointers[e.pointerId] = { clientX: e.clientX, clientY: e.clientY };
-      try {
-        overlay.setPointerCapture(e.pointerId);
-      } catch (_e) {
-      }
-      var ids = Object.keys(pointers);
-      if (ids.length >= 2) {
-        pinch = { dist: pointerDistance(pointers[ids[0]], pointers[ids[1]]), scale: state.scale };
-        drag = null;
-      } else if (e.target === img && state.scale > 1) {
-        drag = { x: e.clientX, y: e.clientY, ox: state.x, oy: state.y };
-      }
-    });
-    overlay.addEventListener("pointermove", function(e) {
-      if (!pointers[e.pointerId]) return;
-      e.preventDefault();
-      e.stopPropagation();
-      pointers[e.pointerId] = { clientX: e.clientX, clientY: e.clientY };
-      var ids = Object.keys(pointers);
-      if (pinch && ids.length >= 2) {
-        var dist = pointerDistance(pointers[ids[0]], pointers[ids[1]]);
-        if (pinch.dist > 0) state.scale = clampLightboxZoom(pinch.scale * dist / pinch.dist);
-        if (state.scale <= 1) {
-          state.x = 0;
-          state.y = 0;
-        }
-        setLightboxTransform(img, state);
-      } else if (drag && state.scale > 1) {
-        state.x = drag.ox + e.clientX - drag.x;
-        state.y = drag.oy + e.clientY - drag.y;
-        setLightboxTransform(img, state);
-      }
-    });
-    overlay.addEventListener("pointerup", function(e) {
-      clearPointer(e.pointerId);
-    });
-    overlay.addEventListener("pointercancel", function(e) {
-      clearPointer(e.pointerId);
-    });
-  }
-  function closeImageLightbox() {
-    if (!activeLightbox) return;
-    var dialog = activeLightbox;
-    activeLightbox = null;
-    dialog.dispose();
-  }
-  function disposeImageUx() {
-    if (activeImageResizeCleanup) activeImageResizeCleanup();
-    closeImageLightbox();
-    imageResizeMemory = {};
-  }
-  function mountDocImages(dc, node, base, surfaceKey) {
-    if (!dc || !dc.querySelectorAll) return;
-    var imgs = dc.querySelectorAll("img");
-    for (var i2 = 0; i2 < imgs.length; i2++) {
-      var img = imgs[i2];
-      if (img.dataset.rhImgReady === "1") continue;
-      if (img.closest(".viz, .viz-mounted")) continue;
-      var frame = img.parentNode && img.parentNode.classList && img.parentNode.classList.contains("rh-img-frame") ? img.parentNode : null;
-      if (!frame) {
-        frame = document.createElement("span");
-        frame.className = "rh-img-frame";
-        img.parentNode.insertBefore(frame, img);
-        frame.appendChild(img);
-      }
-      var key = imageMemoryKey(dc, img, i2, surfaceKey || visualSurfaceKey(node, base));
-      img.dataset.rhImgReady = "1";
-      img.tabIndex = 0;
-      img.draggable = false;
-      if (imageResizeMemory[key]) applyImageWidth(frame, imageResizeMemory[key]);
-      var handle = document.createElement("button");
-      handle.type = "button";
-      handle.className = "rh-img-handle";
-      handle.setAttribute("aria-label", "Resize image");
-      handle.title = "Drag to resize \xB7 double-click to reset";
-      frame.appendChild(handle);
-      frame.addEventListener("pointerdown", function(e) {
-        e.stopPropagation();
-      });
-      img.addEventListener("click", function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        openImageLightbox(e.currentTarget.currentSrc || e.currentTarget.src, e.currentTarget.alt, e.currentTarget);
-      });
-      handle.addEventListener("pointerdown", /* @__PURE__ */ (function(f, k) {
-        return function(e) {
-          beginImageResize(e, dc, f, k);
-        };
-      })(frame, key));
-      handle.addEventListener("dblclick", /* @__PURE__ */ (function(f, k) {
-        return function(e) {
-          e.preventDefault();
-          e.stopPropagation();
-          var scroller = nearestImageScrollContainer(f);
-          var before = f.getBoundingClientRect();
-          resetImageWidth(f, k);
-          keepImageHandleAnchored(scroller, before, f.getBoundingClientRect());
-          scheduleEdges();
-        };
-      })(frame, key));
-    }
-  }
-
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/marked/lib/marked.esm.js
+  // node_modules/marked/lib/marked.esm.js
   function _getDefaults() {
     return {
       async: false,
@@ -7854,7 +5377,7 @@ ${text2}</tr>
   var parser = _Parser.parse;
   var lexer = _Lexer.lex;
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/katex/dist/katex.mjs
+  // node_modules/katex/dist/katex.mjs
   var ParseError = class _ParseError extends Error {
     // The underlying error message without any context added.
     constructor(message, token) {
@@ -22182,11 +19705,11 @@ ${text2}</tr>
     __domTree
   };
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/core.js
-  var import_core8 = __toESM(require_core(), 1);
-  var core_default = import_core8.default;
+  // node_modules/highlight.js/es/core.js
+  var import_core2 = __toESM(require_core(), 1);
+  var core_default = import_core2.default;
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/bash.js
+  // node_modules/highlight.js/es/languages/bash.js
   function bash(hljs) {
     const regex = hljs.regex;
     const VAR = {};
@@ -22580,7 +20103,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/c.js
+  // node_modules/highlight.js/es/languages/c.js
   function c(hljs) {
     const regex = hljs.regex;
     const C_LINE_COMMENT_MODE = hljs.COMMENT("//", "$", { contains: [{ begin: /\\\n/ }] });
@@ -22874,7 +20397,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/cpp.js
+  // node_modules/highlight.js/es/languages/cpp.js
   function cpp(hljs) {
     const regex = hljs.regex;
     const C_LINE_COMMENT_MODE = hljs.COMMENT("//", "$", { contains: [{ begin: /\\\n/ }] });
@@ -23417,7 +20940,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/csharp.js
+  // node_modules/highlight.js/es/languages/csharp.js
   function csharp(hljs) {
     const BUILT_IN_KEYWORDS = [
       "bool",
@@ -23817,7 +21340,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/css.js
+  // node_modules/highlight.js/es/languages/css.js
   var MODES = (hljs) => {
     return {
       IMPORTANT: {
@@ -24754,7 +22277,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/diff.js
+  // node_modules/highlight.js/es/languages/diff.js
   function diff(hljs) {
     const regex = hljs.regex;
     return {
@@ -24807,7 +22330,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/dockerfile.js
+  // node_modules/highlight.js/es/languages/dockerfile.js
   function dockerfile(hljs) {
     const KEYWORDS3 = [
       "from",
@@ -24841,7 +22364,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/go.js
+  // node_modules/highlight.js/es/languages/go.js
   function go(hljs) {
     const LITERALS3 = [
       "true",
@@ -24995,7 +22518,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/java.js
+  // node_modules/highlight.js/es/languages/java.js
   var decimalDigits = "[0-9](_*[0-9])*";
   var frac = `\\.(${decimalDigits})`;
   var hexDigits = "[0-9a-fA-F](_*[0-9a-fA-F])*";
@@ -25249,7 +22772,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/javascript.js
+  // node_modules/highlight.js/es/languages/javascript.js
   var IDENT_RE = "[A-Za-z$_][0-9A-Za-z$_]*";
   var KEYWORDS = [
     "as",
@@ -25950,7 +23473,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/json.js
+  // node_modules/highlight.js/es/languages/json.js
   function json(hljs) {
     const ATTRIBUTE = {
       className: "attr",
@@ -25990,7 +23513,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/kotlin.js
+  // node_modules/highlight.js/es/languages/kotlin.js
   var decimalDigits2 = "[0-9](_*[0-9])*";
   var frac2 = `\\.(${decimalDigits2})`;
   var hexDigits2 = "[0-9a-fA-F](_*[0-9a-fA-F])*";
@@ -26245,7 +23768,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/latex.js
+  // node_modules/highlight.js/es/languages/latex.js
   function latex(hljs) {
     const regex = hljs.regex;
     const KNOWN_CONTROL_WORDS = regex.either(...[
@@ -26516,7 +24039,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/markdown.js
+  // node_modules/highlight.js/es/languages/markdown.js
   function markdown(hljs) {
     const regex = hljs.regex;
     const INLINE_HTML = {
@@ -26748,7 +24271,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/php.js
+  // node_modules/highlight.js/es/languages/php.js
   function php(hljs) {
     const regex = hljs.regex;
     const NOT_PERL_ETC = /(?![A-Za-z0-9])(?![$])/;
@@ -27349,7 +24872,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/plaintext.js
+  // node_modules/highlight.js/es/languages/plaintext.js
   function plaintext(hljs) {
     return {
       name: "Plain text",
@@ -27361,7 +24884,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/python.js
+  // node_modules/highlight.js/es/languages/python.js
   function python(hljs) {
     const regex = hljs.regex;
     const IDENT_RE3 = /[\p{XID_Start}_]\p{XID_Continue}*/u;
@@ -27776,7 +25299,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/r.js
+  // node_modules/highlight.js/es/languages/r.js
   function r(hljs) {
     const regex = hljs.regex;
     const IDENT_RE3 = /(?:(?:[a-zA-Z]|\.[._a-zA-Z])[._a-zA-Z0-9]*)|\.(?!\d)/;
@@ -27986,7 +25509,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/ruby.js
+  // node_modules/highlight.js/es/languages/ruby.js
   function ruby(hljs) {
     const regex = hljs.regex;
     const RUBY_METHOD_RE = "([a-zA-Z_]\\w*[!?=]?|[-+~]@|<<|>>|=~|===?|<=>|[<>]=?|\\*\\*|[-/+%^&*~`|]|\\[\\]=?)";
@@ -28399,7 +25922,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/rust.js
+  // node_modules/highlight.js/es/languages/rust.js
   function rust(hljs) {
     const regex = hljs.regex;
     const RAW_IDENTIFIER = /(r#)?/;
@@ -28712,7 +26235,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/scala.js
+  // node_modules/highlight.js/es/languages/scala.js
   function scala(hljs) {
     const regex = hljs.regex;
     const ANNOTATION = {
@@ -28903,7 +26426,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/shell.js
+  // node_modules/highlight.js/es/languages/shell.js
   function shell(hljs) {
     return {
       name: "Shell Session",
@@ -28927,7 +26450,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/sql.js
+  // node_modules/highlight.js/es/languages/sql.js
   function sql(hljs) {
     const regex = hljs.regex;
     const COMMENT_MODE = hljs.COMMENT("--", "$");
@@ -29570,7 +27093,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/swift.js
+  // node_modules/highlight.js/es/languages/swift.js
   function source(re) {
     if (!re) return null;
     if (typeof re === "string") return re;
@@ -30445,7 +27968,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/typescript.js
+  // node_modules/highlight.js/es/languages/typescript.js
   var IDENT_RE2 = "[A-Za-z$_][0-9A-Za-z$_]*";
   var KEYWORDS2 = [
     "as",
@@ -31259,7 +28782,7 @@ ${text2}</tr>
     return tsLanguage;
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/xml.js
+  // node_modules/highlight.js/es/languages/xml.js
   function xml(hljs) {
     const regex = hljs.regex;
     const TAG_NAME_RE = regex.concat(/[\p{L}_]/u, regex.optional(/[\p{L}0-9_.-]*:/u), /[\p{L}0-9_.-]*/u);
@@ -31485,7 +29008,7 @@ ${text2}</tr>
     };
   }
 
-  // ../../../Users/shlokkhemani/Projects/rabbit-hole/node_modules/highlight.js/es/languages/yaml.js
+  // node_modules/highlight.js/es/languages/yaml.js
   function yaml(hljs) {
     const LITERALS3 = "true false yes no null";
     const URI_CHARACTERS = "[\\w#;/?:@&=+$,.~*'()[\\]]+";
@@ -32086,6 +29609,2578 @@ ${text2}</tr>
   }
   if (typeof window !== "undefined") {
     window.__rhMarkdownRendererSentinel = MARKDOWN_RENDERER_SENTINEL;
+  }
+
+  // src/ui/origin-provenance.js
+  function buildOriginCrop(node, surface) {
+    var _a2;
+    const name = (_a2 = node == null ? void 0 : node.origin) == null ? void 0 : _a2.crop_asset;
+    if (!name) return null;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `rh-origin-crop rh-origin-crop-${surface || "card"}`;
+    button.setAttribute("aria-label", "Open selected PDF region");
+    button.title = "Open selected PDF region";
+    const img = document.createElement("img");
+    img.src = resolveAssetUrl(name);
+    img.alt = "Selected PDF region";
+    img.draggable = false;
+    const hideIfMissing = function() {
+      if (!img.naturalWidth) button.hidden = true;
+    };
+    img.addEventListener("error", hideIfMissing, { once: true });
+    img.addEventListener("load", hideIfMissing, { once: true });
+    button.addEventListener("click", function(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      openImageLightbox(img.currentSrc || img.src, img.alt, button);
+    });
+    button.appendChild(img);
+    return button;
+  }
+
+  // src/ui/reader.js
+  function defaultReaderHooks() {
+    return {
+      hideAsk: function() {
+      },
+      updateComposerState: function() {
+      },
+      scheduleViewSave: function() {
+      },
+      setMode: function() {
+      },
+      post: function() {
+        return Promise.resolve({ ok: true });
+      },
+      mountDocImages: null,
+      persistNode: function() {
+      },
+      animateScroll: function() {
+      }
+    };
+  }
+  var readerLifecycle = createModuleLifecycle({ defaults: defaultReaderHooks });
+  function registerReaderHooks(hooks) {
+    readerLifecycle.register(hooks);
+  }
+  var breadcrumbNodes = {};
+  var sidebarNodes = {};
+  function openNode(id) {
+    if (!nodes[id]) return;
+    var transferredPosition = document.body.classList.contains("mode-canvas") ? captureContentPosition(nodes[id].bodyEl) : null;
+    var prev = nodes[currentNodeId];
+    if (prev && !document.body.classList.contains("mode-canvas")) prev._scrollTop = readerMain.scrollTop;
+    setCurrentNodeId(id);
+    setModeValue("reader");
+    document.body.classList.remove("mode-canvas");
+    readerLifecycle.hooks.hideAsk();
+    kbdMarkIdx = -1;
+    renderBreadcrumb();
+    renderReaderBody();
+    if (transferredPosition) {
+      restoreContentPosition(readerMain, transferredPosition);
+      nodes[id]._scrollTop = readerMain.scrollTop;
+    }
+    renderSidebar();
+    readerLifecycle.hooks.updateComposerState();
+    if (nodes[id].status === "answered") markRead(nodes[id]);
+    readerLifecycle.hooks.scheduleViewSave();
+  }
+  function renderBreadcrumb() {
+    var path2 = lineageNodes(currentNodeId);
+    var fragment = document.createDocumentFragment();
+    path2.forEach(function(n, i2) {
+      var crumb = breadcrumbNodes[n.id];
+      if (!crumb) {
+        crumb = document.createElement("span");
+        crumb.className = "crumb";
+        crumb.dataset.id = n.id;
+        crumb._sep = document.createElement("span");
+        crumb._sep.className = "crumb-sep";
+        crumb._sep.textContent = "\u203A";
+        breadcrumbNodes[n.id] = crumb;
+      }
+      var cur = i2 === path2.length - 1;
+      crumb.textContent = n.title || "Untitled";
+      crumb.classList.toggle("current", cur);
+      if (cur) {
+        crumb.removeAttribute("role");
+        crumb.removeAttribute("tabindex");
+        crumb.setAttribute("aria-current", "page");
+      } else {
+        crumb.setAttribute("role", "link");
+        crumb.tabIndex = 0;
+        crumb.removeAttribute("aria-current");
+      }
+      if (i2 > 0) fragment.appendChild(crumb._sep);
+      fragment.appendChild(crumb);
+    });
+    breadcrumbEl.replaceChildren(fragment);
+  }
+  function initReader() {
+    disposeReaderResources(false);
+    var readerScope = readerLifecycle.beginInit();
+    try {
+      readerScope.listen(breadcrumbEl, "click", function(e) {
+        var c2 = e.target.closest(".crumb");
+        if (!c2 || c2.classList.contains("current")) return;
+        openNode(c2.dataset.id);
+      });
+      readerScope.listen(breadcrumbEl, "keydown", function(e) {
+        if (e.key !== "Enter") return;
+        var c2 = e.target.closest && e.target.closest('.crumb[role="link"]');
+        if (!c2) return;
+        e.preventDefault();
+        openNode(c2.dataset.id);
+      });
+      readerScope.listen(readerMain, "scroll", onReaderScroll, { passive: true });
+      readerScope.listen(readerMain, "click", onMarkClick);
+      readerScope.listen(readerMain, "keydown", onMarkKeydown);
+      readerScope.listen(world, "click", onCanvasMarkClick);
+      readerScope.listen(world, "keydown", onCanvasMarkKeydown);
+      readerScope.listen(sideEl, "click", onSidebarClick);
+      readerScope.listen(sideEl, "keydown", onSidebarKeydown);
+      readerScope.listen(document.getElementById("r-textdown"), "click", function() {
+        setReaderFontScale(-0.1);
+      });
+      readerScope.listen(document.getElementById("r-textup"), "click", function() {
+        setReaderFontScale(0.1);
+      });
+      readerScope.listen(document.getElementById("r-canvas"), "click", function() {
+        readerLifecycle.hooks.setMode("canvas");
+      });
+      readerScope.listen(document.getElementById("r-done"), "click", function() {
+        if (!closed) readerLifecycle.hooks.post({ type: "done" });
+      });
+      readerScope.listen(document.getElementById("r-theme"), "click", toggleTheme);
+      readerScope.listen(document.getElementById("t-theme"), "click", toggleTheme);
+      return disposeReader;
+    } catch (error) {
+      disposeReader();
+      throw error;
+    }
+  }
+  function disposeReader() {
+    disposeReaderResources(true);
+  }
+  function disposeReaderResources(resetHooks) {
+    readerLifecycle.dispose(resetHooks);
+    breadcrumbNodes = {};
+    sidebarNodes = {};
+    kbdMarkIdx = -1;
+  }
+  function renderReaderBody() {
+    var node = nodes[currentNodeId];
+    var previous = readerMain.querySelector(".doc-content");
+    if (previous && previous._rhDispose) previous._rhDispose();
+    readerMain.innerHTML = "";
+    var col = document.createElement("div");
+    col.className = "reader-col";
+    if (node.origin && (node.origin.selected_text || node.origin.question)) {
+      var ctx = document.createElement("div");
+      ctx.className = "reader-context";
+      if (node.origin.synthesis) {
+        ctx.innerHTML = '<span class="rc-label">Synthesis</span>The journey so far, distilled';
+      } else if (node.origin.selected_text) {
+        var tail = node.origin.lens ? " \u2014 " + lensBadgeHtml(node.origin.lens) : node.origin.question ? " \u2014 " + escapeHtml(node.origin.question) : "";
+        ctx.innerHTML = '<span class="rc-label">From</span>\u201C' + escapeHtml(truncate2(node.origin.selected_text, 200)) + "\u201D" + tail + '<span class="rc-go">\u2192</span>';
+      } else {
+        ctx.innerHTML = '<span class="rc-label">Follow-up</span>' + (node.origin.lens ? lensBadgeHtml(node.origin.lens) : escapeHtml(node.origin.question || ""));
+      }
+      if (node.parent_id && nodes[node.parent_id] && !node.origin.synthesis) {
+        ctx.classList.add("linked");
+        ctx.title = "See this in its original context";
+        ctx.setAttribute("role", "link");
+        ctx.tabIndex = 0;
+        ctx.setAttribute("aria-label", "See this in its original context");
+        ctx.addEventListener("click", function(e) {
+          jumpToOrigin(node, motionSourceFromEvent(e));
+        });
+        ctx.addEventListener("keydown", function(e) {
+          if (e.key !== "Enter") return;
+          e.preventDefault();
+          jumpToOrigin(node, "keyboard");
+        });
+      }
+      col.appendChild(ctx);
+    }
+    var crop = buildOriginCrop(node, "reader");
+    if (crop) col.appendChild(crop);
+    var dc = buildDocContent(node, READER_BASE);
+    col.appendChild(dc);
+    applyChildHighlights(dc, node);
+    var fups = followupsOf(node.id);
+    if (fups.length) {
+      var thread = document.createElement("div");
+      thread.id = "thread";
+      thread.appendChild(buildThreadRule());
+      fups.forEach(function(k) {
+        thread.appendChild(buildThreadItem(k));
+      });
+      col.appendChild(thread);
+      fups.forEach(function(k) {
+        if (k.status === "answered") markRead(k);
+      });
+    }
+    readerMain.appendChild(col);
+    readerMain.scrollTop = node._scrollTop || 0;
+  }
+  function jumpToOrigin(node, source2) {
+    var parent = nodes[node.parent_id];
+    if (!parent) return;
+    openNode(parent.id);
+    var target = readerMain.querySelector('mark[data-child="' + node.id + '"]') || readerMain.querySelector('[data-turn="' + node.id + '"]');
+    if (!target) return;
+    var top = target.getBoundingClientRect().top - readerMain.getBoundingClientRect().top + readerMain.scrollTop;
+    readerLifecycle.hooks.animateScroll(readerMain, Math.max(0, top - readerMain.clientHeight * 0.38), source2);
+    if (target.tagName === "MARK") {
+      var marks = readerMain.querySelectorAll('mark[data-child="' + node.id + '"]');
+      for (var i2 = 0; i2 < marks.length; i2++) playLandingCue(marks[i2], "mark-flash");
+    }
+  }
+  function onReaderScroll() {
+    var n = nodes[currentNodeId];
+    if (n) n._scrollTop = readerMain.scrollTop;
+    readerLifecycle.hooks.scheduleViewSave();
+  }
+  function buildThreadRule() {
+    var r2 = document.createElement("div");
+    r2.className = "thread-rule";
+    r2.textContent = "Conversation";
+    return r2;
+  }
+  function buildThreadItem(k) {
+    var item = document.createElement("div");
+    item.className = "turn";
+    item.dataset.turn = k.id;
+    var q = document.createElement("div");
+    q.className = "turn-q";
+    var qs = document.createElement("span");
+    if (k.origin && k.origin.lens) qs.innerHTML = lensBadgeHtml(k.origin.lens);
+    else qs.textContent = k.origin && k.origin.question || "";
+    q.appendChild(qs);
+    var a = document.createElement("div");
+    a.className = "turn-a";
+    fillTurnAnswer(a, k);
+    item.appendChild(q);
+    item.appendChild(a);
+    return item;
+  }
+  function fillTurnAnswer(a, k) {
+    a.innerHTML = "";
+    if (k.status === "pending" && !k.html) {
+      a.appendChild(buildLoading(k));
+      return;
+    }
+    var dc = buildDocContent(k, READER_BASE);
+    var host = nodes[currentNodeId];
+    if (host) dc.style.fontSize = fontPx(host, READER_BASE) + "px";
+    a.appendChild(dc);
+    if (k.status === "answered") applyChildHighlights(dc, k);
+  }
+  function ensureThread() {
+    var t = readerMain.querySelector("#thread");
+    if (t) return t;
+    var col = readerMain.querySelector(".reader-col");
+    if (!col) return null;
+    t = document.createElement("div");
+    t.id = "thread";
+    t.appendChild(buildThreadRule());
+    col.appendChild(t);
+    return t;
+  }
+  function removeThreadItem(childId) {
+    var item = readerMain.querySelector('[data-turn="' + childId + '"]');
+    if (item && item.parentNode) item.parentNode.removeChild(item);
+    var t = readerMain.querySelector("#thread");
+    if (t && !t.querySelector(".turn")) t.parentNode.removeChild(t);
+  }
+  function onMarkClick(e) {
+    var m = e.target.closest("mark[data-child]");
+    if (!m) return;
+    if (!window.getSelection().isCollapsed) return;
+    var k = nodes[m.dataset.child];
+    if (k) openNode(k.id);
+  }
+  function onMarkKeydown(e) {
+    if (e.key !== "Enter") return;
+    var m = e.target.closest && e.target.closest("mark[data-child]");
+    if (!m) return;
+    var k = nodes[m.dataset.child];
+    if (!k) return;
+    e.preventDefault();
+    openNode(k.id);
+  }
+  function onCanvasMarkClick(e) {
+    var m = e.target.closest && e.target.closest("mark[data-child]");
+    if (!m) return;
+    if (!window.getSelection().isCollapsed) return;
+    var k = nodes[m.dataset.child];
+    if (k) goToNode(k, motionSourceFromEvent(e));
+  }
+  function onCanvasMarkKeydown(e) {
+    if (e.key !== "Enter") return;
+    var m = e.target.closest && e.target.closest("mark[data-child]");
+    if (!m) return;
+    var k = nodes[m.dataset.child];
+    if (!k) return;
+    e.preventDefault();
+    goToNode(k, motionSourceFromEvent(e));
+  }
+  function renderSidebar() {
+    var kids = childrenOf(currentNodeId).filter(function(k) {
+      return !isFollowup(k);
+    }).sort(function(a, b) {
+      return anchorStart(a) - anchorStart(b) || (a._order || 0) - (b._order || 0);
+    });
+    if (!kids.length) {
+      var emptyHeading = document.createElement("h3");
+      emptyHeading.textContent = "Branches";
+      var empty = document.createElement("div");
+      empty.className = "side-empty";
+      empty.textContent = "Select any text in the document and ask about it \u2014 the answer opens as a branch here. Or ask a follow-up in the box below the document.";
+      sideEl.replaceChildren(emptyHeading, empty);
+      return;
+    }
+    var heading2 = sideEl.querySelector(":scope > h3");
+    if (!heading2) heading2 = document.createElement("h3");
+    heading2.textContent = "Branches (" + kids.length + ")";
+    var fragment = document.createDocumentFragment();
+    fragment.appendChild(heading2);
+    var newLivePanes = [];
+    kids.forEach(function(k, i2) {
+      var pending = k.status !== "answered";
+      var qHtml = k.origin && k.origin.synthesis ? '<span class="lens-badge">\u2726 Synthesis</span>' : k.origin && k.origin.lens ? lensBadgeHtml(k.origin.lens) : escapeHtml(k.origin && k.origin.question ? k.origin.question : k.title || "Untitled");
+      var quote = k.origin && k.origin.selected_text ? k.origin.selected_text : "";
+      var status = pending ? pendingStatusHtml(k) : isUnread(k) ? '<span class="si-new">new \u2014 open \u2192</span>' : "open \u2192";
+      var tile = sidebarNodes[k.id];
+      if (!tile) {
+        tile = document.createElement("div");
+        tile.className = "side-item";
+        tile.dataset.child = k.id;
+        tile.setAttribute("role", "link");
+        tile.tabIndex = 0;
+        tile._question = document.createElement("div");
+        tile._question.className = "si-q";
+        tile._num = document.createElement("span");
+        tile._num.className = "si-num";
+        tile._questionText = document.createElement("span");
+        tile._question.append(tile._num, tile._questionText);
+        tile._quote = document.createElement("div");
+        tile._quote.className = "si-quote";
+        tile._status = document.createElement("div");
+        tile._status.className = "si-status";
+        tile.append(tile._question, tile._quote, tile._status);
+        sidebarNodes[k.id] = tile;
+      }
+      tile.classList.toggle("pending", pending);
+      tile._num.textContent = i2 + 1;
+      tile._questionText.innerHTML = qHtml;
+      tile._quote.textContent = quote ? "\u201C" + truncate2(quote, 80) + "\u201D" : "";
+      tile._quote.hidden = !quote;
+      tile._status.innerHTML = status;
+      var name = k.origin && k.origin.synthesis ? "Synthesis" : k.origin && k.origin.question || k.title || "Untitled";
+      tile.setAttribute("aria-label", "Open branch: " + name + (pending ? ", pending" : isUnread(k) ? ", new" : ""));
+      if (pending && k.html) {
+        if (!tile._live) {
+          tile._live = document.createElement("div");
+          tile._live.className = "si-live";
+          tile._livePane = document.createElement("div");
+          tile._livePane.className = "md";
+          tile._live.appendChild(tile._livePane);
+          tile.appendChild(tile._live);
+          newLivePanes.push({ pane: tile._livePane, node: k });
+        }
+        tile._livePane.innerHTML = k.html;
+      } else if (tile._live) {
+        tile._live.remove();
+        tile._live = null;
+        tile._livePane = null;
+      }
+      fragment.appendChild(tile);
+    });
+    sideEl.replaceChildren(fragment);
+    mountSidebarVisuals(newLivePanes);
+  }
+  function mountSidebarVisuals(panes) {
+    for (var i2 = 0; i2 < panes.length; i2++) {
+      var key = "reader-side:" + panes[i2].node.id;
+      mountVisuals(panes[i2].pane, key);
+      if (typeof readerLifecycle.hooks.mountDocImages === "function") readerLifecycle.hooks.mountDocImages(panes[i2].pane, panes[i2].node, null, key);
+    }
+  }
+  function pendingStatusHtml(k) {
+    var copy = {
+      frozen: '<span class="si-muted">unanswered in this snapshot</span>',
+      closed: '<span class="si-muted">saved \u2014 answered when you reopen</span>',
+      away: '<span class="si-muted">saved \u2014 waiting for the agent</span>',
+      live: k && k.html ? '<span class="shimmer-text">Writing\u2026</span>' : '<span class="shimmer-text">Thinking\u2026</span>'
+    };
+    return copy[sessionPhase()];
+  }
+  function onSidebarClick(e) {
+    var it = e.target.closest(".side-item");
+    if (!it) return;
+    openNode(it.dataset.child);
+  }
+  function onSidebarKeydown(e) {
+    if (e.key !== "Enter") return;
+    var it = e.target.closest && e.target.closest('.side-item[role="link"]');
+    if (!it) return;
+    e.preventDefault();
+    openNode(it.dataset.child);
+  }
+  function setReaderFontScale(delta) {
+    var node = nodes[currentNodeId];
+    node.font_scale = Math.min(MAX_FS, Math.max(MIN_FS, (node.font_scale || 1) + delta));
+    var dcs = readerMain.querySelectorAll(".doc-content");
+    for (var i2 = 0; i2 < dcs.length; i2++) dcs[i2].style.fontSize = fontPx(node, READER_BASE) + "px";
+    if (node.bodyEl) {
+      var cdc = node.bodyEl.querySelector(".doc-content");
+      if (cdc) cdc.style.fontSize = fontPx(node, CANVAS_BASE) + "px";
+    }
+    readerLifecycle.hooks.persistNode(node);
+  }
+  var kbdMarkIdx = -1;
+  function allMarks() {
+    return readerMain.querySelectorAll("mark[data-child]");
+  }
+  function focusedMark() {
+    var marks = allMarks();
+    return kbdMarkIdx >= 0 && kbdMarkIdx < marks.length ? marks[kbdMarkIdx] : null;
+  }
+  function stepMark(delta) {
+    var marks = allMarks();
+    if (!marks.length) return;
+    var prev = focusedMark();
+    if (prev) prev.classList.remove("mark-focus");
+    kbdMarkIdx = kbdMarkIdx < 0 ? delta > 0 ? 0 : marks.length - 1 : Math.max(0, Math.min(marks.length - 1, kbdMarkIdx + delta));
+    var m = marks[kbdMarkIdx];
+    m.classList.add("mark-focus");
+    var top = m.getBoundingClientRect().top - readerMain.getBoundingClientRect().top + readerMain.scrollTop;
+    readerLifecycle.hooks.animateScroll(readerMain, Math.max(0, top - readerMain.clientHeight * 0.42), "keyboard");
+  }
+
+  // src/ui/easing.js
+  function bezierCoord(t, a, b) {
+    var mt = 1 - t;
+    return 3 * mt * mt * t * a + 3 * mt * t * t * b + t * t * t;
+  }
+  function bezierSlope(t, a, b) {
+    return 3 * (1 - t) * (1 - t) * a + 6 * (1 - t) * t * (b - a) + 3 * t * t * (1 - b);
+  }
+  function cubicBezier(x1, y1, x2, y2, x) {
+    if (x <= 0) return 0;
+    if (x >= 1) return 1;
+    var t = x, i2, xAt, slope;
+    for (i2 = 0; i2 < 5; i2++) {
+      xAt = bezierCoord(t, x1, x2) - x;
+      slope = bezierSlope(t, x1, x2);
+      if (Math.abs(xAt) < 1e-3 || !slope) break;
+      t -= xAt / slope;
+    }
+    if (t < 0 || t > 1) {
+      var lo = 0, hi = 1;
+      t = x;
+      for (i2 = 0; i2 < 8; i2++) {
+        xAt = bezierCoord(t, x1, x2);
+        if (xAt < x) lo = t;
+        else hi = t;
+        t = (lo + hi) / 2;
+      }
+    }
+    return bezierCoord(t, y1, y2);
+  }
+  function easeOutMotion(k) {
+    return cubicBezier(0.23, 1, 0.32, 1, k);
+  }
+  function easeInOutMotion(k) {
+    return cubicBezier(0.77, 0, 0.175, 1, k);
+  }
+
+  // src/core/html/button-markup.js
+  var STATEFUL_ARIA = ["aria-haspopup", "aria-controls", "aria-expanded", "aria-pressed"];
+  function attribute(name, value) {
+    if (value === void 0 || value === false || value === null) return "";
+    return " " + name + (value === true ? "" : '="' + escapeHtml(String(value)) + '"');
+  }
+  function buttonAttributes(options2, iconOnly) {
+    var _a2;
+    const label = String(options2.label || "").trim();
+    const ariaLabel = String(options2.ariaLabel || "").trim();
+    if (iconOnly && !ariaLabel) throw new Error("IconButton requires aria-label");
+    if (!iconOnly && !label && !ariaLabel) throw new Error("Button requires an accessible name");
+    const baseClass = options2.bare ? "" : iconOnly ? "tool-btn tool-icon" : "tool-btn";
+    const className = [baseClass, options2.className].filter(Boolean).join(" ");
+    let result = attribute("class", className || void 0) + attribute("id", options2.id) + attribute("type", "button") + attribute("role", options2.role) + attribute("tabindex", options2.tabIndex) + attribute("title", options2.title) + attribute("aria-label", ariaLabel || void 0);
+    for (const [name, value] of Object.entries(options2.dataAttrs || {})) {
+      const attrName = "data-" + String(name).replace(/[A-Z]/g, (letter) => "-" + letter.toLowerCase());
+      result += attribute(attrName, value);
+    }
+    for (const name of STATEFUL_ARIA) {
+      const camelName = name.replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase());
+      result += attribute(name, (_a2 = options2[name]) != null ? _a2 : options2[camelName]);
+    }
+    const aria = options2.aria || {};
+    for (const [name, value] of Object.entries(aria)) {
+      const attrName = name.startsWith("aria-") ? name : "aria-" + name;
+      if (!STATEFUL_ARIA.includes(attrName) && attrName !== "aria-label") result += attribute(attrName, value);
+    }
+    return result + attribute("hidden", options2.hidden) + attribute("disabled", options2.disabled);
+  }
+  function buttonMarkup(options2 = {}) {
+    const content = (options2.svgIconHtml || "") + escapeHtml(String(options2.label || "")) + (options2.kbdHint ? "<kbd>" + escapeHtml(String(options2.kbdHint)) + "</kbd>" : "");
+    return "<button" + buttonAttributes(options2, false) + ">" + content + "</button>";
+  }
+  function iconButtonMarkup(options2 = {}) {
+    const content = options2.svgIconHtml || escapeHtml(String(options2.icon || ""));
+    return "<button" + buttonAttributes(options2, true) + ">" + content + "</button>";
+  }
+
+  // src/ui/composer-state.js
+  function applyComposerState(elements, state, copy) {
+    var down = state.phase === "frozen" || state.phase === "closed" || state.pending;
+    elements.text.disabled = down;
+    elements.wrap.classList.toggle("disabled", down);
+    var placeholderPhase = state.pending && state.phase !== "frozen" && state.phase !== "closed" ? "pending" : state.phase;
+    elements.text.placeholder = copy[placeholderPhase];
+    elements.send.disabled = down || !elements.text.value.trim();
+  }
+
+  // src/ui/canvas-view.js
+  function defaultCanvasHooks() {
+    return {
+      hideAsk: function() {
+      },
+      sendFollowup: function() {
+        return null;
+      },
+      confirmDelete: function() {
+      },
+      persistNode: function() {
+      },
+      persistNodesBulk: function() {
+      },
+      scheduleViewSave: function() {
+      }
+    };
+  }
+  var canvasLifecycle = createModuleLifecycle({ defaults: defaultCanvasHooks });
+  var filmCameraHandle = null;
+  var activePointerGestures = /* @__PURE__ */ new Set();
+  function registerCanvasHooks(hooks) {
+    canvasLifecycle.register(hooks);
+  }
+  function initCanvasView() {
+    cleanupCanvasView(false);
+    var canvasScope = canvasLifecycle.beginInit();
+    registerCoreHooks({
+      ensureCanvasBuilt,
+      diveToNode,
+      effH
+    });
+    canvasScope.listen(world, "mouseover", onWorldMouseOver);
+    canvasScope.listen(world, "mouseout", onWorldMouseOut);
+    initViewportPan();
+    canvasScope.listen(viewport, "wheel", onViewportWheel, { passive: false });
+    canvasScope.listen(viewport, "dblclick", onViewportDblClick);
+    canvasScope.listen(document.getElementById("t-reader"), "click", function() {
+      openNode(currentNodeId);
+    });
+    canvasScope.listen(document.getElementById("t-frame"), "click", function(e) {
+      frameAll(true, motionSourceFromEvent(e));
+    });
+    canvasScope.listen(document.getElementById("t-tidy"), "click", function(e) {
+      tidy(motionSourceFromEvent(e));
+    });
+    canvasScope.listen(document.getElementById("t-zin"), "click", function() {
+      zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, 1.15);
+    });
+    canvasScope.listen(document.getElementById("t-zout"), "click", function() {
+      zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, 0.87);
+    });
+    canvasScope.listen(zoomLabel, "click", function() {
+      zoomTo(viewport.clientWidth / 2, viewport.clientHeight / 2, 1);
+    });
+    exposeFilmCameraHook();
+    return disposeCanvasView;
+  }
+  function disposeCanvasView() {
+    cleanupCanvasView(true);
+  }
+  function cleanupCanvasView(resetHooks) {
+    var _a2;
+    canvasLifecycle.dispose(resetHooks);
+    activePointerGestures.forEach(function(cancel) {
+      cancel();
+    });
+    activePointerGestures.clear();
+    cancelViewAnimation();
+    if (edgeRaf) {
+      cancelAnimationFrame(edgeRaf);
+      edgeRaf = 0;
+    }
+    if (filmCameraHandle && window.__rhFilmCamera === filmCameraHandle) {
+      try {
+        delete window.__rhFilmCamera;
+      } catch (_e) {
+      }
+    }
+    filmCameraHandle = null;
+    if (edgesSvg) while (edgesSvg.firstChild) edgesSvg.removeChild(edgesSvg.firstChild);
+    edgeEls = {};
+    edgeGeometry = {};
+    edgeHl = {};
+    wheelKind = null;
+    wheelCard = null;
+    wheelTs = 0;
+    (_a2 = viewport) == null ? void 0 : _a2.classList.remove("panning");
+    if (resetHooks) {
+      registerCoreHooks({
+        ensureCanvasBuilt: function() {
+        },
+        diveToNode: function() {
+        },
+        effH: function(n) {
+          return n.h;
+        }
+      });
+    }
+  }
+  function applyTransform() {
+    world.style.transform = "translate(" + view.x + "px," + view.y + "px) scale(" + view.scale + ")";
+    zoomLabel.textContent = Math.round(view.scale * 100) + "%";
+    canvasLifecycle.hooks.scheduleViewSave();
+  }
+  function exposeFilmCameraHook() {
+    var enabled = false;
+    try {
+      enabled = localStorage.getItem("rh-film") === "1";
+    } catch (e) {
+    }
+    if (!enabled) return;
+    filmCameraHandle = {
+      getView: function() {
+        return { x: view.x, y: view.y, scale: view.scale };
+      },
+      setView: function(x, y, scale) {
+        cancelViewAnimation();
+        setViewAdjusted(true);
+        view.x = Number(x);
+        view.y = Number(y);
+        view.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Number(scale)));
+        applyTransform();
+        drawEdges();
+        return { x: view.x, y: view.y, scale: view.scale };
+      }
+    };
+    Object.defineProperty(window, "__rhFilmCamera", {
+      configurable: true,
+      value: filmCameraHandle
+    });
+  }
+  function screenToWorld(sx, sy) {
+    return { x: (sx - view.x) / view.scale, y: (sy - view.y) / view.scale };
+  }
+  function zoomAt(sx, sy, factor) {
+    var next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, view.scale * factor));
+    zoomTo(sx, sy, next);
+  }
+  function zoomTo(sx, sy, next) {
+    cancelViewAnimation();
+    next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, next));
+    if (next === view.scale) return;
+    setViewAdjusted(true);
+    var w = screenToWorld(sx, sy);
+    view.scale = next;
+    view.x = sx - w.x * view.scale;
+    view.y = sy - w.y * view.scale;
+    applyTransform();
+  }
+  var NODE_EXPAND_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M9.25 3.75h3v3"/><path d="M12.25 3.75 8.75 7.25"/><path d="M6.75 12.25h-3v-3"/><path d="M3.75 12.25l3.5-3.5"/></svg>';
+  var NODE_COLLAPSE_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M3 8h10"/></svg>';
+  var NODE_RESTORE_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M3 8h10M8 3v10"/></svg>';
+  function syncCollapseButton(node, btn) {
+    var action = node.collapsed ? "Expand document" : "Collapse document";
+    btn.innerHTML = node.collapsed ? NODE_RESTORE_ICON : NODE_COLLAPSE_ICON;
+    btn.setAttribute("aria-label", action);
+    btn.title = action;
+  }
+  function createNodeEl(node, enter) {
+    var el = document.createElement("div");
+    el.className = "node" + (node.id === rootId ? " root" : "");
+    if (enter && !document.hidden && !shouldReduceMotion()) el.className += " node-enter";
+    el.dataset.id = node.id;
+    var head = document.createElement("div");
+    head.className = "node-head";
+    if (node.id === rootId) {
+      var badge = document.createElement("span");
+      badge.className = "node-badge";
+      badge.innerHTML = BUNNY_MARK_SVG;
+      badge.title = "Where this Rabbithole begins";
+      head.appendChild(badge);
+    }
+    var titleEl = document.createElement("span");
+    titleEl.className = "node-title";
+    titleEl.textContent = node.title || "\u2026";
+    titleEl.title = node.title || "";
+    var aDown = cardButton(buttonMarkup({ bare: true, className: "node-btn node-font-btn", label: "A\u2212", ariaLabel: "Smaller text", title: "Smaller text" }));
+    var aUp = cardButton(buttonMarkup({ bare: true, className: "node-btn node-font-btn", label: "A+", ariaLabel: "Larger text", title: "Larger text" }));
+    var collapseBtn = cardButton(iconButtonMarkup({ bare: true, className: "node-btn", svgIconHtml: NODE_COLLAPSE_ICON, ariaLabel: "Collapse document", title: "Collapse document" }));
+    syncCollapseButton(node, collapseBtn);
+    var openBtn = cardButton(iconButtonMarkup({ bare: true, className: "node-btn", svgIconHtml: NODE_EXPAND_ICON, ariaLabel: "Expand document", title: "Expand document" }));
+    var divider = document.createElement("span");
+    divider.className = "node-act-divider";
+    divider.setAttribute("aria-hidden", "true");
+    var acts = document.createElement("span");
+    acts.className = "node-acts";
+    if (node.id !== rootId) {
+      var delBtn = cardButton(buttonMarkup({ bare: true, className: "node-btn danger", label: "\u2715", ariaLabel: "Remove this branch", title: "Remove this branch" }));
+      delBtn.addEventListener("click", function(e) {
+        e.stopPropagation();
+        canvasLifecycle.hooks.confirmDelete(node, delBtn);
+      });
+      acts.appendChild(delBtn);
+    }
+    acts.appendChild(aDown);
+    acts.appendChild(aUp);
+    acts.appendChild(divider);
+    acts.appendChild(collapseBtn);
+    acts.appendChild(openBtn);
+    head.appendChild(titleEl);
+    head.appendChild(acts);
+    var body = document.createElement("div");
+    body.className = "node-body";
+    var comp = buildCardComposer(node);
+    var resize = document.createElement("div");
+    resize.className = "node-resize";
+    el.appendChild(head);
+    el.appendChild(body);
+    el.appendChild(comp);
+    el.appendChild(resize);
+    world.appendChild(el);
+    node.el = el;
+    node.bodyEl = body;
+    node.titleEl = titleEl;
+    fillBody(node);
+    updateCardComposer(node);
+    if (node.collapsed) el.classList.add("collapsed");
+    if (isUnread(node)) el.classList.add("unread");
+    enableDrag(node, head);
+    enableResize(node, resize);
+    head.addEventListener("dblclick", function() {
+      openNode(node.id);
+    });
+    openBtn.addEventListener("click", function(e) {
+      e.stopPropagation();
+      openNode(node.id);
+    });
+    collapseBtn.addEventListener("click", function(e) {
+      e.stopPropagation();
+      toggleCollapse(node, collapseBtn);
+    });
+    aDown.addEventListener("click", function(e) {
+      e.stopPropagation();
+      setNodeFontScale(node, -0.1);
+    });
+    aUp.addEventListener("click", function(e) {
+      e.stopPropagation();
+      setNodeFontScale(node, 0.1);
+    });
+    body.addEventListener("scroll", scheduleEdges, { passive: true });
+    body.addEventListener("pointerdown", function() {
+      if (node.status === "answered") markRead(node);
+    });
+    el.addEventListener("mouseenter", function() {
+      focusOrigin(node, true);
+    });
+    el.addEventListener("mouseleave", function() {
+      focusOrigin(node, false);
+      if (node.ncComp && !node.ncText.value.trim() && document.activeElement !== node.ncText) closeCardDrawer(node);
+    });
+    layoutNode(node);
+    if (el.classList.contains("node-enter")) {
+      requestAnimationFrame(function() {
+        el.classList.add("entered");
+        setTimeout(function() {
+          el.classList.remove("node-enter");
+          el.classList.remove("entered");
+        }, 220);
+      });
+    }
+    return node;
+  }
+  function diveToNode(node, source2) {
+    var vw = viewport.clientWidth, vh = viewport.clientHeight;
+    var ts = Math.min(1, Math.max(0.75, Math.min((vw - 120) / node.w, (vh - 120) / effH(node))));
+    var tx = vw / 2 - (node.x + node.w / 2) * ts;
+    var ty = vh / 2 - (node.y + effH(node) / 2) * ts;
+    animateView(tx, ty, ts, { source: source2, duration: 270, ease: "inOut" });
+  }
+  function cardButton(markup) {
+    var template = document.createElement("template");
+    template.innerHTML = markup;
+    return template.content.firstElementChild;
+  }
+  var SEND_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  function autoGrowEl(ta, max) {
+    ta.style.height = "auto";
+    ta.style.height = Math.min(max, ta.scrollHeight) + "px";
+    ta.style.overflowY = ta.scrollHeight > max ? "auto" : "hidden";
+  }
+  function buildCardComposer(node) {
+    var comp = document.createElement("div");
+    comp.className = "node-composer";
+    var clip = document.createElement("div");
+    clip.className = "nc-clip";
+    clip.id = cardDrawerId(node);
+    var inner2 = document.createElement("div");
+    inner2.className = "nc-inner";
+    var ta = document.createElement("textarea");
+    ta.rows = 1;
+    var send = cardButton(iconButtonMarkup({ bare: true, className: "send-btn", ariaLabel: "Send follow-up", title: "Send (\u21B5)", svgIconHtml: SEND_ICON }));
+    var handle = document.createElement("button");
+    handle.type = "button";
+    handle.className = "nc-handle";
+    handle.title = "Ask a follow-up about this document";
+    handle.setAttribute("aria-expanded", "false");
+    handle.setAttribute("aria-controls", clip.id);
+    var plus = document.createElement("span");
+    plus.className = "nc-plus";
+    plus.textContent = "+";
+    handle.appendChild(plus);
+    handle.appendChild(document.createTextNode(" Follow-up"));
+    inner2.appendChild(ta);
+    inner2.appendChild(send);
+    clip.appendChild(inner2);
+    comp.appendChild(clip);
+    comp.appendChild(handle);
+    node.ncComp = comp;
+    node.ncInner = inner2;
+    node.ncText = ta;
+    node.ncSend = send;
+    node.ncHandle = handle;
+    handle.addEventListener("click", function(e) {
+      e.stopPropagation();
+      openCardDrawer(node);
+    });
+    ta.addEventListener("input", function() {
+      autoGrowEl(ta, 90);
+      updateCardComposer(node);
+    });
+    ta.addEventListener("keydown", function(e) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        submitCardFollowup(node, "keyboard");
+      } else if (e.key === "Escape") {
+        e.stopPropagation();
+        closeCardDrawer(node);
+        handle.focus({ preventScroll: true });
+      }
+    });
+    ta.addEventListener("blur", function() {
+      if (!ta.value.trim() && !(node.el && node.el.matches(":hover"))) closeCardDrawer(node);
+    });
+    send.addEventListener("click", function(e) {
+      e.stopPropagation();
+      submitCardFollowup(node, motionSourceFromEvent(e));
+    });
+    return comp;
+  }
+  function cardDrawerId(node) {
+    return "card-followup-" + String(node.id).replace(/[^A-Za-z0-9_-]/g, function(ch2) {
+      return "-" + ch2.charCodeAt(0).toString(16) + "-";
+    });
+  }
+  function openCardDrawer(node) {
+    node.ncComp.classList.add("open");
+    node.ncHandle.setAttribute("aria-expanded", "true");
+    node.ncText.focus({ preventScroll: true });
+  }
+  function closeCardDrawer(node) {
+    node.ncComp.classList.remove("open");
+    node.ncHandle.setAttribute("aria-expanded", "false");
+  }
+  function updateCardComposer(node) {
+    var _a2, _b;
+    if (!node.ncText) return;
+    node.ncComp.classList.toggle("nc-draft", !!node.ncText.value.trim());
+    applyComposerState(
+      { text: node.ncText, send: node.ncSend, wrap: node.ncInner },
+      { phase: sessionPhase(), pending: node.status === "pending" || !!((_b = (_a2 = node.extensions) == null ? void 0 : _a2.pdf) == null ? void 0 : _b.converting) },
+      {
+        frozen: "Read-only snapshot",
+        closed: "Session ended \u2014 saved",
+        pending: "Still being written\u2026",
+        away: "Asks are saved for the agent\u2026",
+        live: "Ask a follow-up\u2026"
+      }
+    );
+  }
+  function submitCardFollowup(node, source2) {
+    var _a2, _b;
+    if (closed) {
+      flashHint("Session ended \u2014 reopen this Rabbithole from your terminal to continue.");
+      return;
+    }
+    if (node.status === "pending" || ((_b = (_a2 = node.extensions) == null ? void 0 : _a2.pdf) == null ? void 0 : _b.converting)) return;
+    var question = node.ncText.value.trim();
+    if (!question) return;
+    var kid = canvasLifecycle.hooks.sendFollowup(node, question, null);
+    node.ncText.value = "";
+    autoGrowEl(node.ncText, 90);
+    closeCardDrawer(node);
+    updateCardComposer(node);
+    revealNode(kid, source2);
+  }
+  function revealNode(n, source2) {
+    if (mode !== "canvas" || !n) return;
+    var pad2 = 30, vw = viewport.clientWidth, vh = viewport.clientHeight;
+    var x1 = n.x * view.scale + view.x, y1 = n.y * view.scale + view.y;
+    var x2 = (n.x + n.w) * view.scale + view.x, y2 = (n.y + n.h) * view.scale + view.y;
+    var dx = 0, dy = 0;
+    if (x2 > vw - pad2) dx = vw - pad2 - x2;
+    if (x1 + dx < pad2) dx = pad2 - x1;
+    if (y2 > vh - pad2) dy = vh - pad2 - y2;
+    if (y1 + dy < pad2) dy = pad2 - y1;
+    if (!dx && !dy) return;
+    animatePan(view.x + dx, view.y + dy, source2, 230, "out");
+  }
+  function animatePan(tx, ty, source2, duration, ease) {
+    animateView(tx, ty, view.scale, { source: source2, duration, ease });
+  }
+  var viewAnimId = 0;
+  var viewAnimRaf = 0;
+  function cancelViewAnimation() {
+    viewAnimId++;
+    if (viewAnimRaf) {
+      cancelAnimationFrame(viewAnimRaf);
+      viewAnimRaf = 0;
+    }
+  }
+  function animateView(tx, ty, ts, opts) {
+    opts = opts || {};
+    cancelViewAnimation();
+    var myId = viewAnimId;
+    if (document.hidden || shouldReduceMotion() || opts.source !== "pointer") {
+      view.x = tx;
+      view.y = ty;
+      view.scale = ts;
+      applyTransform();
+      return;
+    }
+    var sx = view.x, sy = view.y, ss = view.scale, t0 = performance.now(), D2 = opts.duration || 270;
+    var easeFn = opts.ease === "inOut" ? easeInOutMotion : easeOutMotion;
+    function step(t) {
+      viewAnimRaf = 0;
+      if (myId !== viewAnimId) return;
+      var p = Math.min(1, (t - t0) / D2), k = easeFn(p);
+      view.x = sx + (tx - sx) * k;
+      view.y = sy + (ty - sy) * k;
+      view.scale = ss + (ts - ss) * k;
+      applyTransform();
+      if (p < 1) viewAnimRaf = requestAnimationFrame(step);
+    }
+    viewAnimRaf = requestAnimationFrame(step);
+  }
+  function fillBody(node) {
+    var body = node.bodyEl;
+    if (!body) return;
+    var previous = body.querySelector(".doc-content");
+    if (previous && previous._rhDispose) previous._rhDispose();
+    body.innerHTML = "";
+    if (node.origin && node.origin.synthesis) {
+      var sq = document.createElement("div");
+      sq.className = "origin-quote";
+      sq.textContent = "\u2726 Synthesis of this Rabbithole";
+      body.appendChild(sq);
+    } else if (node.origin && node.origin.selected_text) {
+      var q = document.createElement("div");
+      q.className = "origin-quote";
+      q.textContent = "\u201C" + node.origin.selected_text + "\u201D";
+      body.appendChild(q);
+    } else if (node.origin && (node.origin.question || node.origin.lens)) {
+      var fq = document.createElement("div");
+      fq.className = "origin-quote";
+      fq.textContent = node.origin.lens ? "Follow-up \u2014 " + lensLabel2(node.origin.lens) : node.origin.question;
+      body.appendChild(fq);
+    }
+    var crop = buildOriginCrop(node, "card");
+    if (crop) body.appendChild(crop);
+    var dc = buildDocContent(node, CANVAS_BASE);
+    body.appendChild(dc);
+    applyChildHighlights(dc, node);
+  }
+  function setNodeFontScale(node, delta) {
+    node.font_scale = Math.min(MAX_FS, Math.max(MIN_FS, (node.font_scale || 1) + delta));
+    var dc = node.bodyEl && node.bodyEl.querySelector(".doc-content");
+    if (dc) dc.style.fontSize = fontPx(node, CANVAS_BASE) + "px";
+    if (mode === "reader" && currentNodeId === node.id) {
+      var rdc = readerMain.querySelector(".doc-content");
+      if (rdc) rdc.style.fontSize = fontPx(node, READER_BASE) + "px";
+    }
+    scheduleEdges();
+    canvasLifecycle.hooks.persistNode(node);
+  }
+  function layoutNode(node) {
+    var el = node.el;
+    el.style.left = node.x + "px";
+    el.style.top = node.y + "px";
+    el.style.width = node.w + "px";
+    if (!node.collapsed) el.style.height = node.h + "px";
+  }
+  function onPointerGesture(handle, onDown, onMove, onUp, scope) {
+    function pointerDown(e) {
+      if (!onDown(e)) return;
+      try {
+        handle.setPointerCapture(e.pointerId);
+      } catch (_e) {
+      }
+      function move(ev) {
+        onMove(ev);
+      }
+      function finish(commit) {
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", done);
+        handle.removeEventListener("pointercancel", done);
+        handle.removeEventListener("lostpointercapture", done);
+        activePointerGestures.delete(cancel);
+        try {
+          handle.releasePointerCapture(e.pointerId);
+        } catch (_e) {
+        }
+        if (commit) onUp();
+      }
+      function done() {
+        finish(true);
+      }
+      function cancel() {
+        finish(false);
+      }
+      activePointerGestures.add(cancel);
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", done);
+      handle.addEventListener("pointercancel", done);
+      handle.addEventListener("lostpointercapture", done);
+    }
+    if (scope) scope.listen(handle, "pointerdown", pointerDown);
+    else handle.addEventListener("pointerdown", pointerDown);
+  }
+  function enableDrag(node, handle) {
+    var sx, sy, ox, oy;
+    onPointerGesture(
+      handle,
+      function(e) {
+        if (e.button !== 0 || e.target.closest(".node-btn")) return false;
+        e.preventDefault();
+        canvasLifecycle.hooks.hideAsk();
+        sx = e.clientX;
+        sy = e.clientY;
+        ox = node.x;
+        oy = node.y;
+        return true;
+      },
+      function(ev) {
+        node.x = ox + (ev.clientX - sx) / view.scale;
+        node.y = oy + (ev.clientY - sy) / view.scale;
+        layoutNode(node);
+        scheduleEdges();
+      },
+      function() {
+        drawEdges();
+        canvasLifecycle.hooks.persistNode(node);
+      }
+    );
+  }
+  function enableResize(node, handle) {
+    var sx, sy, ow, oh;
+    onPointerGesture(
+      handle,
+      function(e) {
+        if (e.button !== 0) return false;
+        e.preventDefault();
+        e.stopPropagation();
+        sx = e.clientX;
+        sy = e.clientY;
+        ow = node.w;
+        oh = node.h;
+        return true;
+      },
+      function(ev) {
+        node.w = Math.max(240, ow + (ev.clientX - sx) / view.scale);
+        node.h = Math.max(160, oh + (ev.clientY - sy) / view.scale);
+        layoutNode(node);
+        scheduleEdges();
+      },
+      function() {
+        drawEdges();
+        canvasLifecycle.hooks.persistNode(node);
+      }
+    );
+  }
+  function toggleCollapse(node, btn) {
+    node.collapsed = !node.collapsed;
+    node.el.classList.toggle("collapsed", node.collapsed);
+    syncCollapseButton(node, btn);
+    if (!node.collapsed) layoutNode(node);
+    renderVisibility();
+    drawEdges();
+    canvasLifecycle.hooks.persistNode(node);
+  }
+  function renderVisibility() {
+    var cache = /* @__PURE__ */ Object.create(null);
+    for (var id in nodes) {
+      var n = nodes[id];
+      if (!n.el) continue;
+      if (n.id === rootId) {
+        n.el.style.display = "";
+        cache[n.id] = true;
+        continue;
+      }
+      n.el.style.display = isVisible(n, cache) ? "" : "none";
+    }
+  }
+  var edgeRaf = 0;
+  function scheduleEdges() {
+    if (edgeRaf) return;
+    edgeRaf = requestAnimationFrame(function() {
+      edgeRaf = 0;
+      drawEdges();
+    });
+  }
+  function effH(n) {
+    return n.collapsed && n.el ? n.el.offsetHeight || 36 : n.h;
+  }
+  function clamp2(lo, hi, v) {
+    return Math.max(lo, Math.min(hi, v));
+  }
+  function edgeSides(p, n) {
+    var ph = effH(p), nh = effH(n);
+    var dx = n.x + n.w / 2 - (p.x + p.w / 2);
+    var dy = n.y + nh / 2 - (p.y + ph / 2);
+    var fx = dx / ((p.w + n.w) / 2 + 1);
+    var fy = dy / ((ph + nh) / 2 + 1);
+    if (Math.abs(fx) >= Math.abs(fy)) return dx >= 0 ? ["right", "left"] : ["left", "right"];
+    return dy >= 0 ? ["bottom", "top"] : ["top", "bottom"];
+  }
+  function edgeStart(p, child, side) {
+    var ph = effH(p), ax = null, ay = null, anchored = false;
+    if (!p.collapsed && p.el && p.bodyEl) {
+      var mark = p.bodyEl.querySelector('mark[data-child="' + child.id + '"]');
+      if (mark) {
+        var mr = mark.getBoundingClientRect();
+        if (mr.height > 0) {
+          var er = p.el.getBoundingClientRect();
+          var br2 = p.bodyEl.getBoundingClientRect();
+          ay = p.y + clamp2(
+            (br2.top - er.top) / view.scale + 10,
+            (br2.bottom - er.top) / view.scale - 10,
+            (mr.top + mr.height / 2 - er.top) / view.scale
+          );
+          ax = p.x + clamp2(
+            (br2.left - er.left) / view.scale + 10,
+            (br2.right - er.left) / view.scale - 10,
+            (mr.left + mr.width / 2 - er.left) / view.scale
+          );
+          anchored = true;
+        }
+      } else if (isFollowup(child)) {
+        ay = p.y + ph - 22;
+      }
+    }
+    if (side === "right") return { x: p.x + p.w, y: ay != null ? ay : p.y + ph / 2, anchored };
+    if (side === "left") return { x: p.x, y: ay != null ? ay : p.y + ph / 2, anchored };
+    if (side === "bottom") return { x: ax != null ? ax : p.x + p.w / 2, y: p.y + ph, anchored };
+    return { x: ax != null ? ax : p.x + p.w / 2, y: p.y, anchored };
+  }
+  function edgeEnd(n, side) {
+    var nh = effH(n);
+    if (side === "left") return { x: n.x, y: n.y + nh / 2 };
+    if (side === "right") return { x: n.x + n.w, y: n.y + nh / 2 };
+    if (side === "top") return { x: n.x + n.w / 2, y: n.y };
+    return { x: n.x + n.w / 2, y: n.y + nh };
+  }
+  function ctrlPt(pt, side, d) {
+    if (side === "right") return pt.x + d + " " + pt.y;
+    if (side === "left") return pt.x - d + " " + pt.y;
+    if (side === "bottom") return pt.x + " " + (pt.y + d);
+    return pt.x + " " + (pt.y - d);
+  }
+  var edgeEls = {};
+  var edgeGeometry = {};
+  function ensureEdgeEls(childId) {
+    var els = edgeEls[childId];
+    if (els) return els;
+    var path2 = document.createElementNS(SVGNS, "path");
+    path2.setAttribute("data-child", childId);
+    var dot = document.createElementNS(SVGNS, "circle");
+    dot.setAttribute("r", "3");
+    dot.setAttribute("data-child", childId);
+    edgesSvg.appendChild(path2);
+    edgesSvg.appendChild(dot);
+    edgeEls[childId] = [path2, dot];
+    return edgeEls[childId];
+  }
+  function removeEdge(childId) {
+    var els = edgeEls[childId];
+    if (els) {
+      for (var i2 = 0; i2 < els.length; i2++) if (els[i2].parentNode) els[i2].parentNode.removeChild(els[i2]);
+    }
+    delete edgeEls[childId];
+    delete edgeGeometry[childId];
+    delete edgeHl[childId];
+  }
+  function applyEdgeClasses(childId, path2, dot, anchored) {
+    path2.classList.toggle("edge-hl", !!edgeHl[childId]);
+    dot.classList.toggle("edge-hl", !!edgeHl[childId]);
+    dot.classList.toggle("anchored", !!anchored);
+  }
+  function rebuildEdges() {
+    while (edgesSvg.firstChild) edgesSvg.removeChild(edgesSvg.firstChild);
+    edgeEls = {};
+    edgeGeometry = {};
+    drawEdges();
+  }
+  function drawEdges() {
+    var live = {};
+    var visCache = /* @__PURE__ */ Object.create(null);
+    function vis(node) {
+      return isVisible(node, visCache);
+    }
+    for (var id in nodes) {
+      var n = nodes[id];
+      if (!n.parent_id || !n.el) continue;
+      var p = nodes[n.parent_id];
+      if (!p || !p.el) continue;
+      if (!vis(n) || !vis(p)) continue;
+      live[n.id] = true;
+      var sides = edgeSides(p, n);
+      var start = edgeStart(p, n, sides[0]);
+      var end = edgeEnd(n, sides[1]);
+      var horiz = sides[0] === "left" || sides[0] === "right";
+      var reach = Math.max(40, (horiz ? Math.abs(end.x - start.x) : Math.abs(end.y - start.y)) / 2);
+      var d = "M " + start.x + " " + start.y + " C " + ctrlPt(start, sides[0], reach) + " " + ctrlPt(end, sides[1], reach) + " " + end.x + " " + end.y;
+      var geom = {
+        d,
+        cx: String(start.x),
+        cy: String(start.y),
+        anchored: !!start.anchored
+      };
+      var els = ensureEdgeEls(n.id);
+      var path2 = els[0], dot = els[1], prev = edgeGeometry[n.id];
+      if (!prev || prev.d !== geom.d) path2.setAttribute("d", geom.d);
+      if (!prev || prev.cx !== geom.cx) dot.setAttribute("cx", geom.cx);
+      if (!prev || prev.cy !== geom.cy) dot.setAttribute("cy", geom.cy);
+      if (!prev || prev.anchored !== geom.anchored) applyEdgeClasses(n.id, path2, dot, geom.anchored);
+      else if (!!edgeHl[n.id] !== path2.classList.contains("edge-hl")) applyEdgeClasses(n.id, path2, dot, geom.anchored);
+      edgeGeometry[n.id] = geom;
+    }
+    for (var childId in edgeEls) {
+      if (!live[childId]) removeEdge(childId);
+    }
+  }
+  var edgeHl = {};
+  function setEdgeHighlight(childId, on) {
+    if (on) edgeHl[childId] = true;
+    else delete edgeHl[childId];
+    var els = edgeEls[childId];
+    if (!els) return;
+    for (var i2 = 0; i2 < els.length; i2++) els[i2].classList.toggle("edge-hl", on);
+  }
+  function clearEdgeHighlight(childId) {
+    delete edgeHl[childId];
+  }
+  function focusOrigin(node, on) {
+    if (mode !== "canvas") return;
+    setEdgeHighlight(node.id, on);
+    var p = node.parent_id ? nodes[node.parent_id] : null;
+    if (p && p.bodyEl) {
+      var marks = p.bodyEl.querySelectorAll('mark[data-child="' + node.id + '"]');
+      for (var i2 = 0; i2 < marks.length; i2++) marks[i2].classList.toggle("mark-focus", on);
+    }
+  }
+  function onWorldMouseOver(e) {
+    var m = e.target.closest && e.target.closest("mark[data-child]");
+    if (m) setEdgeHighlight(m.dataset.child, true);
+  }
+  function onWorldMouseOut(e) {
+    var m = e.target.closest && e.target.closest("mark[data-child]");
+    if (m) setEdgeHighlight(m.dataset.child, false);
+  }
+  function initViewportPan() {
+    var sx, sy, ox, oy;
+    onPointerGesture(
+      viewport,
+      function(e) {
+        if (e.button !== 0 || e.target.closest(".node")) return false;
+        canvasLifecycle.hooks.hideAsk();
+        cancelViewAnimation();
+        viewport.classList.add("panning");
+        sx = e.clientX;
+        sy = e.clientY;
+        ox = view.x;
+        oy = view.y;
+        return true;
+      },
+      function(ev) {
+        setViewAdjusted(true);
+        view.x = ox + (ev.clientX - sx);
+        view.y = oy + (ev.clientY - sy);
+        applyTransform();
+      },
+      function() {
+        viewport.classList.remove("panning");
+      },
+      canvasLifecycle.scope
+    );
+  }
+  function canScroll(el, dx, dy) {
+    if (dx && el.scrollWidth > el.clientWidth + 1) {
+      if (dx < 0 ? el.scrollLeft > 0 : el.scrollLeft + el.clientWidth < el.scrollWidth - 1) return true;
+    }
+    if (dy && el.scrollHeight > el.clientHeight + 1) {
+      if (dy < 0 ? el.scrollTop > 0 : el.scrollTop + el.clientHeight < el.scrollHeight - 1) return true;
+    }
+    return false;
+  }
+  var wheelKind = null;
+  var wheelCard = null;
+  var wheelTs = 0;
+  function onViewportWheel(e) {
+    if (e.ctrlKey) {
+      e.preventDefault();
+      wheelKind = null;
+      zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.01));
+      return;
+    }
+    if (!wheelKind || e.timeStamp - wheelTs > 180) {
+      wheelCard = e.target.closest && e.target.closest(".node") || null;
+      wheelKind = wheelCard ? "card" : "pan";
+    }
+    wheelTs = e.timeStamp;
+    if (wheelKind === "pan") {
+      e.preventDefault();
+      cancelViewAnimation();
+      setViewAdjusted(true);
+      view.x -= e.deltaX;
+      view.y -= e.deltaY;
+      applyTransform();
+      return;
+    }
+    var over = e.target.closest && e.target.closest(".node") || null;
+    if (over !== wheelCard) {
+      e.preventDefault();
+      var nb = wheelCard ? wheelCard.querySelector(".node-body") : null;
+      if (nb) {
+        nb.scrollLeft += e.deltaX;
+        nb.scrollTop += e.deltaY;
+      }
+      return;
+    }
+    var el = e.target, consumable = false;
+    while (el && el.nodeType === 1) {
+      if (canScroll(el, e.deltaX, e.deltaY)) {
+        consumable = true;
+        break;
+      }
+      if (el === over) break;
+      el = el.parentNode;
+    }
+    if (!consumable) e.preventDefault();
+  }
+  function frameAll(animate, source2) {
+    var visCache = /* @__PURE__ */ Object.create(null);
+    var ids = Object.keys(nodes).filter(function(id) {
+      return isVisible(nodes[id], visCache);
+    });
+    if (!ids.length) return;
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    ids.forEach(function(id) {
+      var n = nodes[id];
+      minX = Math.min(minX, n.x);
+      minY = Math.min(minY, n.y);
+      maxX = Math.max(maxX, n.x + n.w);
+      maxY = Math.max(maxY, n.y + (n.collapsed ? 40 : n.h));
+    });
+    var fullW = viewport.clientWidth || window.innerWidth, fullH = viewport.clientHeight || window.innerHeight, pad2 = 100;
+    var rail = document.getElementById("web-rail"), toolbar = document.getElementById("toolbar");
+    var insetX = rail && rail.classList.contains("open") ? rail.getBoundingClientRect().width : 0;
+    var insetY = toolbar ? toolbar.getBoundingClientRect().height : 0;
+    var vw = fullW - insetX, vh = fullH - insetY;
+    var ts = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min((vw - pad2) / (maxX - minX), (vh - pad2) / (maxY - minY), 1.2)));
+    var tx = insetX + vw / 2 - (minX + (maxX - minX) / 2) * ts, ty = insetY + vh / 2 - (minY + (maxY - minY) / 2) * ts;
+    if (source2) setViewAdjusted(true);
+    if (animate) {
+      animateView(tx, ty, ts, { source: source2, duration: 270, ease: "inOut" });
+      return;
+    }
+    view.scale = ts;
+    view.x = tx;
+    view.y = ty;
+    applyTransform();
+  }
+  function onViewportDblClick(e) {
+    if (e.target.closest && e.target.closest(".node")) return;
+    frameAll(true, motionSourceFromEvent(e));
+  }
+  function tidy(source2) {
+    var visited = {};
+    function moveSubtree(node, dx, dy) {
+      node.x += dx;
+      node.y += dy;
+      childrenOf(node.id).filter(function(k) {
+        return visited[k.id];
+      }).sort(nodeOrder2).forEach(function(k) {
+        moveSubtree(k, dx, dy);
+      });
+    }
+    function place(node, x, y) {
+      visited[node.id] = true;
+      node.x = x;
+      node.y = y;
+      var bounds = nodeBounds2(node);
+      if (node.collapsed) return bounds;
+      var kids = childrenOf(node.id).sort(nodeOrder2);
+      var selectionKids = kids.filter(isSelectionBranch);
+      var followupKids = kids.filter(isFollowup);
+      var sideBounds = null;
+      var sideX = node.x + node.w + TREE_PARENT_GAP;
+      var sideY = node.y;
+      selectionKids.forEach(function(k) {
+        var kb = place(k, sideX, sideY);
+        sideBounds = unionBounds2(sideBounds, kb);
+        bounds = unionBounds2(bounds, kb);
+        sideY = kb.maxY + TREE_STACK_GAP;
+      });
+      var belowY = node.y + effH(node) + TREE_PARENT_GAP;
+      followupKids.forEach(function(k) {
+        var kb = place(k, node.x, belowY);
+        if (boundsOverlap2(kb, sideBounds)) {
+          var dy = sideBounds.maxY + TREE_STACK_GAP - kb.minY;
+          moveSubtree(k, 0, dy);
+          kb = shiftBounds2(kb, 0, dy);
+        }
+        bounds = unionBounds2(bounds, kb);
+        belowY = kb.maxY + TREE_STACK_GAP;
+      });
+      return bounds;
+    }
+    var root = nodes[rootId];
+    if (!root) return;
+    place(root, 0, 0);
+    var ids = Object.keys(visited);
+    var moved = [];
+    ids.forEach(function(id) {
+      var nn = nodes[id];
+      layoutNode(nn);
+      moved.push(nn);
+    });
+    canvasLifecycle.hooks.persistNodesBulk(moved);
+    rebuildEdges();
+    frameAll(true, source2);
+  }
+  function ensureCanvasBuilt() {
+    if (canvasBuilt) return;
+    setCanvasBuilt(true);
+    Object.keys(nodes).forEach(function(id) {
+      if (!nodes[id].el) createNodeEl(nodes[id]);
+    });
+    renderVisibility();
+    applyTransform();
+  }
+  function setMode(m) {
+    var transferredPosition = null;
+    if (m === "canvas" && mode === "reader") {
+      var cur = nodes[currentNodeId];
+      if (cur) {
+        cur._scrollTop = readerMain.scrollTop;
+        transferredPosition = captureContentPosition(readerMain);
+      }
+    }
+    setModeValue(m);
+    if (m === "canvas") {
+      ensureCanvasBuilt();
+      document.body.classList.add("mode-canvas");
+      requestAnimationFrame(function() {
+        var active = nodes[currentNodeId];
+        if (transferredPosition && (active == null ? void 0 : active.bodyEl)) restoreContentPosition(active.bodyEl, transferredPosition);
+        rebuildEdges();
+        if (!canvasFramed) {
+          setCanvasFramed(true);
+          frameAll();
+        }
+      });
+      canvasLifecycle.hooks.scheduleViewSave();
+    } else {
+      openNode(currentNodeId);
+    }
+  }
+
+  // src/ui/overlay/layer-stack.js
+  var layers = [];
+  function focus(element) {
+    if (!element || !element.isConnected || typeof element.focus !== "function") return false;
+    try {
+      element.focus({ preventScroll: true });
+    } catch (error) {
+      try {
+        element.focus();
+      } catch (_error) {
+        return false;
+      }
+    }
+    return true;
+  }
+  function onKeydown(event) {
+    if (event.key !== "Escape") return;
+    var layer = layers[layers.length - 1];
+    if (!layer || !layer.closeOnEscape) return;
+    event.preventDefault();
+    event.stopPropagation();
+    layer.onClose("escape");
+  }
+  function onPointerdown(event) {
+    var _a2;
+    var layer = layers[layers.length - 1];
+    if (!layer || !layer.closeOnOutsidePointer) return;
+    var path2 = typeof event.composedPath === "function" ? event.composedPath() : [];
+    if (path2.includes(layer.element) || path2.includes(layer.trigger) || layer.element.contains(event.target) || ((_a2 = layer.trigger) == null ? void 0 : _a2.contains(event.target))) return;
+    if (layer.preventOutsidePointerDefault) event.preventDefault();
+    layer.onClose("outside-pointer");
+    if (layer.restoreFocus) layer.focusTimer = setTimeout(function() {
+      layer.focusTimer = 0;
+      if (!focus(layer.trigger)) focus(layer.previousFocus);
+    }, 0);
+  }
+  function syncListeners() {
+    var method = layers.length ? "addEventListener" : "removeEventListener";
+    document[method]("keydown", onKeydown, true);
+    document[method]("pointerdown", onPointerdown, true);
+  }
+  function registerLayer(options2) {
+    var layer = {
+      element: options2.element,
+      trigger: options2.trigger || null,
+      onClose: options2.onClose,
+      closeOnEscape: options2.closeOnEscape !== false,
+      closeOnOutsidePointer: options2.closeOnOutsidePointer !== false,
+      preventOutsidePointerDefault: options2.preventOutsidePointerDefault !== false,
+      restoreFocus: options2.restoreFocus !== false,
+      previousFocus: document.activeElement,
+      focusTimer: 0
+    };
+    layers.push(layer);
+    if (layers.length === 1) syncListeners();
+    var active = true;
+    return function unregisterLayer(settings) {
+      if (!active) return;
+      active = false;
+      var index = layers.indexOf(layer);
+      if (index !== -1) layers.splice(index, 1);
+      if (!layers.length) syncListeners();
+      if (layer.focusTimer) {
+        clearTimeout(layer.focusTimer);
+        layer.focusTimer = 0;
+      }
+      if (layer.restoreFocus && (!settings || settings.restoreFocus !== false)) {
+        if (!focus(layer.trigger)) focus(layer.previousFocus);
+      }
+    };
+  }
+
+  // src/ui/overlay/anchor.js
+  function tokenPx(surface, name) {
+    var value = parseFloat(getComputedStyle(surface).getPropertyValue(name));
+    return Number.isFinite(value) ? value : 0;
+  }
+  function viewportRect() {
+    var viewport2 = window.visualViewport;
+    return {
+      left: viewport2 ? viewport2.offsetLeft : 0,
+      top: viewport2 ? viewport2.offsetTop : 0,
+      width: viewport2 ? viewport2.width : window.innerWidth,
+      height: viewport2 ? viewport2.height : window.innerHeight
+    };
+  }
+  function clampToViewport(value, min, max) {
+    if (max < min) return min;
+    return Math.min(max, Math.max(min, value));
+  }
+  function anchorSurface(trigger, surface, options2) {
+    var _a2, _b;
+    options2 = options2 || {};
+    var contextElement = trigger && trigger.contextElement;
+    var observedTrigger = contextElement || trigger;
+    var virtual = !!contextElement || !(trigger instanceof Element);
+    var placement = options2.placement || "bottom-end", disposed = false, frame = 0, updating = false;
+    var lastLeft = null, lastTop = null;
+    function updateNow() {
+      frame = 0;
+      if (disposed || !surface.isConnected || (virtual ? contextElement && !contextElement.isConnected : !trigger.isConnected)) return;
+      updating = true;
+      var viewport2 = viewportRect();
+      surface.style.setProperty("--overlay-viewport-width", viewport2.width + "px");
+      surface.style.setProperty("--overlay-viewport-height", viewport2.height + "px");
+      var anchor = trigger.getBoundingClientRect(), box = surface.getBoundingClientRect();
+      if (!anchor.width && !anchor.height && !anchor.left && !anchor.top && lastLeft !== null) {
+        updating = false;
+        return;
+      }
+      var edge = tokenPx(surface, "--surface-edge"), gap = tokenPx(surface, "--surface-gap");
+      var parts = placement.split("-"), side = parts[0], align = parts[1] || "center";
+      var left, top;
+      if (side === "center") {
+        left = viewport2.left + (viewport2.width - box.width) / 2;
+        top = viewport2.top + (viewport2.height - box.height) / 2;
+      } else {
+        var vertical = side === "top" || side === "bottom";
+        var before = vertical ? anchor.top - viewport2.top : anchor.left - viewport2.left;
+        var after = vertical ? viewport2.top + viewport2.height - anchor.bottom : viewport2.left + viewport2.width - anchor.right;
+        var mainSize = vertical ? box.height : box.width;
+        var preferredSpace = side === "top" || side === "left" ? before : after;
+        var alternateSpace = side === "top" || side === "left" ? after : before;
+        if (preferredSpace < mainSize + gap + edge && alternateSpace > preferredSpace) {
+          side = side === "top" ? "bottom" : side === "bottom" ? "top" : side === "left" ? "right" : "left";
+        }
+        if (side === "top" || side === "bottom") {
+          top = side === "bottom" ? anchor.bottom + gap : anchor.top - box.height - gap;
+          left = align === "start" ? anchor.left : align === "end" ? anchor.right - box.width : anchor.left + (anchor.width - box.width) / 2;
+        } else {
+          left = side === "right" ? anchor.right + gap : anchor.left - box.width - gap;
+          top = align === "start" ? anchor.top : align === "end" ? anchor.bottom - box.height : anchor.top + (anchor.height - box.height) / 2;
+        }
+      }
+      left = clampToViewport(left, viewport2.left + edge, viewport2.left + viewport2.width - edge - box.width);
+      top = clampToViewport(top, viewport2.top + edge, viewport2.top + viewport2.height - edge - box.height);
+      if (left !== lastLeft) surface.style.left = left + "px";
+      if (top !== lastTop) surface.style.top = top + "px";
+      lastLeft = left;
+      lastTop = top;
+      surface.dataset.placement = side === "center" ? "center" : side + "-" + align;
+      updating = false;
+    }
+    function update() {
+      if (!disposed && !frame) frame = requestAnimationFrame(updateNow);
+    }
+    window.addEventListener("resize", update, { passive: true });
+    (_a2 = window.visualViewport) == null ? void 0 : _a2.addEventListener("resize", update, { passive: true });
+    (_b = window.visualViewport) == null ? void 0 : _b.addEventListener("scroll", update, { passive: true });
+    var resizeObserver = typeof ResizeObserver === "function" ? new ResizeObserver(function() {
+      if (!updating) update();
+    }) : null;
+    if (!virtual || contextElement) resizeObserver == null ? void 0 : resizeObserver.observe(observedTrigger);
+    resizeObserver == null ? void 0 : resizeObserver.observe(surface);
+    var mutationObserver = typeof MutationObserver === "function" ? new MutationObserver(update) : null;
+    mutationObserver == null ? void 0 : mutationObserver.observe(surface, { childList: true, subtree: true, characterData: true });
+    updateNow();
+    return { update, dispose: function() {
+      var _a3, _b2;
+      disposed = true;
+      if (frame) cancelAnimationFrame(frame);
+      window.removeEventListener("resize", update);
+      (_a3 = window.visualViewport) == null ? void 0 : _a3.removeEventListener("resize", update);
+      (_b2 = window.visualViewport) == null ? void 0 : _b2.removeEventListener("scroll", update);
+      resizeObserver == null ? void 0 : resizeObserver.disconnect();
+      mutationObserver == null ? void 0 : mutationObserver.disconnect();
+    } };
+  }
+  function openAnchoredSurface(options2) {
+    var surface = options2.surface;
+    var anchor = options2.anchor;
+    setSurfaceOrigin(surface, anchor.getBoundingClientRect());
+    var position = anchorSurface(anchor, surface, { placement: options2.placement });
+    var unregister = registerLayer({
+      element: surface,
+      trigger: options2.trigger,
+      restoreFocus: options2.restoreFocus,
+      closeOnOutsidePointer: options2.closeOnOutsidePointer,
+      preventOutsidePointerDefault: options2.preventOutsidePointerDefault,
+      onClose: options2.onClose
+    });
+    return {
+      update: position.update,
+      dispose: function() {
+        position.dispose();
+        unregister({ restoreFocus: false });
+        surface.classList.remove("visible");
+      }
+    };
+  }
+
+  // src/ui/node-teardown.js
+  function teardownNode(id) {
+    var node = nodes[id];
+    if (!node) return;
+    disposeNodeContent(node);
+    if (node.el && node.el.parentNode) node.el.parentNode.removeChild(node.el);
+    removeMarks(readerMain, id);
+    removeThreadItem(id);
+    var parent = nodes[node.parent_id];
+    if (parent && parent.bodyEl) removeMarks(parent.bodyEl, id);
+    unregisterNode(id);
+  }
+
+  // src/ui/ask-followups.js
+  function defaultAskHooks() {
+    return {
+      post: function() {
+        return Promise.resolve({ ok: true });
+      }
+    };
+  }
+  var askLifecycle = createModuleLifecycle({ defaults: defaultAskHooks });
+  function registerAskHooks(hooks) {
+    askLifecycle.register(hooks);
+  }
+  function initAskFollowups() {
+    disposeAskFollowupResources(false);
+    var askScope = askLifecycle.beginInit();
+    askScope.listen(document, "mouseup", function(e) {
+      if (inAsk(e)) return;
+      if (usesMobileAskSurface()) queueMobileAsk(80);
+      else askScope.timeout(maybeShowAsk, 0);
+    });
+    askScope.listen(document, "selectionchange", function() {
+      if (usesMobileAskSurface()) queueMobileAsk(140);
+    });
+    askScope.listen(document, "touchend", function(e) {
+      if (!inAsk(e) && usesMobileAskSurface()) queueMobileAsk(80);
+    }, { passive: true });
+    askScope.listen(askGo, "click", function(e) {
+      submitAsk(null, motionSourceFromEvent(e));
+    });
+    askScope.listen(document.getElementById("ask-lenses"), "click", function(e) {
+      var b = e.target.closest ? e.target.closest(".lens") : null;
+      if (b) submitAsk(b.getAttribute("data-lens"), motionSourceFromEvent(e));
+    });
+    askScope.listen(askText, "input", function() {
+      autoGrowEl(askText, 110);
+    });
+    askScope.listen(askText, "keydown", onAskTextKeydown);
+    askScope.listen(ask, "transitionend", function(e) {
+      if (e.target === ask && askPosition) askPosition.update();
+    });
+    askScope.listen(composerText, "input", function() {
+      autoGrowComposer();
+      updateComposerState();
+    });
+    askScope.listen(composerText, "keydown", function(e) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        submitFollowup("keyboard");
+      }
+    });
+    askScope.listen(composerSend, "click", function(e) {
+      submitFollowup(motionSourceFromEvent(e));
+    });
+    askScope.listen(readerMain, "wheel", interruptScrollAnimation, { passive: true });
+    askScope.listen(readerMain, "touchstart", interruptScrollAnimation, { passive: true });
+    askScope.listen(readerMain, "pointerdown", interruptScrollAnimation, { passive: true });
+    askScope.listen(readerMain, "scroll", function() {
+      if (performance.now() > scrollAnimIgnoreUntil) cancelScrollAnimation();
+    }, { passive: true });
+    askScope.listen(document, "keydown", interruptScrollAnimation);
+    return disposeAskFollowups;
+  }
+  function inAsk(e) {
+    return e.target && e.target.closest && e.target.closest("#ask");
+  }
+  var askPosition = null;
+  var askTabOwner = null;
+  var askOwnerCleanup = null;
+  var mobileSelectionTimer = 0;
+  var ignoreMobileSelectionUntil = 0;
+  function usesMobileAskSurface() {
+    return !!(window.matchMedia && (window.matchMedia("(pointer: coarse)").matches || window.matchMedia("(max-width: 760px)").matches));
+  }
+  function queueMobileAsk(delay) {
+    if (Date.now() < ignoreMobileSelectionUntil || !askLifecycle.scope) return;
+    if (mobileSelectionTimer) clearTimeout(mobileSelectionTimer);
+    mobileSelectionTimer = askLifecycle.scope.timeout(function() {
+      mobileSelectionTimer = 0;
+      maybeShowAsk();
+    }, delay);
+  }
+  function selectionOwner(dc) {
+    return dc && dc.closest && dc.closest(".node") || readerMain;
+  }
+  function onAskOwnerKeydown(e) {
+    if (e.key !== "Tab" || e.shiftKey || !ask.classList.contains("visible")) return;
+    var active = document.activeElement;
+    if (active !== document.body && active !== askTabOwner && !askTabOwner.contains(active)) return;
+    e.preventDefault();
+    askText.focus();
+  }
+  function focusAskOwner(owner) {
+    if (!owner || !owner.isConnected) return;
+    if (!owner.hasAttribute("tabindex")) owner.setAttribute("tabindex", "-1");
+    try {
+      owner.focus({ preventScroll: true });
+    } catch (e) {
+      owner.focus();
+    }
+  }
+  function maybeShowAsk() {
+    var sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.toString().trim()) return;
+    var anchor = sel.anchorNode && sel.anchorNode.nodeType === 3 ? sel.anchorNode.parentNode : sel.anchorNode;
+    var dc = anchor && anchor.closest ? anchor.closest(".doc-content") : null;
+    if (!dc) return;
+    if (dc.classList.contains("rh-pdf")) return;
+    var parentId = dc.dataset.nodeId;
+    if (!parentId || !nodes[parentId] || nodes[parentId].status === "pending") return;
+    if (closed) {
+      flashHint(frozen ? "This is a read-only snapshot \u2014 asking needs the live Rabbithole." : "Session ended \u2014 reopen this Rabbithole from your terminal to keep asking.");
+      return;
+    }
+    var range = sel.getRangeAt(0);
+    if (!dc.contains(range.startContainer) || !dc.contains(range.endContainer)) return;
+    var startOff = charOffset(dc, range.startContainer, range.startOffset);
+    var endOff = charOffset(dc, range.endContainer, range.endOffset);
+    if (endOff <= startOff) return;
+    if (ask.classList.contains("visible")) hideAsk();
+    pendingAsk = {
+      parentId,
+      container: dc,
+      selectedText: sel.toString().trim(),
+      startOff,
+      endOff,
+      range: range.cloneRange()
+    };
+    paintAskHighlight(pendingAsk.range);
+    askText.value = "";
+    askText.placeholder = "Ask about this\u2026 \u21B5 = Explain";
+    ask.classList.add("visible");
+    var owner = selectionOwner(dc);
+    var virtualAnchor = { getBoundingClientRect: function() {
+      return pendingAsk.range.getBoundingClientRect();
+    }, contextElement: dc };
+    askTabOwner = owner;
+    askOwnerCleanup = askLifecycle.scope ? askLifecycle.scope.listen(document, "keydown", onAskOwnerKeydown) : function() {
+      document.removeEventListener("keydown", onAskOwnerKeydown);
+    };
+    openAskSurface(virtualAnchor, owner);
+  }
+  var pendingAsk = null;
+  function openAskSurface(anchor, owner) {
+    var mobile = usesMobileAskSurface();
+    ask.classList.toggle("mobile-sheet", mobile);
+    askText.placeholder = mobile ? "Ask about this\u2026" : "Ask about this\u2026 \u21B5 = Explain";
+    var surfaceAnchor = mobile ? mobileViewportAnchor(owner) : anchor;
+    askPosition = openAnchoredSurface({
+      surface: ask,
+      anchor: surfaceAnchor,
+      placement: mobile ? "top-center" : "bottom-start",
+      restoreFocus: false,
+      preventOutsidePointerDefault: false,
+      onClose: function(reason) {
+        var escapeOwner = reason === "escape" ? owner : null;
+        var keepRange = reason === "escape" && pendingAsk ? pendingAsk.range : null;
+        hideAsk();
+        if (escapeOwner) focusAskOwner(escapeOwner);
+        restoreSelectionRange(keepRange);
+      }
+    });
+    autoGrowEl(askText, 110);
+    if (!mobile) askText.focus({ preventScroll: true });
+  }
+  function mobileViewportAnchor(owner) {
+    return { contextElement: owner, getBoundingClientRect: function() {
+      var viewport2 = window.visualViewport;
+      var left = viewport2 ? viewport2.offsetLeft : 0;
+      var top = viewport2 ? viewport2.offsetTop : 0;
+      var width = viewport2 ? viewport2.width : window.innerWidth;
+      var height = viewport2 ? viewport2.height : window.innerHeight;
+      var bottom = top + height;
+      return {
+        left,
+        right: left + width,
+        top: bottom,
+        bottom,
+        width,
+        height: 0,
+        x: left,
+        y: bottom
+      };
+    } };
+  }
+  function restoreSelectionRange(range) {
+    if (!range) return;
+    ignoreMobileSelectionUntil = Date.now() + 300;
+    try {
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } catch (e) {
+    }
+  }
+  function hideAsk() {
+    if (askPosition) {
+      askPosition.dispose();
+      askPosition = null;
+    }
+    if (askOwnerCleanup) {
+      var cleanup = askOwnerCleanup;
+      askOwnerCleanup = null;
+      cleanup();
+    }
+    askTabOwner = null;
+    ask.classList.remove("visible");
+    pendingAsk = null;
+    clearAskHighlight();
+  }
+  function disposeAskFollowups() {
+    disposeAskFollowupResources(true);
+  }
+  function disposeAskFollowupResources(resetHooks) {
+    hideAsk();
+    cancelScrollAnimation();
+    askLifecycle.dispose(resetHooks);
+    pendingAsk = null;
+    askTabOwner = null;
+    askOwnerCleanup = null;
+    if (mobileSelectionTimer) clearTimeout(mobileSelectionTimer);
+    mobileSelectionTimer = 0;
+    ignoreMobileSelectionUntil = 0;
+    scrollAnimId = 0;
+    scrollAnimIgnoreUntil = 0;
+    askText.value = "";
+    composerText.value = "";
+  }
+  function paintAskHighlight(range) {
+    try {
+      if (window.Highlight && window.CSS && CSS.highlights) CSS.highlights.set("rh-ask", new Highlight(range));
+    } catch (e) {
+    }
+  }
+  function clearAskHighlight() {
+    try {
+      if (window.CSS && CSS.highlights) CSS.highlights.delete("rh-ask");
+    } catch (e) {
+    }
+  }
+  var LENS_KEYS = { "1": "explain", "2": "eli5", "3": "example", "4": "deeper" };
+  function onAskTextKeydown(e) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      submitAsk(null, "keyboard");
+    } else if (askText.value === "" && !e.metaKey && !e.ctrlKey && !e.altKey && LENS_KEYS[e.key]) {
+      e.preventDefault();
+      submitAsk(LENS_KEYS[e.key], "keyboard");
+    }
+  }
+  function retirePdfConversionAction(parent) {
+    var _a2, _b, _c;
+    (_b = (_a2 = parent == null ? void 0 : parent.bodyEl) == null ? void 0 : _a2.querySelector(".rh-pdf-convert")) == null ? void 0 : _b.remove();
+    if (mode === "reader") (_c = readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"] .rh-pdf-convert')) == null ? void 0 : _c.remove();
+  }
+  function submitAsk(lensKey, source2) {
+    if (!pendingAsk || closed) return;
+    var parent = nodes[pendingAsk.parentId];
+    if (!parent) {
+      hideAsk();
+      return;
+    }
+    var lens = lensKey && LENSES[lensKey] ? lensKey : null;
+    var question = lens ? LENSES[lens].q : askText.value.trim();
+    var requestId = uuid(), childId = uuid();
+    var pos = placeChild2(parent, BRANCH_SELECTION);
+    var anchor = { offset_start: pendingAsk.startOff, offset_end: pendingAsk.endOff };
+    if (pendingAsk.pdfAnchor) anchor.pdf = pendingAsk.pdfAnchor;
+    var node = {
+      id: childId,
+      parent_id: parent.id,
+      title: lens ? lensLabel2(lens) : question ? truncate2(question, 48) : "\u2026",
+      html: "",
+      md: "",
+      base_url: parent.base_url || null,
+      base_url_source: parent.base_url ? "inherited" : null,
+      read: false,
+      origin: { selected_text: pendingAsk.selectedText, question, lens, anchor, branch_type: BRANCH_SELECTION },
+      x: pos.x,
+      y: pos.y,
+      w: DEFAULT_CHILD.w,
+      h: DEFAULT_CHILD.h,
+      font_scale: 1,
+      collapsed: false,
+      status: "pending",
+      _order: nextOrder(),
+      _startTs: Date.now()
+    };
+    registerNode(node);
+    retirePdfConversionAction(parent);
+    var isPdfRegion = !!pendingAsk.pdfAnchor;
+    function revealCreatedBranch(response) {
+      if (response && response.crop_asset) node.origin.crop_asset = response.crop_asset;
+      if (canvasBuilt && !node.el) {
+        createNodeEl(node, true);
+        renderVisibility();
+        drawEdges();
+      }
+      if (isPdfRegion) {
+        if (mode === "reader") mountPdfRectMark(readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"]'), anchor, childId, "rh-pdf-mark mark-pending");
+        if (parent.bodyEl) mountPdfRectMark(parent.bodyEl.querySelector(".doc-content"), anchor, childId, "rh-pdf-mark mark-pending");
+        scheduleEdges();
+        if (mode === "reader" && currentNodeId === parent.id) renderSidebar();
+      } else if (mode === "reader") {
+        var rdc = readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"]');
+        wrapInContainer(rdc, anchor, childId, "hl mark-pending");
+        if (currentNodeId === parent.id) renderSidebar();
+      }
+      if (parent.bodyEl && !isPdfRegion) {
+        wrapInContainer(parent.bodyEl.querySelector(".doc-content"), anchor, childId, "hl mark-pending");
+        scheduleEdges();
+      }
+      revealNode(node, source2);
+      refreshAmbient();
+    }
+    var sel = window.getSelection();
+    if (sel) sel.removeAllRanges();
+    hideAsk();
+    var request = askLifecycle.hooks.post({
+      type: "branch_request",
+      request_id: requestId,
+      node_id: childId,
+      parent_id: parent.id,
+      selected_text: node.origin.selected_text,
+      question,
+      lens,
+      anchor,
+      branch_type: BRANCH_SELECTION,
+      position: { x: node.x, y: node.y },
+      size: { w: node.w, h: node.h }
+    });
+    if (isPdfRegion) {
+      request.then(function(res) {
+        if (!res || !res.ok) rollbackBranch(node);
+        else revealCreatedBranch(res);
+      });
+    } else {
+      revealCreatedBranch(null);
+      request.then(function(res) {
+        if (!res || !res.ok) rollbackBranch(node);
+      });
+    }
+  }
+  function updateComposerState() {
+    var _a2, _b;
+    var current = nodes[currentNodeId];
+    applyComposerState(
+      { text: composerText, send: composerSend, wrap: composerInner },
+      { phase: sessionPhase(), pending: !current || current.status === "pending" || !!((_b = (_a2 = current.extensions) == null ? void 0 : _a2.pdf) == null ? void 0 : _b.converting) },
+      {
+        frozen: "Read-only snapshot \u2014 open the live Rabbithole to keep asking",
+        closed: "Session ended \u2014 reopen this Rabbithole from your terminal; saved questions are answered there",
+        pending: "This answer is still being written\u2026",
+        away: "The agent is away \u2014 questions are saved and answered when it returns\u2026",
+        live: "Ask a follow-up about this document\u2026"
+      }
+    );
+  }
+  function autoGrowComposer() {
+    autoGrowEl(composerText, 140);
+  }
+  function sendFollowup(parent, question, lens, synthesis) {
+    var _a2, _b;
+    if ((_b = (_a2 = parent == null ? void 0 : parent.extensions) == null ? void 0 : _a2.pdf) == null ? void 0 : _b.converting) return null;
+    var requestId = uuid(), childId = uuid();
+    var pos = placeChild2(parent, BRANCH_FOLLOWUP);
+    var node = {
+      id: childId,
+      parent_id: parent.id,
+      title: synthesis ? "Synthesis" : lens ? lensLabel2(lens) : truncate2(question, 48),
+      html: "",
+      md: "",
+      base_url: parent.base_url || null,
+      base_url_source: parent.base_url ? "inherited" : null,
+      read: false,
+      origin: { selected_text: "", question, lens, synthesis: !!synthesis, anchor: null, branch_type: BRANCH_FOLLOWUP },
+      x: pos.x,
+      y: pos.y,
+      w: DEFAULT_CHILD.w,
+      h: DEFAULT_CHILD.h,
+      font_scale: 1,
+      collapsed: false,
+      status: "pending",
+      _order: nextOrder(),
+      _startTs: Date.now()
+    };
+    registerNode(node);
+    retirePdfConversionAction(parent);
+    if (canvasBuilt) {
+      createNodeEl(node, true);
+      renderVisibility();
+      drawEdges();
+    }
+    if (currentNodeId === parent.id && mode === "reader") {
+      if (synthesis) renderSidebar();
+      else {
+        var t = ensureThread();
+        if (t) t.appendChild(buildThreadItem(node));
+      }
+    }
+    var payload = {
+      type: "branch_request",
+      request_id: requestId,
+      node_id: childId,
+      parent_id: parent.id,
+      selected_text: "",
+      question,
+      lens,
+      anchor: null,
+      branch_type: BRANCH_FOLLOWUP,
+      position: { x: node.x, y: node.y },
+      size: { w: node.w, h: node.h }
+    };
+    if (synthesis) payload.synthesis = true;
+    askLifecycle.hooks.post(payload).then(function(res) {
+      if (!res || !res.ok) rollbackBranch(node);
+    });
+    refreshAmbient();
+    return node;
+  }
+  var scrollAnimId = 0;
+  var scrollAnimIgnoreUntil = 0;
+  var scrollFrameCleanup = null;
+  function cancelScrollAnimation() {
+    scrollAnimId++;
+    clearScrollFrame();
+  }
+  function clearScrollFrame() {
+    if (!scrollFrameCleanup) return;
+    var cleanup = scrollFrameCleanup;
+    scrollFrameCleanup = null;
+    cleanup();
+  }
+  function scheduleScrollFrame(callback) {
+    clearScrollFrame();
+    var id = nextFrame(run);
+    var cancel = function() {
+      cancelFrame(id);
+    };
+    scrollFrameCleanup = askLifecycle.scope ? askLifecycle.scope.addCleanup(cancel) : cancel;
+    function run(timestamp) {
+      var cleanup = scrollFrameCleanup;
+      scrollFrameCleanup = null;
+      if (cleanup) cleanup();
+      callback(timestamp);
+    }
+  }
+  function setAnimatedScrollTop(el, value) {
+    scrollAnimIgnoreUntil = performance.now() + 80;
+    el.scrollTop = value;
+  }
+  function animateScroll(el, target, source2) {
+    var myId = ++scrollAnimId;
+    if (document.hidden || shouldReduceMotion() || source2 !== "pointer") {
+      el.scrollTop = target;
+      return;
+    }
+    var s = el.scrollTop, t0 = performance.now(), D2 = 240;
+    function step(t) {
+      if (myId !== scrollAnimId) return;
+      var p = Math.min(1, (t - t0) / D2), k = easeOutMotion(p);
+      setAnimatedScrollTop(el, s + (target - s) * k);
+      if (p < 1) scheduleScrollFrame(step);
+    }
+    scheduleScrollFrame(step);
+  }
+  function interruptScrollAnimation() {
+    cancelScrollAnimation();
+  }
+  function submitFollowup(source2) {
+    var _a2, _b;
+    if (closed) {
+      flashHint(frozen ? "This is a read-only snapshot." : "Session ended \u2014 reopen this Rabbithole from your terminal to continue.");
+      return;
+    }
+    var parent = nodes[currentNodeId];
+    if (!parent || parent.status === "pending" || ((_b = (_a2 = parent.extensions) == null ? void 0 : _a2.pdf) == null ? void 0 : _b.converting)) return;
+    var question = composerText.value.trim();
+    if (!question) return;
+    sendFollowup(parent, question, null);
+    composerText.value = "";
+    autoGrowComposer();
+    updateComposerState();
+    animateScroll(readerMain, readerMain.scrollHeight, source2);
+  }
+  function rollbackBranch(node) {
+    var live = nodes[node.id];
+    if (!live || live.status === "answered") return;
+    teardownNode(node.id);
+    if (canvasBuilt) drawEdges();
+    if (mode === "reader" && currentNodeId === node.parent_id) renderSidebar();
+    refreshAmbient();
+    flashHint("Couldn't reach the agent \u2014 that ask was undone.");
+  }
+  function placeChild2(parent, branchType) {
+    return placeChild(parent, branchType, {
+      childrenOf,
+      effH,
+      sort: nodeOrder2,
+      childSize: DEFAULT_CHILD
+    });
+  }
+
+  // src/ui/primitives/dialog.js
+  var FOCUSABLE = [
+    "a[href]",
+    "button:not([disabled])",
+    "textarea:not([disabled])",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "[tabindex]:not([tabindex='-1'])"
+  ].join(",");
+  function focus2(element) {
+    if (!element || !element.isConnected || typeof element.focus !== "function") return false;
+    try {
+      element.focus({ preventScroll: true });
+    } catch (error) {
+      try {
+        element.focus();
+      } catch (_error) {
+        return false;
+      }
+    }
+    return true;
+  }
+  function visibleFocusables(dialog) {
+    return Array.prototype.slice.call(dialog.querySelectorAll(FOCUSABLE)).filter(function(element) {
+      return element.offsetParent !== null || element === document.activeElement;
+    });
+  }
+  function resolveInitialFocus(dialog, requested) {
+    var explicit = typeof requested === "string" ? dialog.querySelector(requested) : requested;
+    return (explicit == null ? void 0 : explicit.isConnected) ? explicit : visibleFocusables(dialog)[0] || dialog;
+  }
+  function openDialog(options2) {
+    options2 = options2 || {};
+    var dialog = options2.dialog || options2.element;
+    var backdrop = options2.backdrop || dialog;
+    if (!dialog || !backdrop) throw new Error("openDialog requires a dialog element");
+    var labelledby = options2.labelledby || dialog.getAttribute("aria-labelledby");
+    var label = options2.label || dialog.getAttribute("aria-label");
+    if (!labelledby && !label) throw new Error("openDialog requires label or labelledby");
+    if (labelledby && !labelledby.split(/\s+/).every(function(id) {
+      return document.getElementById(id);
+    })) {
+      throw new Error("openDialog labelledby must reference existing elements");
+    }
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    if (labelledby) dialog.setAttribute("aria-labelledby", labelledby);
+    else dialog.setAttribute("aria-label", label);
+    if (!dialog.hasAttribute("tabindex")) dialog.setAttribute("tabindex", "-1");
+    backdrop.hidden = false;
+    var closed2 = false;
+    var initialTimer = null;
+    function onKeydown2(event) {
+      if (event.key !== "Tab") return;
+      var items = visibleFocusables(dialog);
+      if (!items.length) {
+        event.preventDefault();
+        focus2(dialog);
+        return;
+      }
+      var first = items[0], last = items[items.length - 1];
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
+        event.preventDefault();
+        focus2(last);
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        focus2(first);
+      }
+    }
+    dialog.addEventListener("keydown", onKeydown2);
+    var unregister = registerLayer({
+      element: dialog,
+      trigger: options2.trigger,
+      closeOnEscape: options2.closeOnEscape,
+      closeOnOutsidePointer: options2.closeOnBackdrop,
+      restoreFocus: options2.restoreFocus,
+      onClose: function(reason) {
+        close2(reason === "outside-pointer" ? "backdrop" : reason);
+      }
+    });
+    function close2(reason, settings) {
+      var _a2;
+      if (closed2) return;
+      closed2 = true;
+      if (initialTimer !== null) clearTimeout(initialTimer);
+      dialog.removeEventListener("keydown", onKeydown2);
+      backdrop.hidden = true;
+      (_a2 = options2.onClose) == null ? void 0 : _a2.call(options2, reason || "programmatic");
+      unregister(settings);
+    }
+    function dispose(settings) {
+      close2("programmatic", settings);
+      if (options2.removeOnDispose) backdrop.remove();
+    }
+    initialTimer = setTimeout(function() {
+      initialTimer = null;
+      if (!closed2) focus2(resolveInitialFocus(dialog, options2.initialFocus));
+    }, 0);
+    return { close: close2, dispose };
+  }
+
+  // src/ui/image-ux.js
+  var imageResizeMemory = {};
+  var activeLightbox = null;
+  var activeImageResizeCleanup = null;
+  var IMAGE_MIN_WIDTH = 120;
+  var LIGHTBOX_MIN_ZOOM = 0.25;
+  var LIGHTBOX_MAX_ZOOM = 6;
+  function imageSurfaceScale(dc) {
+    if (!dc || !dc.offsetWidth) return 1;
+    var rect = dc.getBoundingClientRect();
+    return rect.width ? rect.width / dc.offsetWidth : 1;
+  }
+  function imageMemoryKey(dc, img, index, surfaceKey) {
+    var nodeId = dc && dc.dataset && dc.dataset.nodeId || "doc";
+    return String(surfaceKey || "surface") + ":" + nodeId + ":" + index + ":" + (img.getAttribute("src") || "");
+  }
+  function clampImageWidth(dc, value) {
+    var max = Math.max(IMAGE_MIN_WIDTH, dc ? dc.clientWidth : IMAGE_MIN_WIDTH);
+    return Math.max(IMAGE_MIN_WIDTH, Math.min(max, value));
+  }
+  function nearestImageScrollContainer(el) {
+    var cur = el ? el.parentElement : null;
+    while (cur && cur !== document.body && cur !== document.documentElement) {
+      var style = window.getComputedStyle(cur);
+      var oy = style.overflowY;
+      if ((oy === "auto" || oy === "scroll" || oy === "overlay") && cur.scrollHeight > cur.clientHeight + 1) return cur;
+      cur = cur.parentElement;
+    }
+    return document.scrollingElement || document.documentElement;
+  }
+  function imageScrollScale(scroller) {
+    if (!scroller || !scroller.offsetHeight) return 1;
+    var rect = scroller.getBoundingClientRect();
+    return rect.height ? rect.height / scroller.offsetHeight : 1;
+  }
+  function keepImageHandleAnchored(scroller, beforeRect, afterRect) {
+    if (!scroller || !beforeRect || !afterRect) return;
+    var delta = afterRect.bottom - beforeRect.bottom;
+    if (!delta) return;
+    scroller.scrollTop += delta / imageScrollScale(scroller);
+  }
+  function applyImageWidth(frame, width) {
+    frame.style.width = Math.round(width) + "px";
+    frame.dataset.rhResized = "1";
+  }
+  function resetImageWidth(frame, key) {
+    frame.style.width = "";
+    delete frame.dataset.rhResized;
+    if (key) delete imageResizeMemory[key];
+  }
+  function beginImageResize(e, dc, frame, key) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    hideAsk();
+    var scale = imageSurfaceScale(dc);
+    var startX = e.clientX;
+    var startW = frame.getBoundingClientRect().width / scale;
+    var scroller = nearestImageScrollContainer(frame);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch (_e) {
+    }
+    function move(ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      var next = clampImageWidth(dc, startW + (ev.clientX - startX) / scale);
+      var before = frame.getBoundingClientRect();
+      applyImageWidth(frame, next);
+      keepImageHandleAnchored(scroller, before, frame.getBoundingClientRect());
+      imageResizeMemory[key] = next;
+      scheduleEdges();
+    }
+    if (activeImageResizeCleanup) activeImageResizeCleanup();
+    function done(ev) {
+      if (ev) ev.stopPropagation();
+      window.removeEventListener("pointermove", move, true);
+      window.removeEventListener("pointerup", done, true);
+      window.removeEventListener("pointercancel", done, true);
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch (_e) {
+      }
+      if (activeImageResizeCleanup === done) activeImageResizeCleanup = null;
+      scheduleEdges();
+    }
+    activeImageResizeCleanup = done;
+    window.addEventListener("pointermove", move, true);
+    window.addEventListener("pointerup", done, true);
+    window.addEventListener("pointercancel", done, true);
+  }
+  function setLightboxTransform(img, state) {
+    img.style.setProperty("--rh-zoom", state.scale);
+    img.style.setProperty("--rh-pan-x", Math.round(state.x) + "px");
+    img.style.setProperty("--rh-pan-y", Math.round(state.y) + "px");
+  }
+  function clampLightboxZoom(value) {
+    return Math.max(LIGHTBOX_MIN_ZOOM, Math.min(LIGHTBOX_MAX_ZOOM, value));
+  }
+  function pointerDistance(a, b) {
+    var dx = a.clientX - b.clientX;
+    var dy = a.clientY - b.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+  function openImageLightbox(src, alt, trigger) {
+    closeImageLightbox();
+    var overlay = document.createElement("div");
+    overlay.className = "rh-lightbox";
+    overlay.hidden = true;
+    var dialog = document.createElement("div");
+    dialog.className = "rh-lightbox-dialog";
+    var img = document.createElement("img");
+    img.className = "rh-lightbox-img";
+    img.src = src;
+    img.alt = alt || "";
+    img.draggable = false;
+    dialog.appendChild(img);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    var state = { scale: 1, x: 0, y: 0 };
+    var drag = null;
+    var pointers = {};
+    var pinch = null;
+    setLightboxTransform(img, state);
+    activeLightbox = openDialog({
+      dialog,
+      backdrop: overlay,
+      label: alt || "Image preview",
+      initialFocus: dialog,
+      trigger,
+      removeOnDispose: true,
+      onClose: function() {
+        overlay.remove();
+        activeLightbox = null;
+      }
+    });
+    function clearPointer(id) {
+      delete pointers[id];
+      var keys = Object.keys(pointers);
+      if (keys.length < 2) pinch = null;
+      if (!keys.length) drag = null;
+    }
+    overlay.addEventListener("wheel", function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var next = clampLightboxZoom(state.scale * (e.deltaY < 0 ? 1.12 : 0.88));
+      state.scale = next;
+      if (state.scale <= 1) {
+        state.x = 0;
+        state.y = 0;
+      }
+      setLightboxTransform(img, state);
+    }, { passive: false });
+    overlay.addEventListener("pointerdown", function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      pointers[e.pointerId] = { clientX: e.clientX, clientY: e.clientY };
+      try {
+        overlay.setPointerCapture(e.pointerId);
+      } catch (_e) {
+      }
+      var ids = Object.keys(pointers);
+      if (ids.length >= 2) {
+        pinch = { dist: pointerDistance(pointers[ids[0]], pointers[ids[1]]), scale: state.scale };
+        drag = null;
+      } else if (e.target === img && state.scale > 1) {
+        drag = { x: e.clientX, y: e.clientY, ox: state.x, oy: state.y };
+      }
+    });
+    overlay.addEventListener("pointermove", function(e) {
+      if (!pointers[e.pointerId]) return;
+      e.preventDefault();
+      e.stopPropagation();
+      pointers[e.pointerId] = { clientX: e.clientX, clientY: e.clientY };
+      var ids = Object.keys(pointers);
+      if (pinch && ids.length >= 2) {
+        var dist = pointerDistance(pointers[ids[0]], pointers[ids[1]]);
+        if (pinch.dist > 0) state.scale = clampLightboxZoom(pinch.scale * dist / pinch.dist);
+        if (state.scale <= 1) {
+          state.x = 0;
+          state.y = 0;
+        }
+        setLightboxTransform(img, state);
+      } else if (drag && state.scale > 1) {
+        state.x = drag.ox + e.clientX - drag.x;
+        state.y = drag.oy + e.clientY - drag.y;
+        setLightboxTransform(img, state);
+      }
+    });
+    overlay.addEventListener("pointerup", function(e) {
+      clearPointer(e.pointerId);
+    });
+    overlay.addEventListener("pointercancel", function(e) {
+      clearPointer(e.pointerId);
+    });
+  }
+  function closeImageLightbox() {
+    if (!activeLightbox) return;
+    var dialog = activeLightbox;
+    activeLightbox = null;
+    dialog.dispose();
+  }
+  function disposeImageUx() {
+    if (activeImageResizeCleanup) activeImageResizeCleanup();
+    closeImageLightbox();
+    imageResizeMemory = {};
+  }
+  function mountDocImages(dc, node, base, surfaceKey) {
+    if (!dc || !dc.querySelectorAll) return;
+    var imgs = dc.querySelectorAll("img");
+    for (var i2 = 0; i2 < imgs.length; i2++) {
+      var img = imgs[i2];
+      if (img.dataset.rhImgReady === "1") continue;
+      if (img.closest(".viz, .viz-mounted")) continue;
+      var frame = img.parentNode && img.parentNode.classList && img.parentNode.classList.contains("rh-img-frame") ? img.parentNode : null;
+      if (!frame) {
+        frame = document.createElement("span");
+        frame.className = "rh-img-frame";
+        img.parentNode.insertBefore(frame, img);
+        frame.appendChild(img);
+      }
+      var key = imageMemoryKey(dc, img, i2, surfaceKey || visualSurfaceKey(node, base));
+      img.dataset.rhImgReady = "1";
+      img.tabIndex = 0;
+      img.draggable = false;
+      if (imageResizeMemory[key]) applyImageWidth(frame, imageResizeMemory[key]);
+      var handle = document.createElement("button");
+      handle.type = "button";
+      handle.className = "rh-img-handle";
+      handle.setAttribute("aria-label", "Resize image");
+      handle.title = "Drag to resize \xB7 double-click to reset";
+      frame.appendChild(handle);
+      frame.addEventListener("pointerdown", function(e) {
+        e.stopPropagation();
+      });
+      img.addEventListener("click", function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        openImageLightbox(e.currentTarget.currentSrc || e.currentTarget.src, e.currentTarget.alt, e.currentTarget);
+      });
+      handle.addEventListener("pointerdown", /* @__PURE__ */ (function(f, k) {
+        return function(e) {
+          beginImageResize(e, dc, f, k);
+        };
+      })(frame, key));
+      handle.addEventListener("dblclick", /* @__PURE__ */ (function(f, k) {
+        return function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          var scroller = nearestImageScrollContainer(f);
+          var before = f.getBoundingClientRect();
+          resetImageWidth(f, k);
+          keepImageHandleAnchored(scroller, before, f.getBoundingClientRect());
+          scheduleEdges();
+        };
+      })(frame, key));
+    }
   }
 
   // src/ui/palette.js

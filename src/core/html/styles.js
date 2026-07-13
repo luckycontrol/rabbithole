@@ -351,6 +351,12 @@ body.mode-canvas #viewport { display: block; }
 .nc-inner .send-btn svg { width: 12px; height: 12px; }
 @media (hover: none), (pointer: coarse) { .nc-handle { opacity: 1; pointer-events: auto; transition: none; } .node-composer.open .nc-handle { opacity: 0; pointer-events: none; } }
 .origin-quote { font-family: var(--font-doc); font-size: 12px; color: var(--fg-dim); border-left: 2px solid var(--border-focus); padding-left: 9px; margin-bottom: 12px; font-style: italic; }
+.rh-origin-crop { display: block; width: fit-content; max-width: 58%; overflow: hidden; box-sizing: border-box; margin: 0 0 14px; padding: 0; border: 1px solid color-mix(in srgb, var(--border-focus) 42%, var(--border)); border-radius: 8px; background: color-mix(in srgb, var(--node-bg) 94%, var(--fg) 6%); box-shadow: 0 1px 1px color-mix(in srgb, var(--fg) 8%, transparent); cursor: zoom-in; line-height: 0; }
+.rh-origin-crop:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
+.rh-origin-crop:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.rh-origin-crop img { display: block; width: auto; max-width: 100%; height: auto; max-height: 180px; object-fit: contain; }
+.rh-origin-crop-reader { margin-bottom: 24px; }
+.rh-origin-crop-reader img { max-height: 260px; }
 
 #toolbar { position: fixed; top: 14px; left: 14px; z-index: 50; display: none; align-items: center; gap: var(--space-3); background: var(--bar-bg); border: 1px solid var(--border); border-radius: 10px; padding: 7px 10px; box-shadow: var(--shadow); }
 body.mode-canvas #toolbar { display: flex; }
@@ -388,6 +394,23 @@ body.mode-canvas #toolbar { display: flex; }
 .lens kbd { font-family: var(--font-ui); font-size: 9px; font-weight: 500; color: var(--fg-faint);
   background: color-mix(in srgb, var(--fg) 8%, transparent); border-radius: 4px; padding: 1px 4.5px; line-height: 1.6; }
 .lens:hover kbd { color: var(--fg-dim); background: color-mix(in srgb, var(--fg) 13%, transparent); }
+
+/* Mobile selection is a separate interaction model: keep the desktop palette
+   anchored to the text, but give touch users a stable, thumb-reachable sheet. */
+#ask.mobile-sheet { width: min(420px, calc(var(--overlay-viewport-width, 100vw) - var(--surface-edge) * 2));
+  max-height: max(0px, calc(var(--overlay-viewport-height, 100vh) - var(--surface-edge) * 2));
+  overflow: auto; overscroll-behavior: contain; border-radius: 16px;
+  transform: translateY(18px); transform-origin: bottom center; }
+#ask.mobile-sheet.visible { transform: translateY(0); }
+#ask.mobile-sheet .ask-input { align-items: center; gap: 10px; padding: 10px 10px 10px 14px; }
+#ask.mobile-sheet .ask-input textarea { min-height: 24px; max-height: 96px; font-size: 16px; line-height: 1.45; }
+#ask.mobile-sheet .ask-input .send-btn { width: 40px; height: 40px; flex: 0 0 40px; }
+#ask.mobile-sheet .ask-lenses { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;
+  padding: 8px 8px max(8px, env(safe-area-inset-bottom)); }
+#ask.mobile-sheet .lens { min-height: 46px; padding: 10px 8px; font-size: 13px;
+  color: var(--fg); background: color-mix(in srgb, var(--fg) 5%, transparent); }
+#ask.mobile-sheet .lens:active { background: var(--hl-strong); }
+#ask.mobile-sheet .lens kbd { display: none; }
 
 /* ---------- ⌘K palette — search the whole hole ---------- */
 #palette { position: fixed; inset: 0; z-index: 120; display: none; background: color-mix(in srgb, var(--bg) 35%, transparent); }
