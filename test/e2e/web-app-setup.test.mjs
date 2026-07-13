@@ -262,10 +262,7 @@ async function verifyLandingAndComposer() {
   assert.equal(await page.locator("#composer-modal").isVisible(), false, "first load should wait for model setup instead of opening the composer");
   assert.equal(await page.locator("#blank-start-new").isDisabled(), true, "New Rabbithole should be disabled before setup");
   assert.equal(await page.locator("#blank-start-setup").innerText(), "Set up AI");
-  assert.equal((await page.locator(".blank-project-link").textContent()).replace(/\s+/g, " ").trim(), "★ Open source on GitHub ↗");
-  assert.equal(await page.getAttribute(".blank-project-link", "href"), "https://github.com/shlokkhemani/rabbithole");
-  assert.equal(await page.getAttribute(".blank-project-link", "target"), "_blank");
-  assert.match(await page.getAttribute(".blank-project-link", "rel"), /noopener/);
+  assert.equal(await page.locator(".blank-project-link").count(), 0, "the blank canvas should leave project links to the toolbar menu");
   assert.match(await page.getAttribute("#blank-start-new", "aria-describedby"), /blank-start-status/);
   assert.equal(await page.locator("#blank-start-status").isVisible(), false, "setup guidance should not remain as persistent copy");
   await page.hover("#blank-start-new-wrap");

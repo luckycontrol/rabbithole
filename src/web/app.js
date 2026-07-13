@@ -135,7 +135,6 @@ function renderShell() {
         <span id="blank-start-status" class="blank-start-tooltip" role="tooltip">Set up AI before starting a Rabbithole.</span>
       </span>
       ${buttonMarkup({ bare: true, id: "blank-start-setup", className: "blank-start-setup", label: "Set up AI" })}
-      <a class="blank-project-link" href="https://github.com/shlokkhemani/rabbithole" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">★</span> Open source on GitHub <span aria-hidden="true">↗</span></a>
     </div>
     <nav id="project-menu" class="project-menu popover-surface" role="menu" aria-label="Rabbithole project" hidden>
       <div class="project-menu-head" role="presentation">

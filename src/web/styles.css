@@ -259,29 +259,6 @@ body.rail-open .blank-start {
   transform: scale(0.98);
 }
 
-.blank-project-link {
-  pointer-events: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 2px;
-  padding: 4px 6px;
-  border-radius: var(--radius-control);
-  color: var(--fg-dim);
-  font: var(--weight-medium) var(--text-xs)/var(--leading-ui) var(--font-ui);
-  text-decoration: none;
-  transition: var(--transition-color);
-}
-
-.blank-project-link span:first-child {
-  color: var(--accent);
-}
-
-.blank-project-link:hover {
-  background: var(--hl);
-  color: var(--fg-bold);
-}
-
 .blank-start-new svg {
   color: var(--fg-dim);
   transition: color var(--duration-fast) var(--ease-standard);
@@ -1894,7 +1871,6 @@ body.blank-dragging .composer-card {
 .key-status .key-switch:focus-visible,
 .blank-start-new:focus-visible,
 .blank-start-setup:focus-visible,
-.blank-project-link:focus-visible,
 .toolbar-brand:focus-visible,
 .project-menu-item:focus-visible,
 .provider-choice button:focus-visible,
