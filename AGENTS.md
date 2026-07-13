@@ -42,7 +42,10 @@ Always work in a **git worktree** — never edit directly on `main`:
 1. Create a worktree on a new branch before making changes
    (`git worktree add ../rabbithole-<topic> -b <topic>`).
 2. Do all work and commit inside that worktree.
-3. When done, merge the branch back into `main`, then remove the worktree
+3. When done, merge the branch back into `main`.
+4. Push the updated `main` branch to its configured upstream and verify that the
+   push succeeds.
+5. Only after the push succeeds, remove the worktree
    (`git worktree remove ../rabbithole-<topic>`) and delete the branch.
 
 ## Conventions
