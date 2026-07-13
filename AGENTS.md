@@ -35,6 +35,16 @@ Storage is JSON files under `~/.rabbithole/` (`RABBITHOLE_DIR` overrides).
 Logs go to stderr — stdout is reserved for the MCP protocol; never print to
 stdout.
 
+## Workflow
+
+Always work in a **git worktree** — never edit directly on `main`:
+
+1. Create a worktree on a new branch before making changes
+   (`git worktree add ../rabbithole-<topic> -b <topic>`).
+2. Do all work and commit inside that worktree.
+3. When done, merge the branch back into `main`, then remove the worktree
+   (`git worktree remove ../rabbithole-<topic>`) and delete the branch.
+
 ## Conventions
 
 - The product name is **Rabbithole** — one word, no space, in all copy.
