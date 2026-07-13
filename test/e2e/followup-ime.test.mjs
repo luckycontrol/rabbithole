@@ -60,8 +60,9 @@ try {
   await page.waitForFunction((count) => document.querySelectorAll(".node").length === count + 1, nodeCountBefore);
   assert.equal(await page.locator(".node").count(), nodeCountBefore + 1,
     "card normal Enter after composition must create exactly one follow-up branch");
-  assert.equal(await page.locator('.node:not(.root) .node-title').filter({ hasText: "테스트" }).count(), 1,
-    "card follow-up title must use the complete composed text");
+  const newCard = page.locator(".node").nth(nodeCountBefore);
+  assert.equal(await newCard.locator(".origin-quote").innerText(), "테스트",
+    "card follow-up origin must retain the complete composed text");
   await waitForRequestCount(page, providerBodies, 2);
   assert.match(JSON.stringify(providerBodies[1]), /테스트/,
     "card follow-up request must contain the complete composed text");
