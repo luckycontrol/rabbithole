@@ -118,6 +118,20 @@ async function verifyMobileSetupExperience() {
     const page = await context.newPage();
     await routeProvider(page);
     await page.goto(baseUrl, { waitUntil: "networkidle" });
+    await page.click("#t-project");
+    await page.waitForSelector("#project-menu:not([hidden])");
+    const projectMenuBounds = await page.locator("#project-menu").evaluate((surface) => {
+      const rect = surface.getBoundingClientRect();
+      const viewport = window.visualViewport;
+      return {
+        surface: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
+        viewport: { left: viewport?.offsetLeft || 0, top: viewport?.offsetTop || 0, width: viewport?.width || innerWidth, height: viewport?.height || innerHeight },
+      };
+    });
+    assert(projectMenuBounds.surface.left >= projectMenuBounds.viewport.left && projectMenuBounds.surface.right <= projectMenuBounds.viewport.left + projectMenuBounds.viewport.width, `project menu must fit the mobile viewport horizontally (${JSON.stringify(projectMenuBounds)})`);
+    assert(projectMenuBounds.surface.top >= projectMenuBounds.viewport.top && projectMenuBounds.surface.bottom <= projectMenuBounds.viewport.top + projectMenuBounds.viewport.height, `project menu must fit the mobile viewport vertically (${JSON.stringify(projectMenuBounds)})`);
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("#project-menu[hidden]", { state: "attached" });
     await page.click("#blank-start-setup");
     await page.waitForSelector("#web-settings-popover");
 
@@ -245,6 +259,10 @@ async function verifyLandingAndComposer() {
   assert.equal(await page.locator("#composer-modal").isVisible(), false, "first load should wait for model setup instead of opening the composer");
   assert.equal(await page.locator("#blank-start-new").isDisabled(), true, "New Rabbithole should be disabled before setup");
   assert.equal(await page.locator("#blank-start-setup").innerText(), "Set up AI");
+  assert.equal((await page.locator(".blank-project-link").textContent()).replace(/\s+/g, " ").trim(), "★ Open source on GitHub ↗");
+  assert.equal(await page.getAttribute(".blank-project-link", "href"), "https://github.com/shlokkhemani/rabbithole");
+  assert.equal(await page.getAttribute(".blank-project-link", "target"), "_blank");
+  assert.match(await page.getAttribute(".blank-project-link", "rel"), /noopener/);
   assert.match(await page.getAttribute("#blank-start-new", "aria-describedby"), /blank-start-status/);
   assert.equal(await page.locator("#blank-start-status").isVisible(), false, "setup guidance should not remain as persistent copy");
   await page.hover("#blank-start-new-wrap");
@@ -332,6 +350,29 @@ async function verifyLandingAndComposer() {
   assert.equal(noHoles.length, 0, "dismissing the composer must not create an Untitled hole");
 
   await page.waitForSelector("#blank-start:not([hidden])");
+  assert.equal(await page.getAttribute("#t-project", "aria-haspopup"), "menu", "the bunny mark should expose the project menu");
+  assert.equal(await page.getAttribute("#t-project", "aria-expanded"), "false");
+  await page.click("#t-project");
+  await page.waitForSelector("#project-menu:not([hidden])");
+  assert.equal(await page.getAttribute("#t-project", "aria-expanded"), "true");
+  assert.deepEqual(await page.locator("#project-menu [role=menuitem]").allTextContents(), [
+    "About & demos↗",
+    "Install the MCP server↗",
+    "Run this browser app locally↗",
+    "★ Star on GitHub↗",
+    "Report an issue↗",
+  ]);
+  assert.equal(await page.getAttribute('#project-menu [href="/about/"]', "target"), "_blank");
+  assert.equal(await page.getAttribute('#project-menu [href*="#quick-start"]', "href"), "https://github.com/shlokkhemani/rabbithole#quick-start");
+  assert.equal(await page.getAttribute('#project-menu [href*="#run-the-browser-version-locally"]', "href"), "https://github.com/shlokkhemani/rabbithole#run-the-browser-version-locally");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "menuitem");
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent.trim()), "About & demos↗");
+  await page.keyboard.press("ArrowDown");
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent.trim()), "Install the MCP server↗", "project menu arrows should move between links");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector("#project-menu[hidden]", { state: "attached" });
+  assert.equal(await page.getAttribute("#t-project", "aria-expanded"), "false");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "t-project", "closing the project menu should restore focus to the bunny mark");
   assert.equal(await page.locator("#blank-start-new kbd").innerText(), "N", "blank-state CTA should teach the N shortcut");
   const blankOffset = await page.evaluate(() => {
     const rect = document.getElementById("blank-start").getBoundingClientRect();

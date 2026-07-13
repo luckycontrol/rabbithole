@@ -68,13 +68,117 @@ body.web-blank-canvas #act-canvas {
   flex: 0 0 24px;
   align-items: center;
   justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
   color: var(--fg-bold);
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+
+.toolbar-brand:hover,
+.toolbar-brand[aria-expanded="true"] {
+  background: var(--hl-strong);
 }
 
 .toolbar-brand svg {
   display: block;
   width: 19px;
   height: 19px;
+}
+
+.project-menu {
+  position: fixed;
+  z-index: var(--layer-popover);
+  width: min(264px, calc(var(--overlay-viewport-width, 100vw) - var(--surface-edge) * 2));
+  padding: var(--space-3);
+  border: var(--surface-popover-border);
+  border-radius: var(--surface-popover-radius);
+  background: var(--surface-popover-bg);
+  -webkit-backdrop-filter: var(--surface-popover-blur);
+  backdrop-filter: var(--surface-popover-blur);
+  box-shadow: var(--surface-popover-shadow);
+}
+
+.project-menu-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-5) var(--space-6);
+}
+
+.project-menu-mark {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--hl-strong);
+  color: var(--fg-bold);
+}
+
+.project-menu-mark svg {
+  width: 19px;
+  height: 19px;
+}
+
+.project-menu-head > span:last-child {
+  display: grid;
+  gap: 1px;
+}
+
+.project-menu-head strong {
+  color: var(--fg-bold);
+  font: var(--weight-semibold) var(--text-body)/var(--leading-ui) var(--font-ui);
+}
+
+.project-menu-head small {
+  color: var(--fg-dim);
+  font: var(--weight-regular) var(--text-xs)/var(--leading-ui) var(--font-ui);
+}
+
+.project-menu-item {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-control-lg);
+  color: var(--fg);
+  font: var(--weight-medium) var(--text-body)/var(--leading-ui) var(--font-ui);
+  text-decoration: none;
+}
+
+.project-menu-item > span:last-child {
+  color: var(--fg-faint);
+  font-size: var(--text-xs);
+}
+
+.project-menu-item:hover {
+  background: var(--hl);
+  color: var(--fg-bold);
+}
+
+.project-menu-github {
+  color: var(--fg-bold);
+}
+
+.project-menu-github > span:first-child > span {
+  margin-right: 3px;
+  color: var(--accent);
+}
+
+.project-menu-muted {
+  color: var(--fg-dim);
+}
+
+.project-menu-sep {
+  height: 1px;
+  margin: var(--space-3) var(--space-5);
+  background: var(--border);
 }
 
 .blank-start {
@@ -169,6 +273,29 @@ body.rail-open .blank-start {
 
 .blank-start-setup:active {
   transform: scale(0.98);
+}
+
+.blank-project-link {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  padding: 4px 6px;
+  border-radius: var(--radius-control);
+  color: var(--fg-dim);
+  font: var(--weight-medium) var(--text-xs)/var(--leading-ui) var(--font-ui);
+  text-decoration: none;
+  transition: var(--transition-color);
+}
+
+.blank-project-link span:first-child {
+  color: var(--accent);
+}
+
+.blank-project-link:hover {
+  background: var(--hl);
+  color: var(--fg-bold);
 }
 
 .blank-start-new svg {
@@ -1783,6 +1910,9 @@ body.blank-dragging .composer-card {
 .key-status .key-switch:focus-visible,
 .blank-start-new:focus-visible,
 .blank-start-setup:focus-visible,
+.blank-project-link:focus-visible,
+.toolbar-brand:focus-visible,
+.project-menu-item:focus-visible,
 .provider-choice button:focus-visible,
 .settings-text-action:focus-visible,
 .settings-select:focus-visible,

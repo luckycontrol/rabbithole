@@ -13,6 +13,7 @@ import { DirectRabbitholeHost, createHoleFromMarkdown, createPendingHoleFromQues
 import { startRabbithole } from "../ui/entry.js";
 import { syncPdfTranscriptionControls } from "../ui/pdf-view.js";
 import { openDialog } from "../ui/primitives/dialog.js";
+import { openPopover } from "../ui/primitives/popover.js";
 import { buttonMarkup } from "../core/html/button-markup.js";
 import { BUNNY_MARK_SVG } from "../core/html/bunny-markup.js";
 import { escapeHtml } from "../core/utils.js";
@@ -37,6 +38,7 @@ let blankZoom = 1;
 let composerDialog = null;
 let settingsController = null;
 let ollamaRecoveryController = null;
+let projectMenuPopover = null;
 let composerPath = "";
 let lastHoleCount = 0;
 let railSummaries = null;
@@ -128,11 +130,24 @@ function renderShell() {
         <span id="blank-start-status" class="blank-start-tooltip" role="tooltip">Set up AI before starting a Rabbithole.</span>
       </span>
       ${buttonMarkup({ bare: true, id: "blank-start-setup", className: "blank-start-setup", label: "Set up AI" })}
+      <a class="blank-project-link" href="https://github.com/shlokkhemani/rabbithole" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">★</span> Open source on GitHub <span aria-hidden="true">↗</span></a>
     </div>
+    <nav id="project-menu" class="project-menu popover-surface" role="menu" aria-label="Rabbithole project" hidden>
+      <div class="project-menu-head" role="presentation">
+        <span class="project-menu-mark" aria-hidden="true">${BUNNY_MARK_SVG}</span>
+        <span><strong>Rabbithole</strong><small>Open source · MIT</small></span>
+      </div>
+      <a class="project-menu-item" role="menuitem" href="/about/" target="_blank" rel="noopener noreferrer"><span>About &amp; demos</span><span aria-hidden="true">↗</span></a>
+      <a class="project-menu-item" role="menuitem" href="https://github.com/shlokkhemani/rabbithole#quick-start" target="_blank" rel="noopener noreferrer"><span>Install the MCP server</span><span aria-hidden="true">↗</span></a>
+      <a class="project-menu-item" role="menuitem" href="https://github.com/shlokkhemani/rabbithole#run-the-browser-version-locally" target="_blank" rel="noopener noreferrer"><span>Run this browser app locally</span><span aria-hidden="true">↗</span></a>
+      <div class="project-menu-sep" role="separator"></div>
+      <a class="project-menu-item project-menu-github" role="menuitem" href="https://github.com/shlokkhemani/rabbithole" target="_blank" rel="noopener noreferrer"><span><span aria-hidden="true">★</span> Star on GitHub</span><span aria-hidden="true">↗</span></a>
+      <a class="project-menu-item project-menu-muted" role="menuitem" href="https://github.com/shlokkhemani/rabbithole/issues" target="_blank" rel="noopener noreferrer"><span>Report an issue</span><span aria-hidden="true">↗</span></a>
+    </nav>
     <div id="web-toast" class="web-toast"><span data-notice-message></span>${buttonMarkup({ bare: true, label: "Action", hidden: true, dataAttrs: { noticeAction: "" } })}</div>`;
   toastNotice = wireNotice(document.getElementById("web-toast"), { variant: "toast" });
   document.getElementById("toolbar")?.insertAdjacentHTML("afterbegin",
-    `<span class="toolbar-brand" title="Rabbithole" aria-label="Rabbithole">${BUNNY_MARK_SVG}</span><span class="sep toolbar-brand-sep"></span>`);
+    `${buttonMarkup({ bare: true, className: "toolbar-brand", id: "t-project", title: "About Rabbithole and project links", ariaLabel: "Rabbithole project menu", ariaHaspopup: "menu", ariaControls: "project-menu", ariaExpanded: "false", svgIconHtml: BUNNY_MARK_SVG })}<span class="sep toolbar-brand-sep"></span>`);
   railOpen = false;
   applyRailState();
   syncRailPosition();
@@ -169,6 +184,13 @@ function initAppChrome() {
   });
   document.getElementById("t-rail")?.addEventListener("click", () => toggleRail());
   document.getElementById("t-new")?.addEventListener("click", (event) => requestNewRabbithole({ source: "button", trigger: event.currentTarget }));
+  const projectTrigger = document.getElementById("t-project");
+  const projectMenu = document.getElementById("project-menu");
+  projectTrigger?.addEventListener("click", () => projectMenuPopover ? closeProjectMenu() : openProjectMenu());
+  projectMenu?.addEventListener("click", (event) => {
+    if (event.target.closest("a")) closeProjectMenu({ restoreFocus: false });
+  });
+  projectMenu?.addEventListener("keydown", moveProjectMenuFocus);
   const settingsTrigger = document.getElementById("t-settings");
   ollamaRecoveryController = createOllamaRecoveryDialog({
     onResolved: async ({ model, transcribeModel }) => {
@@ -248,6 +270,41 @@ function initAppChrome() {
       toggleRail();
     }
   });
+}
+
+function openProjectMenu() {
+  const trigger = document.getElementById("t-project");
+  const surface = document.getElementById("project-menu");
+  if (!trigger || !surface || projectMenuPopover) return;
+  surface.hidden = false;
+  projectMenuPopover = openPopover({
+    trigger,
+    surface,
+    placement: "top-start",
+    initialFocus: surface.querySelector('[role="menuitem"]'),
+    onClose: closeProjectMenu,
+  });
+}
+
+function closeProjectMenu(settings) {
+  if (!projectMenuPopover) return;
+  const active = projectMenuPopover;
+  projectMenuPopover = null;
+  active.close(settings);
+  document.getElementById("project-menu").hidden = true;
+}
+
+function moveProjectMenuFocus(event) {
+  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+  const items = [...event.currentTarget.querySelectorAll('[role="menuitem"]')];
+  if (!items.length) return;
+  event.preventDefault();
+  const current = Math.max(0, items.indexOf(document.activeElement));
+  const next = event.key === "Home" ? 0
+    : event.key === "End" ? items.length - 1
+      : event.key === "ArrowDown" ? (current + 1) % items.length
+        : (current - 1 + items.length) % items.length;
+  items[next].focus({ preventScroll: true });
 }
 
 async function openHistoryLocation() {

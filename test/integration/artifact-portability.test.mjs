@@ -284,11 +284,14 @@ async function verifyPublishOutput() {
     process.exit(publish.status || 1);
   }
   const publishDir = path.join(ROOT, "publish");
-  for (const file of ["index.html", "app.js", "styles.css", "og.jpg", "robots.txt", "llms.txt", "favicon.svg", "_redirects"]) {
+  for (const file of ["index.html", "app.js", "styles.css", "og.jpg", "robots.txt", "llms.txt", "favicon.svg", "_redirects", "sitemap.xml", "about/index.html", "about/styles.css", "about/about.js", "about/demo-ask.mp4", "about/demo-map.mp4"]) {
     await fs.access(path.join(publishDir, file));
   }
   const redirects = await fs.readFile(path.join(publishDir, "_redirects"), "utf8");
   assert(redirects.includes("/* /index.html 200"), "publish fallback should make Rabbithole pathnames refreshable");
+  assert(redirects.includes("/about /about/ 301"), "the historical homepage should have a canonical trailing-slash route");
+  assert(redirects.includes("/install https://github.com/shlokkhemani/rabbithole#quick-start 302"), "the stable install route should lead to canonical GitHub instructions");
+  assert(redirects.includes("/self-host https://github.com/shlokkhemani/rabbithole#run-the-browser-version-locally 302"), "the stable self-host route should lead to local browser instructions");
   const html = await fs.readFile(path.join(publishDir, "index.html"), "utf8");
   assert(html.includes("Rabbithole — an infinite canvas for learning"));
   assert(!html.includes('<html lang="en" data-theme="light">'), "published HTML must not force a light frame before theme initialization");
@@ -304,4 +307,15 @@ async function verifyPublishOutput() {
   const initialScriptHash = createHash("sha256").update(initialScript).digest("base64");
   assert(html.includes(`script-src 'self' 'sha256-${initialScriptHash}'`), "CSP should permit only the exact inline theme bootstrap");
   const llms = await fs.readFile(path.join(publishDir, "llms.txt"), "utf8");
+  assert(llms.includes("https://rabbithole.ing/about/"), "agent-facing discovery should include the about page");
+  assert(llms.includes("#run-the-browser-version-locally"), "agent-facing discovery should include local browser instructions");
+  const about = await fs.readFile(path.join(publishDir, "about/index.html"), "utf8");
+  assert(about.includes("Open the browser app"), "about page should lead with the zero-install browser path");
+  assert(about.includes("Install the MCP server"), "about page should name the agent installation path explicitly");
+  assert(about.includes("Run the browser app locally"), "about page should expose self-hosting instructions");
+  assert(about.includes("Star on GitHub"), "about page should carry a clear GitHub star action");
+  assert(about.includes("OpenRouter requests go directly to OpenRouter"), "about copy should state the hosted-provider boundary accurately");
+  assert(!about.includes("No account, no API keys, nothing leaves your machine"), "about page must not restore the obsolete privacy claim");
+  const sitemap = await fs.readFile(path.join(publishDir, "sitemap.xml"), "utf8");
+  assert(sitemap.includes("https://rabbithole.ing/about/"), "sitemap should expose the about page");
 }
