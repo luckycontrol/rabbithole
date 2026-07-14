@@ -255,6 +255,22 @@ npm run check:dist
 Commit both the source changes and `dist/`. There is no `prepare` build step;
 GitHub `npx` installs use the committed artifacts.
 
+### Production deployment
+
+The [`Deploy Cloudflare Pages`](./.github/workflows/deploy-pages.yml) workflow
+runs the complete test suite and deploys `publish/` to the `rabbithole` Pages
+project on every push to `main`. It can also be rerun manually from GitHub
+Actions. Each Cloudflare deployment is tagged with the exact Git commit.
+
+The workflow requires:
+
+- repository variable `CLOUDFLARE_ACCOUNT_ID`;
+- repository secret `CLOUDFLARE_API_TOKEN`, scoped to **Account → Cloudflare
+  Pages → Edit**.
+
+Configure them with `gh variable set CLOUDFLARE_ACCOUNT_ID` and `gh secret set
+CLOUDFLARE_API_TOKEN`; both commands prompt without committing credentials.
+
 ## License
 
 MIT
