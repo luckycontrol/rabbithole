@@ -73,6 +73,8 @@ export interface BranchRequestEvent extends NodePresentationFields {
   synthesis?: unknown;
   anchor?: unknown;
   branch_type?: unknown;
+  /** Optional durable crop asset prepared by a host for a PDF region ask. */
+  crop_asset?: unknown;
 }
 export interface NodeProgressEvent extends NodeTarget, BaseUrlFields {
   type: "node_progress";

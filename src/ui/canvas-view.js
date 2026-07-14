@@ -49,10 +49,12 @@ import { openNode } from "./reader.js";
 import { applyChildHighlights } from "./text-marks.js";
 import { easeInOutMotion, easeOutMotion } from "./easing.js";
 import { buttonMarkup, iconButtonMarkup } from "../core/html/button-markup.js";
+import { buildOriginCrop } from "./origin-provenance.js";
 import { BUNNY_MARK_SVG } from "../core/html/bunny-markup.js";
 import { createModuleLifecycle } from "./lifecycle.js";
 import { captureContentPosition, restoreContentPosition } from "./scroll-position.js";
 import { applyComposerState } from "./composer-state.js";
+import { ENTER_SEND_HINT, isSubmitEnter } from "./input-intent.js";
 
 function defaultCanvasHooks(){
   return {
@@ -279,7 +281,7 @@ export function autoGrowEl(ta, max){
     var clip = document.createElement("div"); clip.className = "nc-clip"; clip.id = cardDrawerId(node);
     var inner = document.createElement("div"); inner.className = "nc-inner";
     var ta = document.createElement("textarea"); ta.rows = 1;
-    var send = cardButton(iconButtonMarkup({ bare: true, className: "send-btn", ariaLabel: "Send follow-up", title: "Send (↵)", svgIconHtml: SEND_ICON }));
+    var send = cardButton(iconButtonMarkup({ bare: true, className: "send-btn", ariaLabel: "Send follow-up", title: ENTER_SEND_HINT, svgIconHtml: SEND_ICON }));
     var handle = document.createElement("button"); handle.type = "button"; handle.className = "nc-handle"; handle.title = "Ask a follow-up about this document";
     handle.setAttribute("aria-expanded", "false"); handle.setAttribute("aria-controls", clip.id);
     var plus = document.createElement("span"); plus.className = "nc-plus"; plus.textContent = "+";
@@ -290,7 +292,7 @@ export function autoGrowEl(ta, max){
     handle.addEventListener("click", function(e){ e.stopPropagation(); openCardDrawer(node); });
     ta.addEventListener("input", function(){ autoGrowEl(ta, 90); updateCardComposer(node); });
     ta.addEventListener("keydown", function(e){
-      if (e.key === "Enter" && !e.shiftKey && !e.isComposing){ e.preventDefault(); submitCardFollowup(node, "keyboard"); }
+      if (isSubmitEnter(e)){ e.preventDefault(); submitCardFollowup(node, "keyboard"); }
       else if (e.key === "Escape"){ e.stopPropagation(); closeCardDrawer(node); handle.focus({ preventScroll: true }); }
     });
     // Click-away with an empty drawer tucks it back in (a draft keeps it out).
@@ -401,6 +403,8 @@ export function fillBody(node){
       fq.textContent = node.origin.lens ? "Follow-up — " + lensLabel(node.origin.lens) : node.origin.question;
       body.appendChild(fq);
     }
+    var crop = buildOriginCrop(node, "card");
+    if (crop) body.appendChild(crop);
     var dc = buildDocContent(node, CANVAS_BASE);
     body.appendChild(dc);
     applyChildHighlights(dc, node);
@@ -425,7 +429,7 @@ function layoutNode(node){
     function pointerDown(e){
       if (!onDown(e)) return;
       try { handle.setPointerCapture(e.pointerId); } catch(_e){}
-      function move(ev){ onMove(ev); }
+      function move(ev){ if (ev.pointerId === e.pointerId) onMove(ev); }
       function finish(commit){
         handle.removeEventListener("pointermove", move);
         handle.removeEventListener("pointerup", done);
@@ -435,7 +439,7 @@ function layoutNode(node){
         try { handle.releasePointerCapture(e.pointerId); } catch(_e){}
         if (commit) onUp();
       }
-      function done(){ finish(true); }
+      function done(ev){ if (ev.pointerId === e.pointerId) finish(true); }
       function cancel(){ finish(false); }
       activePointerGestures.add(cancel);
       handle.addEventListener("pointermove", move);
@@ -638,9 +642,154 @@ function focusOrigin(node, on){
   function initViewportPan(){
     var sx, sy, ox, oy;
     onPointerGesture(viewport,
-      function(e){ if (e.button !== 0 || e.target.closest(".node")) return false; canvasLifecycle.hooks.hideAsk(); cancelViewAnimation(); viewport.classList.add("panning"); sx=e.clientX; sy=e.clientY; ox=view.x; oy=view.y; return true; },
+      function(e){ if (e.pointerType === "touch" || e.button !== 0 || e.target.closest(".node")) return false; canvasLifecycle.hooks.hideAsk(); cancelViewAnimation(); viewport.classList.add("panning"); sx=e.clientX; sy=e.clientY; ox=view.x; oy=view.y; return true; },
       function(ev){ setViewAdjusted(true); view.x = ox + (ev.clientX - sx); view.y = oy + (ev.clientY - sy); applyTransform(); },
       function(){ viewport.classList.remove("panning"); }, canvasLifecycle.scope);
+    initTouchViewportGestures();
+  }
+
+  // Touch has an explicit ownership contract:
+  // - one finger that starts in a card belongs to the card's native scroller;
+  // - one finger that starts on empty canvas pans the world 1:1;
+  // - two fingers anywhere own the camera and pinch around their midpoint.
+  // Keeping this in one state machine prevents a card drag, browser scroll, and
+  // canvas pan from each reacting to a different pointer in the same gesture.
+  function initTouchViewportGestures(){
+    var touches = new Map();
+    var gesture = null;
+    var suppressClickUntil = 0;
+    var PAN_SLOP = 3;
+
+    function touchPoint(event){
+      return { id: event.pointerId, x: event.clientX, y: event.clientY };
+    }
+    function capture(pointerId){
+      try { viewport.setPointerCapture(pointerId); } catch(_e){}
+    }
+    function release(pointerId){
+      try { viewport.releasePointerCapture(pointerId); } catch(_e){}
+    }
+    function resetTouchGesture(){
+      touches.forEach(function(_point, pointerId){ release(pointerId); });
+      touches.clear();
+      gesture = null;
+      viewport.classList.remove("panning", "pinching");
+    }
+    function beginPan(point, active){
+      gesture = { kind: "pan", pointerId: point.id, sx: point.x, sy: point.y,
+        ox: view.x, oy: view.y, active: !!active };
+      if (active) viewport.classList.add("panning");
+    }
+    function beginPinch(){
+      var pair = Array.from(touches.values()).slice(0, 2);
+      if (pair.length < 2) return;
+      // A pinch wins over a card-head drag or resize that began with the first
+      // finger. Their owned listeners are cancelled before the camera moves.
+      activePointerGestures.forEach(function(cancel){ cancel(); });
+      canvasLifecycle.hooks.hideAsk();
+      cancelViewAnimation();
+      capture(pair[0].id); capture(pair[1].id);
+      var midX = (pair[0].x + pair[1].x) / 2;
+      var midY = (pair[0].y + pair[1].y) / 2;
+      var dx = pair[1].x - pair[0].x, dy = pair[1].y - pair[0].y;
+      gesture = { kind: "pinch", ids: [pair[0].id, pair[1].id],
+        distance: Math.max(1, Math.hypot(dx, dy)), scale: view.scale,
+        anchor: screenToWorld(midX, midY) };
+      suppressClickUntil = Date.now() + 450;
+      viewport.classList.remove("panning");
+      viewport.classList.add("pinching");
+    }
+    function onTouchDown(event){
+      if (event.pointerType !== "touch") return;
+      if (touches.size >= 2){ event.preventDefault(); event.stopPropagation(); return; }
+      var point = touchPoint(event);
+      touches.set(event.pointerId, point);
+      if (touches.size === 2){
+        beginPinch();
+        event.preventDefault(); event.stopPropagation();
+        return;
+      }
+      if (!(event.target.closest && event.target.closest(".node"))){
+        canvasLifecycle.hooks.hideAsk();
+        cancelViewAnimation();
+        capture(event.pointerId);
+        beginPan(point, false);
+        event.preventDefault(); event.stopPropagation();
+      } else {
+        // Do not prevent this pointer: the card body keeps native one-finger
+        // scrolling, momentum, text selection, and nested horizontal scrolling.
+        gesture = { kind: "content", pointerId: event.pointerId };
+      }
+    }
+    function onTouchMove(event){
+      if (event.pointerType !== "touch" || !touches.has(event.pointerId)) return;
+      var point = touchPoint(event);
+      touches.set(event.pointerId, point);
+      if (!gesture) return;
+      if (gesture.kind === "pinch"){
+        var a = touches.get(gesture.ids[0]), b = touches.get(gesture.ids[1]);
+        if (!a || !b) return;
+        var dx = b.x - a.x, dy = b.y - a.y;
+        var next = Math.min(MAX_SCALE, Math.max(MIN_SCALE,
+          gesture.scale * Math.hypot(dx, dy) / gesture.distance));
+        var midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
+        setViewAdjusted(true);
+        view.scale = next;
+        view.x = midX - gesture.anchor.x * next;
+        view.y = midY - gesture.anchor.y * next;
+        applyTransform();
+        event.preventDefault(); event.stopPropagation();
+        return;
+      }
+      if (gesture.kind === "pan" && gesture.pointerId === event.pointerId){
+        var panX = point.x - gesture.sx, panY = point.y - gesture.sy;
+        if (!gesture.active && Math.hypot(panX, panY) < PAN_SLOP) return;
+        if (!gesture.active){
+          gesture.active = true;
+          viewport.classList.add("panning");
+          suppressClickUntil = Date.now() + 350;
+        }
+        setViewAdjusted(true);
+        view.x = gesture.ox + panX;
+        view.y = gesture.oy + panY;
+        applyTransform();
+        event.preventDefault(); event.stopPropagation();
+      }
+    }
+    function onTouchEnd(event){
+      if (event.pointerType !== "touch" || !touches.has(event.pointerId)) return;
+      release(event.pointerId);
+      touches.delete(event.pointerId);
+      if (gesture && gesture.kind === "pinch" && touches.size === 1){
+        // Lifting one finger after a pinch should flow directly into a one-finger
+        // camera pan instead of dropping the gesture or jumping the world.
+        var remaining = Array.from(touches.values())[0];
+        viewport.classList.remove("pinching");
+        capture(remaining.id);
+        beginPan(remaining, true);
+        event.preventDefault(); event.stopPropagation();
+        return;
+      }
+      if (!touches.size || (gesture && gesture.pointerId === event.pointerId)) resetTouchGesture();
+    }
+    function onTouchCancel(event){
+      if (event.pointerType !== "touch") return;
+      release(event.pointerId);
+      touches.delete(event.pointerId);
+      resetTouchGesture();
+    }
+    function suppressGestureClick(event){
+      if (Date.now() >= suppressClickUntil) return;
+      event.preventDefault(); event.stopPropagation();
+    }
+
+    var scope = canvasLifecycle.scope;
+    scope.listen(viewport, "pointerdown", onTouchDown, { capture: true, passive: false });
+    scope.listen(viewport, "pointermove", onTouchMove, { capture: true, passive: false });
+    scope.listen(viewport, "pointerup", onTouchEnd, { capture: true, passive: false });
+    scope.listen(viewport, "pointercancel", onTouchCancel, { capture: true, passive: false });
+    scope.listen(viewport, "click", suppressGestureClick, true);
+    scope.addCleanup(resetTouchGesture);
   }
 
   // Can this element still scroll in the direction of the wheel delta?

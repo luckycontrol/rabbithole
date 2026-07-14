@@ -4,8 +4,19 @@ import { DirectRabbitholeHost } from "../../src/web/transport/direct-host.js";
 const hole = (nodes) => ({ hole_id: "gc", title: "GC", root_id: "root", nodes: [{ id: "root", parent_id: null, markdown: "root", status: "answered", extensions: {} }, ...nodes] });
 const pdfNode = () => ({ id: "pdf", parent_id: "root", markdown: "plain text", status: "answered", extensions: { pdf: { pages: [{ asset: "page-001.jpg" }] } } });
 function storeFixture() {
-  const assets = new Map([["page-001.jpg", new Blob(["jpeg"], { type: "image/jpeg" })]]);
+  const assets = new Map([
+    ["page-001.jpg", new Blob(["jpeg"], { type: "image/jpeg" })],
+    ["crop-clip.jpg", new Blob(["crop"], { type: "image/jpeg" })],
+  ]);
   return { assets, async saveHole() {}, async getAsset(_h, n) { return assets.get(n) || null; }, async putAsset(_h, n, b) { assets.set(n, b); }, async deleteAsset(_h, n) { assets.delete(n); } };
+}
+
+{
+  const store = storeFixture();
+  const clip = { id: "clip", parent_id: "root", markdown: "clean answer", status: "answered", origin: { crop_asset: "crop-clip.jpg" }, extensions: {} };
+  const host = new DirectRabbitholeHost({ store, hole: hole([clip]) });
+  await host.handleDeleteNode({ node_id: "clip" });
+  assert.equal(store.assets.has("crop-clip.jpg"), false, "deleting a clip owner removes its crop asset");
 }
 
 {

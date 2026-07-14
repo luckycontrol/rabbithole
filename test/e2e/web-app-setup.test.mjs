@@ -13,11 +13,17 @@ const KEY_URL = "https://openrouter.ai/api/v1/key";
 const MODEL_URL = "https://openrouter.ai/api/v1/models";
 const LOCAL_MODEL_URL = "http://localhost:11434/v1/models";
 const LOCAL_SHOW_URL = "http://localhost:11434/api/show";
+const LOCAL_VERSION_URL = "http://localhost:11434/api/version";
+const LOCAL_CHAT_URL = "http://localhost:11434/v1/chat/completions";
+const GITHUB_REPO_API_URL = "https://api.github.com/repos/shlokkhemani/rabbithole";
 
 const app = await bootWebApp();
 const { browser, baseUrl } = app;
 try {
   await verifyThemeBeforeAppRuntime();
+  await verifyMobileSetupExperience();
+  await verifySetupDefaultsToOpenRouterAndGatesLocalGuide();
+  await verifyLocalFailureRequiresTroubleshootChoice();
   await verifyLandingAndComposer();
   await verifySetupReadinessInvalidation();
   await verifyComboboxCatalogStates();
@@ -25,6 +31,162 @@ try {
   console.log("web app verification passed");
 } finally {
   await app.close();
+}
+
+async function verifySetupDefaultsToOpenRouterAndGatesLocalGuide() {
+  const context = await browser.newContext();
+  await context.addInitScript(() => localStorage.setItem("rh-web-settings", JSON.stringify({
+    preset: "custom",
+    base_url: "http://localhost:11434/v1",
+    model: "llama3.2",
+    transcribe_model: "llama3.2",
+    session_only: true,
+  })));
+  try {
+    const page = await context.newPage();
+    let localModelRequests = 0;
+    await page.route(LOCAL_MODEL_URL, (route) => {
+      localModelRequests += 1;
+      return route.fulfill({ status: 502, headers: corsHeaders(), body: "failed" });
+    });
+    await page.route(LOCAL_VERSION_URL, (route) => route.abort());
+    await page.goto(baseUrl, { waitUntil: "networkidle" });
+    await page.click("#blank-start-setup");
+    await page.waitForSelector("#web-settings-popover");
+    await page.waitForTimeout(180);
+
+    assert.equal(localModelRequests, 0, "opening OpenRouter setup must not probe Local");
+    assert.equal(await page.getAttribute('[data-provider="openrouter"]', "aria-pressed"), "true", "Set up AI should open the complete OpenRouter path by default");
+    assert.equal(await page.locator("#api-key").count(), 1, "default setup should immediately show the OpenRouter form");
+    assert.equal(await page.locator("#local-model").count(), 0, "Local controls should stay hidden until Local is selected");
+    assert.equal(await page.locator("#ollama-recovery-modal").count(), 0, "opening setup must not force OpenRouter users into Ollama setup");
+    assert.deepEqual(await page.locator(".provider-choice button").allTextContents(), ["OpenRouter", "Local"]);
+
+    await page.click('[data-provider="custom"]');
+    await page.waitForSelector("#local-model-setup");
+    assert.equal(localModelRequests, 1, "choosing Local should start Local model discovery");
+    assert.equal(await page.locator("#ollama-recovery-modal").count(), 0, "failed Local discovery should stay in the Local settings screen");
+    assert.equal(await page.locator("#local-model-setup").innerText(), "Set up Local", "the Local screen should offer an explicit setup guide");
+    assert.equal(await page.locator("#complete-model-setup").isDisabled(), true, "Local setup cannot finish before a model is connected");
+
+    await page.click("#local-model-setup");
+    await page.waitForSelector("#ollama-recovery-modal:not([hidden])");
+  } finally {
+    await context.close();
+  }
+}
+
+async function verifyLocalFailureRequiresTroubleshootChoice() {
+  const context = await browser.newContext();
+  await context.addInitScript(() => localStorage.setItem("rh-web-settings", JSON.stringify({
+    preset: "custom",
+    base_url: "http://localhost:11434/v1",
+    model: "llama3.2",
+    transcribe_model: "llama3.2",
+    session_only: true,
+    generation_setup: { version: 1, preset: "custom", base_url: "http://localhost:11434/v1", model: "llama3.2" },
+  })));
+  try {
+    const page = await context.newPage();
+    await page.route(LOCAL_CHAT_URL, (route) => route.abort());
+    await page.route(LOCAL_VERSION_URL, (route) => route.abort());
+    await page.goto(baseUrl, { waitUntil: "networkidle" });
+    await createDocument(page, "# Local failure\n\nThis selection verifies opt-in troubleshooting.");
+    await selectText(page, "opt-in troubleshooting");
+    await page.waitForSelector("#ask.visible");
+    await page.fill("#ask-text", "Explain this");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector("#web-toast.visible");
+
+    assert.equal(await page.locator("#ollama-recovery-modal").count(), 0, "a Local generation failure must not auto-open diagnostics");
+    assert.equal(await page.locator("#web-toast [data-notice-action]").innerText(), "Troubleshoot", "a Local failure should offer an explicit troubleshooting choice");
+
+    await page.click("#web-toast [data-notice-action]");
+    await page.waitForSelector("#ollama-recovery-modal:not([hidden])");
+  } finally {
+    await context.close();
+  }
+}
+
+async function verifyMobileSetupExperience() {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 3,
+    hasTouch: true,
+    isMobile: true,
+  });
+  try {
+    const page = await context.newPage();
+    await routeProvider(page);
+    await page.route(GITHUB_REPO_API_URL, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ stargazers_count: 230 }) }));
+    await page.goto(baseUrl, { waitUntil: "networkidle" });
+    await page.click("#t-project");
+    await page.waitForSelector("#project-menu:not([hidden])");
+    const projectMenuBounds = await page.locator("#project-menu").evaluate((surface) => {
+      const rect = surface.getBoundingClientRect();
+      const viewport = window.visualViewport;
+      return {
+        surface: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
+        viewport: { left: viewport?.offsetLeft || 0, top: viewport?.offsetTop || 0, width: viewport?.width || innerWidth, height: viewport?.height || innerHeight },
+      };
+    });
+    assert(projectMenuBounds.surface.left >= projectMenuBounds.viewport.left && projectMenuBounds.surface.right <= projectMenuBounds.viewport.left + projectMenuBounds.viewport.width, `project menu must fit the mobile viewport horizontally (${JSON.stringify(projectMenuBounds)})`);
+    assert(projectMenuBounds.surface.top >= projectMenuBounds.viewport.top && projectMenuBounds.surface.bottom <= projectMenuBounds.viewport.top + projectMenuBounds.viewport.height, `project menu must fit the mobile viewport vertically (${JSON.stringify(projectMenuBounds)})`);
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("#project-menu[hidden]", { state: "attached" });
+    await page.click("#blank-start-setup");
+    await page.waitForSelector("#web-settings-popover");
+
+    const initial = await page.locator("#web-settings-popover").evaluate((surface) => {
+      const input = document.getElementById("api-key");
+      const rect = surface.getBoundingClientRect();
+      const inputRect = input.getBoundingClientRect();
+      const viewport = window.visualViewport;
+      return {
+        surface: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
+        viewport: { left: viewport?.offsetLeft || 0, top: viewport?.offsetTop || 0, width: viewport?.width || innerWidth, height: viewport?.height || innerHeight },
+        inputFontSize: parseFloat(getComputedStyle(input).fontSize),
+        inputHeight: inputRect.height,
+        attributes: [input.autocapitalize, input.getAttribute("autocorrect"), input.inputMode, input.enterKeyHint],
+      };
+    });
+    assert(initial.inputFontSize >= 16, `mobile API key text must stay at least 16px to prevent iOS focus zoom (got ${initial.inputFontSize}px)`);
+    assert(initial.inputHeight >= 44, `mobile API key field must meet the touch target floor (got ${initial.inputHeight}px)`);
+    assert.deepEqual(initial.attributes, ["none", "off", "text", "done"], "mobile key entry should disable destructive text transformations and expose a Done key");
+    assert(initial.surface.left >= initial.viewport.left && initial.surface.right <= initial.viewport.left + initial.viewport.width, `setup surface must fit the mobile visual viewport (${JSON.stringify(initial)})`);
+
+    await page.focus("#api-key");
+    const pasteAllowed = await page.locator("#api-key").evaluate((input, key) => {
+      const transfer = new DataTransfer();
+      transfer.setData("text/plain", key);
+      const event = new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: transfer });
+      const allowed = input.dispatchEvent(event);
+      if (allowed) {
+        input.setRangeText(transfer.getData("text/plain"), input.selectionStart || 0, input.selectionEnd || 0, "end");
+        input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertFromPaste", data: key }));
+      }
+      return allowed;
+    }, MOCK_KEY);
+    assert.equal(pasteAllowed, true, "the key field must not cancel native paste");
+    await page.waitForSelector("#api-key-status.valid");
+    assert.equal(await page.inputValue("#api-key"), MOCK_KEY, "a pasted OpenRouter key must remain intact");
+
+    await page.setViewportSize({ width: 390, height: 430 });
+    await page.waitForFunction(() => {
+      const surface = document.getElementById("web-settings-popover");
+      const viewport = window.visualViewport;
+      return surface && viewport && surface.getBoundingClientRect().height <= viewport.height - 15;
+    });
+    const keyboardSized = await page.locator("#web-settings-popover").evaluate((surface) => {
+      const rect = surface.getBoundingClientRect();
+      const viewport = window.visualViewport;
+      return { top: rect.top, bottom: rect.bottom, viewportTop: viewport.offsetTop, viewportBottom: viewport.offsetTop + viewport.height, scrollable: surface.scrollHeight > surface.clientHeight };
+    });
+    assert(keyboardSized.top >= keyboardSized.viewportTop && keyboardSized.bottom <= keyboardSized.viewportBottom, `setup surface must remain reachable when the keyboard shrinks the visual viewport (${JSON.stringify(keyboardSized)})`);
+    assert.equal(keyboardSized.scrollable, true, "keyboard-sized setup should scroll internally instead of escaping the viewport");
+  } finally {
+    await context.close();
+  }
 }
 
 async function verifyThemeBeforeAppRuntime() {
@@ -41,7 +203,7 @@ async function verifyThemeBeforeAppRuntime() {
         if (saved) localStorage.setItem("rh-theme", saved);
       }, testCase.saved);
       const page = await context.newPage();
-      await page.route("**/app.js", (route) => route.abort());
+      await page.route("**/app.js*", (route) => route.abort());
       await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
       const initialTheme = await page.evaluate(() => ({
         attribute: document.documentElement.getAttribute("data-theme"),
@@ -94,11 +256,13 @@ async function verifyLandingAndComposer() {
   });
   const page = await context.newPage();
   await page.route(KEY_URL, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { label: "test key" } }) }));
+  await page.route(GITHUB_REPO_API_URL, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ stargazers_count: 230 }) }));
   await page.goto(baseUrl, { waitUntil: "networkidle" });
   await page.waitForSelector("#blank-start:not([hidden])");
   assert.equal(await page.locator("#composer-modal").isVisible(), false, "first load should wait for model setup instead of opening the composer");
   assert.equal(await page.locator("#blank-start-new").isDisabled(), true, "New Rabbithole should be disabled before setup");
   assert.equal(await page.locator("#blank-start-setup").innerText(), "Set up AI");
+  assert.equal(await page.locator(".blank-project-link").count(), 0, "the blank canvas should leave project links to the toolbar menu");
   assert.match(await page.getAttribute("#blank-start-new", "aria-describedby"), /blank-start-status/);
   assert.equal(await page.locator("#blank-start-status").isVisible(), false, "setup guidance should not remain as persistent copy");
   await page.hover("#blank-start-new-wrap");
@@ -112,6 +276,8 @@ async function verifyLandingAndComposer() {
   await page.keyboard.press("N");
   await page.waitForSelector("#web-settings-popover");
   assert.deepEqual(await page.locator(".provider-choice button").allTextContents(), ["OpenRouter", "Local"]);
+  assert.equal(await page.getAttribute('[data-provider="openrouter"]', "aria-pressed"), "true", "setup should select OpenRouter by default");
+  assert.equal(await page.locator("#api-key").count(), 1, "setup should open the full OpenRouter form immediately");
   assert.equal(await page.locator(".settings-info-trigger").count(), 1);
   assert.equal(await page.locator("#transcribe-model-help").textContent(), "Uses a vision model to turn PDF pages into searchable Markdown. Page images go to OpenRouter.");
   await page.locator(".settings-info-trigger").focus();
@@ -184,6 +350,28 @@ async function verifyLandingAndComposer() {
   assert.equal(noHoles.length, 0, "dismissing the composer must not create an Untitled hole");
 
   await page.waitForSelector("#blank-start:not([hidden])");
+  assert.equal(await page.getAttribute("#t-project", "aria-haspopup"), "menu", "the bunny mark should expose the project menu");
+  assert.equal(await page.getAttribute("#t-project", "aria-expanded"), "false");
+  await page.click("#t-project");
+  await page.waitForSelector("#project-menu:not([hidden])");
+  await page.waitForFunction(() => document.getElementById("project-github-stars")?.title === "230 GitHub stars");
+  assert.equal(await page.getAttribute("#t-project", "aria-expanded"), "true");
+  assert.deepEqual(await page.locator("#project-menu [role=menuitem]").allTextContents(), [
+    "About Rabbithole↗",
+    "Install & self-host↗",
+    "GitHub★ 230↗",
+  ]);
+  assert.equal(await page.getAttribute('#project-menu [href="/about/"]', "target"), "_blank");
+  assert.equal(await page.getAttribute('#project-menu [href="/about/#install"]', "target"), "_blank");
+  assert.equal(await page.getAttribute("#project-github-stars", "aria-label"), "230 GitHub stars");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "menuitem");
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent.trim()), "About Rabbithole↗");
+  await page.keyboard.press("ArrowDown");
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent.trim()), "Install & self-host↗", "project menu arrows should move between links");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector("#project-menu[hidden]", { state: "attached" });
+  assert.equal(await page.getAttribute("#t-project", "aria-expanded"), "false");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "t-project", "closing the project menu should restore focus to the bunny mark");
   assert.equal(await page.locator("#blank-start-new kbd").innerText(), "N", "blank-state CTA should teach the N shortcut");
   const blankOffset = await page.evaluate(() => {
     const rect = document.getElementById("blank-start").getBoundingClientRect();
@@ -427,6 +615,7 @@ async function verifySetupReadinessInvalidation() {
   await localPage.goto(baseUrl, { waitUntil: "networkidle" });
   assert.equal(await localPage.locator("#blank-start-new").isDisabled(), false, "matching local endpoint fingerprint should unlock creation");
   await localPage.click("#blank-start-setup");
+  await localPage.waitForFunction(() => document.querySelector(".local-model-section .field-hint")?.textContent.includes("installed model"));
   await localPage.locator(".settings-advanced summary").click();
   await localPage.fill("#provider-base", "http://localhost:12345/v1");
   await localPage.press("#provider-base", "Tab");
@@ -442,6 +631,8 @@ async function verifyLocalComboboxStates(openRouterFixture) {
     const page = await context.newPage();
     await page.route(MODEL_URL, (route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(openRouterFixture) }));
     await page.route(LOCAL_MODEL_URL, handler);
+    await page.route(LOCAL_VERSION_URL, (route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ version: "0.24.0" }) }));
+    await page.route(LOCAL_CHAT_URL, (route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ choices: [{ message: { content: "ready" } }] }) }));
     await page.route(LOCAL_SHOW_URL, (route) => {
       const model = route.request().postDataJSON()?.model || "";
       return route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ capabilities: model === "llava:7b" ? ["completion", "vision"] : ["completion"] }) });
@@ -457,6 +648,7 @@ async function verifyLocalComboboxStates(openRouterFixture) {
   assert.equal(await found.page.locator("#transcribe-model-help").textContent(), "Uses a vision model to turn PDF pages into searchable Markdown. Page images stay on your local endpoint.");
   assert.equal(await found.page.locator("#transcribe-model").isDisabled(), false);
   assert.equal(await found.page.locator("#transcribe-model").getAttribute("data-value"), "llava:7b");
+  assert.equal(await found.page.locator("#ollama-recovery-modal").count(), 0, "a healthy existing Ollama connection must never enter recovery");
   await found.page.click("#local-model");
   assert.equal(await found.page.locator(".model-option[data-value='nomic-embed-text:latest']").count(), 0, "embedding-only Ollama models should not be offered for generation");
   await found.page.waitForSelector(".model-option[data-value='qwen3:8b']");
@@ -468,7 +660,9 @@ async function verifyLocalComboboxStates(openRouterFixture) {
 
   const none = await run((route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [] }) }));
   await none.page.waitForFunction(() => document.querySelector(".local-model-section .field-hint")?.textContent.includes("No installed models"));
-  assert.equal(await none.page.locator("#local-model-retry").count(), 1);
+  assert.equal(await none.page.locator("#local-model-setup").innerText(), "Set up Local");
+  assert.equal(await none.page.locator("#ollama-recovery-modal").count(), 0, "an empty Local install should offer guidance without auto-opening it");
+  assert.equal(await none.page.locator("#complete-model-setup").isDisabled(), true);
   assert.equal(await none.page.locator("#transcribe-model").isDisabled(), true);
   assert.match(await none.page.locator("#transcribe-model-status").innerText(), /disabled.*no local models/i);
   await none.context.close();
@@ -479,19 +673,48 @@ async function verifyLocalComboboxStates(openRouterFixture) {
     return route.fulfill(attempts === 1 ? { status: 500, headers: corsHeaders(), body: "failed" }
       : { status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [{ id: "recovered:latest" }] }) });
   });
-  await failed.page.waitForSelector("#local-model-retry");
-  await failed.page.click("#local-model-retry");
-  await failed.page.waitForFunction(() => document.querySelector(".local-model-section .field-hint")?.textContent.includes("1 installed model"));
+  await failed.page.waitForSelector("#local-model-setup");
+  assert.equal(await failed.page.locator("#ollama-recovery-modal").count(), 0, "a failed Local probe must not auto-open the guide");
+  await failed.page.click("#local-model-setup");
+  await failed.page.waitForSelector("#ollama-recovery-modal:not([hidden])");
+  await failed.page.click("#ollama-primary-action");
+  await failed.page.waitForSelector("#ollama-recovery-modal", { state: "detached" });
   assert.equal(attempts, 2);
+  assert.equal((await failed.page.evaluate(() => JSON.parse(localStorage.getItem("rh-web-settings")))).model, "recovered:latest");
   await failed.context.close();
 
   const free = await run((route) => route.fulfill({ status: 502, headers: corsHeaders(), body: "failed" }));
-  await free.page.click("#local-model");
-  await free.page.waitForSelector(".combobox-error");
-  await free.page.fill("#local-model-input", "manual:7b");
-  await free.page.keyboard.press("Enter");
-  assert.equal((await free.page.evaluate(() => JSON.parse(localStorage.getItem("rh-web-settings")))).model, "manual:7b", "failed local discovery should commit an exact id");
+  await free.page.waitForSelector("#local-model-setup");
+  assert.equal(await free.page.locator("#ollama-recovery-modal").count(), 0, "Local connection errors should remain inline until setup is requested");
+  await free.page.click("#local-model-setup");
+  await free.page.waitForSelector("#ollama-recovery-modal:not([hidden])");
+  await free.page.click("#ollama-primary-action");
+  await free.page.waitForFunction(() => /Allow rabbithole\.ing|list models/i.test(document.querySelector("#ollama-recovery-content")?.textContent || ""));
+  assert.match(await free.page.locator("#ollama-recovery-content").innerText(), /Allow rabbithole\.ing|list models/i, "a local endpoint failure should stay inside the focused Ollama recovery guide");
+  assert.deepEqual(await free.page.locator("#ollama-recovery-card").evaluate((dialog) => ({
+    role: dialog.getAttribute("role"), modal: dialog.getAttribute("aria-modal"), labelledby: dialog.getAttribute("aria-labelledby"),
+  })), { role: "dialog", modal: "true", labelledby: "ollama-recovery-title" }, "Ollama recovery should be a real accessible modal");
+  assert.equal(await free.page.locator("#ollama-recovery-card svg, #ollama-recovery-card details, #ollama-recovery-card footer").count(), 0, "recovery should stay concise without diagrams, technical disclosures, or footer copy");
   await free.context.close();
+
+  const absentContext = await browser.newContext();
+  await absentContext.addInitScript(() => {
+    Object.defineProperty(navigator, "permissions", { configurable: true, value: { query: async () => ({ state: "granted" }) } });
+  });
+  const absentPage = await absentContext.newPage();
+  await absentPage.route(MODEL_URL, (route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(openRouterFixture) }));
+  await absentPage.route(LOCAL_MODEL_URL, (route) => route.abort());
+  await absentPage.route(LOCAL_VERSION_URL, (route) => route.abort());
+  await openFreshSettings(absentPage);
+  await absentPage.click('[data-provider="custom"]');
+  await absentPage.waitForSelector("#local-model-setup");
+  assert.equal(await absentPage.locator("#ollama-recovery-modal").count(), 0, "missing Ollama should first produce an inline setup action");
+  await absentPage.click("#local-model-setup");
+  await absentPage.waitForSelector("#ollama-recovery-modal:not([hidden])");
+  await absentPage.waitForSelector("#ollama-recovery-content >> text=Start Ollama");
+  assert.equal(await absentPage.getAttribute(`a[href="https://ollama.com/download/mac"]`, "target"), "_blank", "missing Ollama guidance should offer the official Mac download");
+  assert.doesNotMatch(await absentPage.locator("#ollama-recovery-content").innerText(), /OLLAMA_ORIGINS/, "an unreachable endpoint must not receive origin guidance");
+  await absentContext.close();
 }
 
 async function openFreshSettings(page) {
@@ -505,7 +728,6 @@ async function openFreshSettings(page) {
 
 async function switchSettingsToLocal(page) {
   await page.click('[data-provider="custom"]');
-  await page.waitForSelector("#local-model");
 }
 
 async function verifyAskKeyUxAndRail() {
@@ -695,8 +917,7 @@ async function verifyAskKeyUxAndRail() {
   })), [
     { id: "provider-base", named: true, described: true },
   ], "Local endpoint Field should have a label name and connected hint");
-  await page.focus("#local-model");
-  await page.keyboard.press("Enter");
+  await page.click("#local-model");
   await page.fill("#local-model-input", "deepseek-r1:7b");
   await page.waitForSelector("#local-model-listbox [role=option][data-value='deepseek-r1:7b']");
   await page.keyboard.press("Enter");

@@ -4,6 +4,7 @@ import { detectPdfTranscriptionCapability, pdfTranscriptionCapability } from "./
 import { loadSettings, saveSettings } from "./settings/preferences-store.js";
 import { getApiKey } from "./settings/credential-store.js";
 import { createSettingsPopover } from "./settings/settings-popover.js";
+import { createOllamaRecoveryDialog } from "./settings/ollama-recovery.js";
 import { setKeyStatus, validateKeyForPreset } from "./settings/key-validation.js";
 import { getGenerationSetupStatus, invalidateGenerationSetup } from "./settings/setup-readiness.js";
 import { installTestSeam } from "./test-seam.js";
@@ -12,18 +13,24 @@ import { DirectRabbitholeHost, createHoleFromMarkdown, createPendingHoleFromQues
 import { startRabbithole } from "../ui/entry.js";
 import { syncPdfTranscriptionControls } from "../ui/pdf-view.js";
 import { openDialog } from "../ui/primitives/dialog.js";
-import { buttonMarkup } from "../core/html/button-markup.js";
+import { openPopover } from "../ui/primitives/popover.js";
+import { buttonMarkup, iconButtonMarkup } from "../core/html/button-markup.js";
 import { BUNNY_MARK_SVG } from "../core/html/bunny-markup.js";
 import { escapeHtml } from "../core/utils.js";
 import { wireNotice } from "../ui/primitives/notice.js";
 import { setSnapshotHooks, buildSnapshotProjection, buildSnapshotHtml } from "../ui/snapshot.js";
 import { flushPendingSaves } from "../ui/transport-status.js";
 import { registerRendererAssetName } from "../ui/renderer.js";
+import { isSubmitEnter } from "../ui/input-intent.js";
 import { openUrlToStoredHole } from "./ingest/url.js";
 import { buildRabbitholeExport, downloadRabbitholeExport, importRabbitholeFile, importSnapshotFile, rabbitholeFilename } from "./portable.js";
 import { createWhimsicalHoleId, holeIdFromPathname, pathnameForHole } from "./hole-id.js";
 
 const LAST_HOLE_KEY = "rh-last-hole";
+const GITHUB_REPO_API_URL = "https://api.github.com/repos/shlokkhemani/rabbithole";
+const GITHUB_STARS_CACHE_KEY = "rh-github-stars-v1";
+const GITHUB_STARS_CACHE_TTL = 6 * 60 * 60 * 1000;
+const TOOLBAR_BUNNY_MARK_SVG = BUNNY_MARK_SVG.replace("<svg ", '<svg width="16" height="16" ');
 
 const store = new IdbStore();
 let currentHost = null;
@@ -35,6 +42,9 @@ let railOpen = false;
 let blankZoom = 1;
 let composerDialog = null;
 let settingsController = null;
+let ollamaRecoveryController = null;
+let projectMenuPopover = null;
+let githubStarsPromise = null;
 let composerPath = "";
 let lastHoleCount = 0;
 let railSummaries = null;
@@ -127,10 +137,19 @@ function renderShell() {
       </span>
       ${buttonMarkup({ bare: true, id: "blank-start-setup", className: "blank-start-setup", label: "Set up AI" })}
     </div>
+    <nav id="project-menu" class="project-menu popover-surface" role="menu" aria-label="Rabbithole project" hidden>
+      <div class="project-menu-head" role="presentation">
+        <span class="project-menu-mark" aria-hidden="true">${BUNNY_MARK_SVG}</span>
+        <span><strong>Rabbithole</strong><small>Open source · MIT</small></span>
+      </div>
+      <a class="project-menu-item" role="menuitem" href="/about/" target="_blank" rel="noopener noreferrer"><span>About Rabbithole</span><span aria-hidden="true">↗</span></a>
+      <a class="project-menu-item" role="menuitem" href="/about/#install" target="_blank" rel="noopener noreferrer"><span>Install &amp; self-host</span><span aria-hidden="true">↗</span></a>
+      <a class="project-menu-item project-menu-github" role="menuitem" href="https://github.com/shlokkhemani/rabbithole" target="_blank" rel="noopener noreferrer"><span>GitHub</span><span class="project-menu-meta"><span id="project-github-stars" class="github-star-count" aria-label="GitHub stars"><span aria-hidden="true">★</span> Stars</span><span aria-hidden="true">↗</span></span></a>
+    </nav>
     <div id="web-toast" class="web-toast"><span data-notice-message></span>${buttonMarkup({ bare: true, label: "Action", hidden: true, dataAttrs: { noticeAction: "" } })}</div>`;
   toastNotice = wireNotice(document.getElementById("web-toast"), { variant: "toast" });
   document.getElementById("toolbar")?.insertAdjacentHTML("afterbegin",
-    `<span class="toolbar-brand" title="Rabbithole" aria-label="Rabbithole">${BUNNY_MARK_SVG}</span><span class="sep toolbar-brand-sep"></span>`);
+    `${iconButtonMarkup({ className: "toolbar-brand", id: "t-project", title: "About Rabbithole and project links", ariaLabel: "Rabbithole project menu", ariaHaspopup: "menu", ariaControls: "project-menu", ariaExpanded: "false", svgIconHtml: TOOLBAR_BUNNY_MARK_SVG })}<span class="sep toolbar-brand-sep"></span>`);
   railOpen = false;
   applyRailState();
   syncRailPosition();
@@ -167,7 +186,24 @@ function initAppChrome() {
   });
   document.getElementById("t-rail")?.addEventListener("click", () => toggleRail());
   document.getElementById("t-new")?.addEventListener("click", (event) => requestNewRabbithole({ source: "button", trigger: event.currentTarget }));
+  const projectTrigger = document.getElementById("t-project");
+  const projectMenu = document.getElementById("project-menu");
+  projectTrigger?.addEventListener("click", () => projectMenuPopover ? closeProjectMenu() : openProjectMenu());
+  projectMenu?.addEventListener("click", (event) => {
+    if (event.target.closest("a")) closeProjectMenu({ restoreFocus: false });
+  });
+  projectMenu?.addEventListener("keydown", moveProjectMenuFocus);
   const settingsTrigger = document.getElementById("t-settings");
+  ollamaRecoveryController = createOllamaRecoveryDialog({
+    onResolved: async ({ model, transcribeModel }) => {
+      const current = loadSettings();
+      saveSettings({ ...current, model, transcribe_model: transcribeModel, api_key: getApiKey(current) });
+      settingsController?.completeLocalSetup?.();
+      refreshCurrentBrain();
+      syncGenerationSetupUi();
+      if (currentHoleNeedsPdfTranscription()) void refreshPdfTranscriptionCapability();
+    },
+  });
   settingsController = createSettingsPopover({
     trigger: settingsTrigger,
     onSettingsChange: () => {
@@ -179,6 +215,7 @@ function initAppChrome() {
     eyeSvg,
     setKeyStatus,
     validateKey: validateKeyForPreset,
+    openOllamaRecovery: ({ settings, trigger }) => ollamaRecoveryController.open({ settings, trigger }),
   });
   settingsTrigger?.addEventListener("click", () => settingsController.open());
   document.getElementById("blank-start-new")?.addEventListener("click", (event) => requestNewRabbithole({ source: "button", trigger: event.currentTarget }));
@@ -237,6 +274,84 @@ function initAppChrome() {
   });
 }
 
+function openProjectMenu() {
+  const trigger = document.getElementById("t-project");
+  const surface = document.getElementById("project-menu");
+  if (!trigger || !surface || projectMenuPopover) return;
+  surface.hidden = false;
+  projectMenuPopover = openPopover({
+    trigger,
+    surface,
+    placement: "top-start",
+    initialFocus: surface.querySelector('[role="menuitem"]'),
+    onClose: closeProjectMenu,
+  });
+  void loadGithubStars();
+}
+
+async function loadGithubStars() {
+  const cached = readGithubStarsCache();
+  if (cached) {
+    renderGithubStars(cached.count);
+    if (Date.now() - cached.updatedAt < GITHUB_STARS_CACHE_TTL) return;
+  }
+  if (githubStarsPromise) return githubStarsPromise;
+  githubStarsPromise = fetch(GITHUB_REPO_API_URL, {
+    credentials: "omit",
+    referrerPolicy: "no-referrer",
+  }).then(async (response) => {
+    if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
+    const count = Number((await response.json())?.stargazers_count);
+    if (!Number.isFinite(count) || count < 0) throw new Error("GitHub returned an invalid star count");
+    const value = { count: Math.floor(count), updatedAt: Date.now() };
+    safeLocalStorageSet(GITHUB_STARS_CACHE_KEY, JSON.stringify(value));
+    renderGithubStars(value.count);
+  }).catch(() => {}).finally(() => {
+    githubStarsPromise = null;
+  });
+  return githubStarsPromise;
+}
+
+function readGithubStarsCache() {
+  try {
+    const value = JSON.parse(safeLocalStorageGet(GITHUB_STARS_CACHE_KEY));
+    if (!Number.isFinite(value?.count) || !Number.isFinite(value?.updatedAt)) return null;
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+function renderGithubStars(count) {
+  const target = document.getElementById("project-github-stars");
+  if (!target) return;
+  const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(count);
+  target.innerHTML = `<span aria-hidden="true">★</span> ${escapeHtml(compact)}`;
+  target.setAttribute("aria-label", `${count.toLocaleString("en-US")} GitHub stars`);
+  target.title = `${count.toLocaleString("en-US")} GitHub stars`;
+}
+
+function closeProjectMenu(settings) {
+  if (!projectMenuPopover) return;
+  const active = projectMenuPopover;
+  projectMenuPopover = null;
+  active.close(settings);
+  document.getElementById("project-menu").hidden = true;
+}
+
+function moveProjectMenuFocus(event) {
+  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+  const items = [...event.currentTarget.querySelectorAll('[role="menuitem"]')];
+  if (!items.length) return;
+  event.preventDefault();
+  const current = Math.max(0, items.indexOf(document.activeElement));
+  const next = event.key === "Home" ? 0
+    : event.key === "End" ? items.length - 1
+      : event.key === "ArrowDown" ? (current + 1) % items.length
+        : (current - 1 + items.length) % items.length;
+  items[next].focus({ preventScroll: true });
+}
+
 async function openHistoryLocation() {
   const holeId = holeIdFromPathname(location.pathname);
   if (holeId === currentHoleId) return;
@@ -263,7 +378,7 @@ function initComposer() {
     autoGrowTextarea(input, 240);
   });
   input.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && !event.shiftKey) {
+    if (isSubmitEnter(event)) {
       event.preventDefault();
       runComposer();
     }
@@ -410,6 +525,7 @@ function selectComposerPath(path, { value = "" } = {}) {
   input.spellcheck = isAsk;
   input.value = value;
   document.getElementById("composer-primary").textContent = isAsk ? "Start exploring" : "Open link";
+  document.getElementById("composer-primary").title = "Submit (Enter) · New line (Shift+Enter)";
   autoGrowTextarea(input, 240);
   input.focus({ preventScroll: true });
 }
@@ -654,6 +770,7 @@ async function mountHole(hole, { replace = false } = {}) {
     },
     onRestore: () => { if (currentHost === host) location.reload(); },
     onAuthRequired: (...args) => { if (currentHost === host) return handleBranchAuthRequired(...args); },
+    onProviderFailure: (...args) => { if (currentHost === host) return handleBranchProviderFailure(...args); },
     onRootAnswered: () => { if (currentHost === host) return renderRail(); },
     getPdfTranscriptionCapability: () => currentPdfTranscriptionCapability,
   });
@@ -917,6 +1034,27 @@ function handleBranchAuthRequired({ node, error, retry }) {
       refreshCurrentBrain();
       retry?.();
       showToast({ message: `Retrying "${node?.title || "ask"}".` });
+    },
+  });
+}
+
+function handleBranchProviderFailure({ node, error, retry }) {
+  const settings = loadSettings();
+  if (providerFor(settings.preset).id !== "custom") return;
+  showToast({
+    message: error?.message || "Couldn't reach the local model.",
+    actionLabel: "Troubleshoot",
+    timeoutMs: 10000,
+    onAction: () => {
+      ollamaRecoveryController.open({
+        settings: loadSettings(),
+        trigger: document.getElementById("t-settings"),
+        onResolved: async () => {
+          refreshCurrentBrain();
+          retry?.();
+          showToast({ message: `Retrying "${node?.title || "ask"}".` });
+        },
+      });
     },
   });
 }

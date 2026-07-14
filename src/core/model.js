@@ -1,4 +1,5 @@
 import { inheritedNodeBaseUrl } from "./base-url.js";
+import { validateAssetName } from "./assets.js";
 
 /** @typedef {import("./contracts/engine.js").HoleNode} ModelHoleNode */
 /** @typedef {import("./contracts/engine.js").BranchRequestEvent} ModelBranchRequestEvent */
@@ -140,6 +141,8 @@ export function createPendingBranchNode(payload, parent, { now = new Date().toIS
   const branchType = normalizeBranchType(payload.branch_type, selectedText);
   const inheritedBase = inheritedNodeBaseUrl(parent);
   const nodeId = String(payload.node_id || "");
+  let cropAsset = null;
+  try { cropAsset = validateAssetName(payload.crop_asset); } catch {}
 
   return /** @type {ModelHoleNode} */ ({
     id: nodeId,
@@ -148,7 +151,15 @@ export function createPendingBranchNode(payload, parent, { now = new Date().toIS
     markdown: "",
     base_url: inheritedBase.base_url,
     base_url_source: inheritedBase.base_url_source,
-    origin: { selected_text: selectedText, question, lens, synthesis, anchor, branch_type: branchType },
+    origin: {
+      selected_text: selectedText,
+      question,
+      lens,
+      synthesis,
+      anchor,
+      branch_type: branchType,
+      ...(cropAsset ? { crop_asset: cropAsset } : {}),
+    },
     position: normalizePosition(payload.position),
     size: normalizeSize(payload.size),
     font_scale: 1,

@@ -104,12 +104,20 @@ async function buildWebApp(assetDir) {
     outdir: webDist,
     bundle: true,
     format: "esm",
+    platform: "browser",
     splitting: true,
     target: "es2022",
     entryNames: "[name]",
     chunkNames: "chunks/[name]-[hash]",
     minify: false,
     sourcemap: false,
+    // PDF.js imports `canvas` only inside its Node path. Native optional
+    // dependencies are installed on some operating systems and omitted on
+    // others, so resolving the package normally changes otherwise-identical
+    // browser chunk names. Pin it to the browser stub for reproducible builds.
+    alias: {
+      canvas: path.join(rootDir, "src/web/browser-canvas-stub.js"),
+    },
     define: {
       __RABBITHOLE_DEFAULT_PROXY_URL__: JSON.stringify(proxyConfig.defaultUrl),
     },
@@ -136,7 +144,19 @@ async function buildWebApp(assetDir) {
       `window.__RABBITHOLE_FROZEN_STYLES__=${safeJsString(frozenStyles)};\n`,
     "utf8"
   );
-  await fs.writeFile(path.join(webDist, "index.html"), buildWebIndexHtml(proxyConfig), "utf8");
+  const assetVersion = await hashWebEntryAssets(webDist);
+  await fs.writeFile(path.join(webDist, "index.html"), buildWebIndexHtml(proxyConfig, assetVersion), "utf8");
+}
+
+async function hashWebEntryAssets(webDist) {
+  const hash = createHash("sha256");
+  for (const name of ["app.js", "styles.css", "dompurify.js", "frozen-source.js", "favicon.svg"]) {
+    hash.update(name);
+    hash.update("\0");
+    hash.update(await fs.readFile(path.join(webDist, name)));
+    hash.update("\0");
+  }
+  return hash.digest("hex").slice(0, 12);
 }
 
 async function copyPdfAssets(webDist) {
@@ -155,10 +175,13 @@ async function copyPackedCMaps(sourceDir, targetDir) {
   }
 }
 
-function buildWebIndexHtml({ proxyOrigin = "" } = {}) {
+function buildWebIndexHtml({ proxyOrigin = "" } = {}, assetVersion = "") {
+  if (!/^[a-f0-9]{12}$/.test(assetVersion)) throw new Error("Web asset version must be a 12-character SHA-256 prefix");
+  const assetQuery = `?v=${assetVersion}`;
   const connectSrc = [
     "'self'",
     "https://openrouter.ai",
+    "https://api.github.com",
     "https://arxiv.org",
     "https://www.arxiv.org",
     "https://ar5iv.labs.arxiv.org",
@@ -203,13 +226,13 @@ function buildWebIndexHtml({ proxyOrigin = "" } = {}) {
 <meta name="twitter:title" content="Rabbithole — an infinite canvas for learning">
 <meta name="twitter:description" content="Open a document, ask from selections, and branch your understanding on an infinite canvas.">
 <meta name="twitter:image" content="https://rabbithole.ing/og.jpg">
-<link rel="icon" href="./favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./styles.css">
+<link rel="icon" href="./favicon.svg${assetQuery}" type="image/svg+xml">
+<link rel="stylesheet" href="./styles.css${assetQuery}">
 </head>
 <body>
-<script src="./dompurify.js"></script>
-<script src="./frozen-source.js"></script>
-<script type="module" src="./app.js"></script>
+<script src="./dompurify.js${assetQuery}"></script>
+<script src="./frozen-source.js${assetQuery}"></script>
+<script type="module" src="./app.js${assetQuery}"></script>
 </body>
 </html>`;
 }

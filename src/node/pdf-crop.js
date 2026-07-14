@@ -42,3 +42,8 @@ export async function cropPdfFigureToAsset({ holeId, asset, rect, name }) {
   const filePath = path.join(await ensureAssetDir(holeId), name); await fs.writeFile(filePath, buffer); surface.width = 0; surface.height = 0;
   return { filePath, bytes: buffer.length };
 }
+
+/** Durable branch-owned crop; kept separate from transient region-* files. */
+export async function cropPdfRegionToAsset({ holeId, asset, rect, name }) {
+  return cropPdfFigureToAsset({ holeId, asset, rect, name });
+}

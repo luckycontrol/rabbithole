@@ -53,6 +53,7 @@ import { openAnchoredSurface } from "./overlay/anchor.js";
 import { cancelFrame, createModuleLifecycle, nextFrame } from "./lifecycle.js";
 import { applyComposerState } from "./composer-state.js";
 import { teardownNode } from "./node-teardown.js";
+import { ENTER_SEND_HINT, isComposingText, isSubmitEnter } from "./input-intent.js";
 
 function defaultAskHooks(){
   return {
@@ -72,7 +73,19 @@ export function registerAskHooks(hooks) {
 export function initAskFollowups(){
   disposeAskFollowupResources(false);
   var askScope = askLifecycle.beginInit();
-  askScope.listen(document, "mouseup", function(e){ if (inAsk(e)) return; askScope.timeout(maybeShowAsk, 0); });
+  composerSend.title = ENTER_SEND_HINT;
+  askGo.title = ENTER_SEND_HINT;
+  askScope.listen(document, "mouseup", function(e){
+    if (inAsk(e)) return;
+    if (usesMobileAskSurface()) queueMobileAsk(80);
+    else askScope.timeout(maybeShowAsk, 0);
+  });
+  askScope.listen(document, "selectionchange", function(){
+    if (usesMobileAskSurface()) queueMobileAsk(140);
+  });
+  askScope.listen(document, "touchend", function(e){
+    if (!inAsk(e) && usesMobileAskSurface()) queueMobileAsk(80);
+  }, { passive: true });
   askScope.listen(askGo, "click", function(e){ submitAsk(null, motionSourceFromEvent(e)); });
   askScope.listen(document.getElementById("ask-lenses"), "click", function(e){
     var b = e.target.closest ? e.target.closest(".lens") : null;
@@ -83,7 +96,7 @@ export function initAskFollowups(){
   askScope.listen(ask, "transitionend", function(e){ if (e.target === ask && askPosition) askPosition.update(); });
   askScope.listen(composerText, "input", function(){ autoGrowComposer(); updateComposerState(); });
   askScope.listen(composerText, "keydown", function(e){
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing){ e.preventDefault(); submitFollowup("keyboard"); }
+    if (isSubmitEnter(e)){ e.preventDefault(); submitFollowup("keyboard"); }
   });
   askScope.listen(composerSend, "click", function(e){ submitFollowup(motionSourceFromEvent(e)); });
   askScope.listen(readerMain, "wheel", interruptScrollAnimation, { passive: true });
@@ -97,6 +110,16 @@ export function initAskFollowups(){
 function inAsk(e){ return e.target && e.target.closest && e.target.closest("#ask"); }
 
   var askPosition = null, askTabOwner = null, askOwnerCleanup = null;
+  var mobileSelectionTimer = 0, ignoreMobileSelectionUntil = 0;
+
+  function usesMobileAskSurface(){
+    return !!(window.matchMedia && (window.matchMedia("(pointer: coarse)").matches || window.matchMedia("(max-width: 760px)").matches));
+  }
+  function queueMobileAsk(delay){
+    if (Date.now() < ignoreMobileSelectionUntil || !askLifecycle.scope) return;
+    if (mobileSelectionTimer) clearTimeout(mobileSelectionTimer);
+    mobileSelectionTimer = askLifecycle.scope.timeout(function(){ mobileSelectionTimer = 0; maybeShowAsk(); }, delay);
+  }
 
   function selectionOwner(dc){
     return (dc && dc.closest && dc.closest(".node")) || readerMain;
@@ -137,11 +160,12 @@ function inAsk(e){ return e.target && e.target.closest && e.target.closest("#ask
     var startOff = charOffset(dc, range.startContainer, range.startOffset);
     var endOff = charOffset(dc, range.endContainer, range.endOffset);
     if (endOff <= startOff) return;
+    if (ask.classList.contains("visible")) hideAsk();
     pendingAsk = { parentId: parentId, container: dc, selectedText: sel.toString().trim(),
                    startOff: startOff, endOff: endOff, range: range.cloneRange() };
     paintAskHighlight(pendingAsk.range);
     askText.value = "";
-    askText.placeholder = "Ask about this… ↵ = Explain";
+    askText.placeholder = "Ask about this…";
     ask.classList.add("visible");
     var owner = selectionOwner(dc);
     var virtualAnchor = { getBoundingClientRect: function(){ return pendingAsk.range.getBoundingClientRect(); }, contextElement: dc };
@@ -172,7 +196,7 @@ export function showAskFromSelection(options){
       endOff: options.mdEnd, pdfAnchor: options.pdfAnchor || null, range: options.range || null };
     if (pendingAsk.range) paintAskHighlight(pendingAsk.range);
     askText.value = "";
-    askText.placeholder = "Ask about this… ↵ = Explain";
+    askText.placeholder = "Ask about this…";
     ask.classList.add("visible");
     var owner = selectionOwner(pendingAsk.container);
     askTabOwner = owner;
@@ -183,8 +207,12 @@ export function showAskFromSelection(options){
     return true;
   }
   function openAskSurface(anchor, owner){
-    askPosition = openAnchoredSurface({ surface: ask, anchor: anchor,
-      placement: "bottom-start", restoreFocus: false, preventOutsidePointerDefault: false,
+    var mobile = usesMobileAskSurface();
+    ask.classList.toggle("mobile-sheet", mobile);
+    askText.placeholder = "Ask about this…";
+    var surfaceAnchor = mobile ? mobileViewportAnchor(owner) : anchor;
+    askPosition = openAnchoredSurface({ surface: ask, anchor: surfaceAnchor,
+      placement: mobile ? "top-center" : "bottom-start", restoreFocus: false, preventOutsidePointerDefault: false,
       onClose: function(reason){
         var escapeOwner = reason === "escape" ? owner : null;
         var keepRange = reason === "escape" && pendingAsk ? pendingAsk.range : null;
@@ -193,10 +221,23 @@ export function showAskFromSelection(options){
         restoreSelectionRange(keepRange);
       } });
     autoGrowEl(askText, 110); // Must run after the surface leaves display:none.
-    askText.focus({ preventScroll: true });
+    if (!mobile) askText.focus({ preventScroll: true });
+  }
+  function mobileViewportAnchor(owner){
+    return { contextElement: owner, getBoundingClientRect: function(){
+      var viewport = window.visualViewport;
+      var left = viewport ? viewport.offsetLeft : 0;
+      var top = viewport ? viewport.offsetTop : 0;
+      var width = viewport ? viewport.width : window.innerWidth;
+      var height = viewport ? viewport.height : window.innerHeight;
+      var bottom = top + height;
+      return { left: left, right: left + width, top: bottom, bottom: bottom,
+        width: width, height: 0, x: left, y: bottom };
+    } };
   }
   function restoreSelectionRange(range){
     if (!range) return;
+    ignoreMobileSelectionUntil = Date.now() + 300;
     try { var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range); } catch(e){}
   }
 export function hideAsk(){
@@ -217,6 +258,9 @@ export function disposeAskFollowups(){
     pendingAsk = null;
     askTabOwner = null;
     askOwnerCleanup = null;
+    if (mobileSelectionTimer) clearTimeout(mobileSelectionTimer);
+    mobileSelectionTimer = 0;
+    ignoreMobileSelectionUntil = 0;
     scrollAnimId = 0;
     scrollAnimIgnoreUntil = 0;
     askText.value = "";
@@ -233,10 +277,10 @@ export function disposeAskFollowups(){
 
   var LENS_KEYS = { "1": "explain", "2": "eli5", "3": "example", "4": "deeper" };
   function onAskTextKeydown(e){
-    if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); submitAsk(null, "keyboard"); }
+    if (isSubmitEnter(e)){ e.preventDefault(); submitAsk(null, "keyboard"); }
     // Number keys are lens shortcuts only while the box is empty — once the
     // human starts typing a question, digits are just digits.
-    else if (askText.value === "" && !e.metaKey && !e.ctrlKey && !e.altKey && LENS_KEYS[e.key]){
+    else if (!isComposingText(e) && askText.value === "" && !e.metaKey && !e.ctrlKey && !e.altKey && LENS_KEYS[e.key]){
       e.preventDefault();
       submitAsk(LENS_KEYS[e.key], "keyboard");
     }
@@ -270,33 +314,44 @@ export function disposeAskFollowups(){
     };
     registerNode(node);
     retirePdfConversionAction(parent);
-    if (canvasBuilt){ createNodeEl(node, true); renderVisibility(); drawEdges(); }
+    var isPdfRegion = !!pendingAsk.pdfAnchor;
+    function revealCreatedBranch(response){
+      if (response && response.crop_asset) node.origin.crop_asset = response.crop_asset;
+      if (canvasBuilt && !node.el){ createNodeEl(node, true); renderVisibility(); drawEdges(); }
 
-    // Mark inline in whichever views currently render the parent doc. Wrap via
-    // offsets (always text-node endpoints) — a live Range can end on an element
-    // boundary, which the text-walker can't terminate on.
-    if (pendingAsk.pdfAnchor) {
-      if (mode === "reader") mountPdfRectMark(readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"]'), anchor, childId, "rh-pdf-mark mark-pending");
-      if (parent.bodyEl) mountPdfRectMark(parent.bodyEl.querySelector(".doc-content"), anchor, childId, "rh-pdf-mark mark-pending");
-      scheduleEdges();
-    } else if (mode === "reader"){
-      var rdc = readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"]');
-      wrapInContainer(rdc, anchor, childId, "hl mark-pending");
-      if (currentNodeId === parent.id) renderSidebar();
+      // Mark inline in whichever views currently render the parent doc. Wrap via
+      // offsets (always text-node endpoints) — a live Range can end on an element
+      // boundary, which the text-walker can't terminate on.
+      if (isPdfRegion) {
+        if (mode === "reader") mountPdfRectMark(readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"]'), anchor, childId, "rh-pdf-mark mark-pending");
+        if (parent.bodyEl) mountPdfRectMark(parent.bodyEl.querySelector(".doc-content"), anchor, childId, "rh-pdf-mark mark-pending");
+        scheduleEdges();
+        if (mode === "reader" && currentNodeId === parent.id) renderSidebar();
+      } else if (mode === "reader"){
+        var rdc = readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"]');
+        wrapInContainer(rdc, anchor, childId, "hl mark-pending");
+        if (currentNodeId === parent.id) renderSidebar();
+      }
+      if (parent.bodyEl && !isPdfRegion){ wrapInContainer(parent.bodyEl.querySelector(".doc-content"), anchor, childId, "hl mark-pending"); scheduleEdges(); }
+      revealNode(node, source);
+      refreshAmbient();
     }
-    if (parent.bodyEl){ wrapInContainer(parent.bodyEl.querySelector(".doc-content"), anchor, childId, "hl mark-pending"); scheduleEdges(); }
 
     var sel = window.getSelection(); if (sel) sel.removeAllRanges();
     hideAsk();
-    askLifecycle.hooks.post({ type: "branch_request", request_id: requestId, node_id: childId, parent_id: parent.id,
+    var request = askLifecycle.hooks.post({ type: "branch_request", request_id: requestId, node_id: childId, parent_id: parent.id,
            selected_text: node.origin.selected_text, question: question, lens: lens, anchor: anchor,
            branch_type: BRANCH_SELECTION,
-           position: { x: node.x, y: node.y }, size: { w: node.w, h: node.h } })
-      .then(function(res){ if (!res || !res.ok) rollbackBranch(node); });
-    // On the canvas, the new card must never leave the viewport silently —
-    // pan just enough that you see where your question went.
-    revealNode(node, source);
-    refreshAmbient();
+           position: { x: node.x, y: node.y }, size: { w: node.w, h: node.h } });
+    if (isPdfRegion) {
+      // The host prepares and persists the crop before acknowledging this ask.
+      // Keep the node registered for streamed events, but do not paint an empty
+      // card: its first visible frame already contains the durable clip.
+      request.then(function(res){ if (!res || !res.ok) rollbackBranch(node); else revealCreatedBranch(res); });
+    } else {
+      revealCreatedBranch(null);
+      request.then(function(res){ if (!res || !res.ok) rollbackBranch(node); });
+    }
   }
 
   // ---------- follow-up composer ----------

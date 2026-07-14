@@ -60,6 +60,9 @@ await page.route("https://openrouter.ai/api/v1/models", async (route) => {
 const transcribeBodies = [];
 let transcribeMode = "stream";
 let localVisionAvailable = true;
+let holdNextAnswer = false;
+let releaseHeldAnswer = null;
+let rejectNextInheritedImage = false;
 await page.route("http://localhost:11434/v1/models", (route) => route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ data: [{ id: "llama3.2" }, { id: "llama3.2-vision" }] }) }));
 await page.route("http://localhost:11434/api/show", (route) => {
   const model = route.request().postDataJSON()?.model || "";
@@ -78,11 +81,20 @@ await page.route("http://localhost:11434/v1/chat/completions", async (route) => 
   }
   answerBodies.push(body);
   if (answerBodies.length === 1) return route.fulfill({ status: 400, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ error: { message: "model does not support images" } }) });
+  if (rejectNextInheritedImage && Array.isArray(body.messages?.at(-1)?.content)) {
+    rejectNextInheritedImage = false;
+    return route.fulfill({ status: 400, headers: { ...corsHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ error: { message: "inherited image unsupported" } }) });
+  }
+  if (holdNextAnswer) {
+    holdNextAnswer = false;
+    await new Promise((resolve) => { releaseHeldAnswer = resolve; });
+    releaseHeldAnswer = null;
+  }
   await route.fulfill({ status: 200, headers: { ...corsHeaders(), "Content-Type": "text/event-stream" }, body: sse(["# PDF branch\n\n", "Streamed from selected prose."]) });
 });
 
 try {
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await page.click("#blank-start-new");
   await page.waitForSelector("#composer-path-file");
 
@@ -137,13 +149,16 @@ try {
   assert.equal(await mark.getAttribute("role"), "link");
   assert.equal(await mark.getAttribute("tabindex"), "0");
   assert.equal(await page.locator("#edges path").count() > 0, true, "PDF branch should retain an anchored canvas edge");
-  const storedAnchor = await page.evaluate(async () => {
+  const firstClip = await page.evaluate(async () => {
     const hole = await window.__rabbitholeTest.readStoredHole();
-    return hole.nodes.find((node) => node.parent_id)?.origin?.anchor;
+    const node = hole.nodes.find((entry) => entry.parent_id);
+    return { id: node.id, anchor: node.origin?.anchor, cropAsset: node.origin?.crop_asset, markdown: node.markdown };
   });
-  assert.equal(storedAnchor.pdf.page, 1);
-  assert(storedAnchor.offset_end > storedAnchor.offset_start);
-  assert(storedAnchor.pdf.rect.w > 0 && storedAnchor.pdf.rect.h > 0);
+  assert.equal(firstClip.anchor.pdf.page, 1);
+  assert(firstClip.anchor.offset_end > firstClip.anchor.offset_start);
+  assert(firstClip.anchor.pdf.rect.w > 0 && firstClip.anchor.pdf.rect.h > 0);
+  assert.match(firstClip.cropAsset, /^crop-[a-z0-9-]+\.jpg$/);
+  assert.equal(firstClip.markdown.includes("asset:"), false, "clip provenance must not enter the answer body");
 
   const boxToggle = page.locator(".node .rh-pdf-box-toggle").first();
   assert.equal(await boxToggle.textContent(), "Ask about an area");
@@ -180,21 +195,95 @@ try {
   await page.mouse.move(pageBox.x + pageBox.width * .95, pageBox.y + pageBox.height * .9);
   await page.mouse.up();
   await page.waitForSelector("#ask.visible");
+  holdNextAnswer = true;
   await page.click('#ask-lenses .lens[data-lens="explain"]');
+  await page.waitForFunction(() => document.querySelectorAll(".node .rh-origin-crop img").length >= 2);
+  const pendingBoxClip = await page.evaluate(async () => {
+    const hole = await window.__rabbitholeTest.readStoredHole();
+    const node = hole.nodes.filter((entry) => entry.parent_id).at(-1);
+    const card = document.querySelector(`.node[data-id="${node.id}"]`);
+    return {
+      id: node.id,
+      cropAsset: node.origin?.crop_asset,
+      hasCrop: !!card?.querySelector(".rh-origin-crop img"),
+      pending: !!card?.querySelector(".loading, .stream-status"),
+    };
+  });
+  assert.equal(pendingBoxClip.hasCrop, true, "the clip must be present on the card's first visible pending frame");
+  assert.equal(pendingBoxClip.pending, true, "provider response should still be held while the clip is visible");
+  for (let i = 0; i < 100 && !releaseHeldAnswer; i += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert(releaseHeldAnswer, "box answer route should be held for the pending-origin assertion");
+  releaseHeldAnswer();
   await page.waitForFunction(() => document.querySelectorAll(".node .rh-pdf-mark.mark-ready").length >= 2);
   await page.waitForFunction(() => document.querySelectorAll(".rh-pdf-box-draft").length === 0, undefined, { timeout: 5000 });
   assert.equal(answerBodies.length, 3);
   assert(Array.isArray(answerBodies[2].messages.at(-1).content), "box ask should ship its crop as an image part");
-  const boxAnchor = await page.evaluate(async () => {
+  const boxClip = await page.evaluate(async () => {
     const hole = await window.__rabbitholeTest.readStoredHole();
-    return hole.nodes.filter((node) => node.parent_id).at(-1).origin.anchor;
+    const node = hole.nodes.find((entry) => entry.id === document.querySelectorAll(".node .rh-origin-crop")[1]?.closest(".node")?.dataset.id);
+    const portable = await window.__rabbitholeTest.exportPortable();
+    return { id: node.id, anchor: node.origin.anchor, cropAsset: node.origin.crop_asset, cropBase64: portable.assets[node.origin.crop_asset], markdown: node.markdown };
   });
-  assert.equal(boxAnchor.pdf.page, 2); assert(boxAnchor.pdf.rect.w > .8, "drawn box should persist normalized geometry");
-  await page.reload({ waitUntil: "networkidle" });
+  assert.equal(boxClip.id, pendingBoxClip.id);
+  assert.equal(boxClip.anchor.pdf.page, 2); assert(boxClip.anchor.pdf.rect.w > .8, "drawn box should persist normalized geometry");
+  assert.equal(answerBodies[2].messages.at(-1).content[1].image_url.url.split(",", 2)[1], boxClip.cropBase64, "model payload must use the stored crop bytes");
+  assert.equal(boxClip.markdown.includes(boxClip.cropAsset), false, "answer markdown must stay clean of crop provenance");
+
+  const boxCard = page.locator(`.node[data-id="${boxClip.id}"]`);
+  rejectNextInheritedImage = true;
+  await boxCard.locator(".nc-handle").evaluate((el) => el.click());
+  await boxCard.locator(".nc-inner textarea").fill("What follows from this clip?");
+  await boxCard.locator(".send-btn").evaluate((el) => el.click());
+  await page.waitForFunction(() => window.__rabbitholeTest && document.querySelectorAll(".node").length >= 4);
+  for (let i = 0; i < 100 && answerBodies.length < 5; i += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert(Array.isArray(answerBodies[3].messages.at(-1).content), "follow-up from a clip card must inherit its image");
+  assert.equal(answerBodies[3].messages.at(-1).content[1].image_url.url.split(",", 2)[1], boxClip.cropBase64);
+  assert.match(answerBodies[3].messages.at(-1).content[0].text, /^Parent clip image: attached/);
+  assert.equal(typeof answerBodies[4].messages.at(-1).content, "string", "inherited images must use the same text-only retry path");
+
+  await page.evaluate((clipId) => {
+    const dc = document.querySelector(`.node[data-id="${clipId}"] .doc-content`);
+    const walker = document.createTreeWalker(dc, NodeFilter.SHOW_TEXT);
+    let text; while ((text = walker.nextNode()) && !text.data.includes("Streamed")) {}
+    const start = text.data.indexOf("Streamed"), range = document.createRange();
+    range.setStart(text, start); range.setEnd(text, start + "Streamed".length);
+    const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
+    dc.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+  }, boxClip.id);
+  await page.waitForSelector("#ask.visible");
+  await page.fill("#ask-text", "What does this wording mean?");
+  await page.click("#ask-go");
+  for (let i = 0; i < 100 && answerBodies.length < 6; i += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert(Array.isArray(answerBodies[5].messages.at(-1).content), "text selection from a clip card must inherit its image");
+  assert.equal(answerBodies[5].messages.at(-1).content[1].image_url.url.split(",", 2)[1], boxClip.cropBase64);
+
+  await boxCard.locator(".node-head").evaluate((el) => el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+  await page.waitForSelector(`.reader-col .rh-origin-crop-reader img[src]`);
+  assert.equal(await page.locator(".reader-col .rh-origin-crop-reader").count(), 1, "reader must render clip provenance in its origin slot");
+  await page.click("#r-canvas");
+
+  await page.evaluate(async ({ name }) => {
+    const holeId = window.__rabbitholeTest.currentHoleId();
+    const db = await new Promise((resolve, reject) => { const req = indexedDB.open("rabbithole-browser"); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
+    const tx = db.transaction("assets", "readwrite"); tx.objectStore("assets").delete([holeId, name]);
+    await new Promise((resolve, reject) => { tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error); });
+    db.close();
+  }, { name: firstClip.cropAsset });
+  const firstCard = page.locator(`.node[data-id="${firstClip.id}"]`);
+  await firstCard.locator(".nc-handle").evaluate((el) => el.click());
+  await firstCard.locator(".nc-inner textarea").fill("Can you continue without the file?");
+  await firstCard.locator(".send-btn").evaluate((el) => el.click());
+  for (let i = 0; i < 100 && answerBodies.length < 7; i += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(typeof answerBodies[6].messages.at(-1).content, "string", "a missing inherited crop must degrade to text-only");
+
+  await boxCard.locator(".node-btn.danger").evaluate((el) => el.click());
+  await page.click("#cf-remove");
+  await page.waitForFunction(async (name) => !(await window.__rabbitholeTest.inspectAssets()).names.includes(name), boxClip.cropAsset);
+  await reloadReadyApp(page);
   await page.waitForSelector(".doc-content.rh-pdf .rh-pdf-page[data-page='2']", { state: "attached" });
   await page.waitForSelector(".rh-pdf-mark.mark-ready", { state: "attached" });
 
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await setFetchProxy(page, `${baseUrl}/proxy`);
   await page.click("#t-new");
   await page.click("#composer-path-url");
@@ -210,7 +299,7 @@ try {
   assert(urlHole.includes("Proxy fallback article"));
   assert(urlHole.includes("https://arxiv.org/abs/1234.5678") || urlHole.includes("ar5iv.labs.arxiv.org"));
 
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await setFetchProxy(page, `${baseUrl}/dead-proxy`);
   await page.click("#t-new");
   await page.click("#composer-path-url");
@@ -220,7 +309,7 @@ try {
   const deadError = await page.textContent("#ingest-status");
   assert.match(deadError, /Try another link or open a PDF/i);
 
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await setFetchProxy(page, `${baseUrl}/reject-proxy`);
   await page.click("#t-new");
   await page.click("#composer-path-url");
@@ -231,23 +320,23 @@ try {
   assert.match(rejectError, /isn't supported by the link relay yet/i);
   assert.match(rejectError, /arXiv links work best/);
 
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await page.click("#t-new");
   await page.setInputFiles("#file-md", { name: "broken.HtMl", mimeType: "", buffer: Buffer.from("not a snapshot") });
   await page.waitForSelector("#ingest-status.error");
   assert.match(await page.textContent("#ingest-status"), /Snapshot import failed/i);
 
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await page.click("#t-new");
   await page.setInputFiles("#file-md", { name: "Notes.Md", mimeType: "", buffer: Buffer.from("# Mixed-case markdown\n\nEmpty MIME markdown classified.") });
   await waitForCanvasText(page, "Empty MIME markdown classified.");
 
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await page.click("#t-new");
   await page.setInputFiles("#file-md", { name: "evil.html.txt", mimeType: "text/plain", buffer: Buffer.from("evil suffix remains text") });
   await waitForCanvasText(page, "evil suffix remains text");
 
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await page.click("#t-new");
   await page.evaluate(() => {
     const file = new File([new Uint8Array(16 * 1024 * 1024 + 1)], "oversized.md", { type: "text/markdown" });
@@ -260,7 +349,7 @@ try {
   await page.waitForSelector("#ingest-status.error");
   assert.equal(await page.textContent("#ingest-status"), "Import failed: file exceeds 16 MB.");
 
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await page.click("#t-new");
   const futurePortable = JSON.stringify({
     format: "rabbithole",
@@ -277,7 +366,7 @@ try {
   );
 
   // ---- Text version: full journey, figures land as live assets -------------
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await page.click("#t-new");
   await dropPdf(page, buildTinyPdf(["Convert journey page one", "Convert journey page two"]), "convert-journey.pdf");
   await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='2']");
@@ -302,7 +391,7 @@ try {
   assert.equal(convertedState.root.extensions.pdf.pages.length, 2, "the page stash must survive conversion");
   assert.match(convertedState.root.markdown, /!\[Attention diagram\]\(asset:fig-p002-1\.jpg\)/);
   assert(convertedState.names.includes("fig-p002-1.jpg"));
-  await page.reload({ waitUntil: "networkidle" });
+  await reloadReadyApp(page);
   await page.waitForFunction(() => {
     const dc = document.querySelector(".node .doc-content:not(.rh-pdf)");
     return !!dc && dc.textContent.includes("Converted Doc");
@@ -310,7 +399,7 @@ try {
 
   // ---- Cancel mid-run restores the native paged view -----------------------
   transcribeMode = "hang";
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await page.click("#t-new");
   await dropPdf(page, buildTinyPdf(["Abort page one", "Abort page two"]), "abort-journey.pdf");
   await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='2']");
@@ -343,11 +432,11 @@ try {
   await page.waitForSelector("#ask.visible");
   await page.click('#ask-lenses .lens[data-lens="explain"]');
   await page.locator(".node .rh-pdf-mark.mark-ready").first().waitFor();
-  await page.reload({ waitUntil: "networkidle" });
+  await reloadReadyApp(page);
   assert.equal(await page.locator(".node .rh-pdf-convert").count(), 0, "the text-version action must stay absent after reloading a branched PDF");
 
   // ---- Scanned PDFs surface the convert affordance -------------------------
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await page.click("#t-new");
   await dropPdf(page, buildTinyPdf(["", ""]), "scanned.pdf");
   await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='2']");
@@ -359,7 +448,7 @@ try {
 
   // ---- No local vision model keeps import available but gates conversion ----
   localVisionAvailable = false;
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await page.click("#t-new");
   await dropPdf(page, buildTinyPdf(["Local text-only model PDF"]), "no-local-vision.pdf");
   await page.waitForSelector(".node .doc-content.rh-pdf .rh-pdf-page[data-page='1']");
@@ -367,7 +456,7 @@ try {
   assert.equal(await page.locator(".node .rh-pdf-transcription-note").innerText(), "Install a local model that supports vision to enable PDF transcription.");
 
   // ---- A corrupt PDF fails with an actionable message, no stranded hole ----
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await gotoReadyApp(page, baseUrl);
   await page.click("#t-new");
   await dropPdf(page, [...Buffer.from("%PDF-1.4\nthis is not really a pdf")], "corrupt.pdf");
   await page.waitForSelector("#ingest-status.error");
@@ -377,6 +466,26 @@ try {
 } finally {
   await browser.close();
   await new Promise((resolve) => server.close(resolve));
+}
+
+async function gotoReadyApp(page, url) {
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await waitForReadyApp(page);
+}
+
+async function reloadReadyApp(page) {
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitForReadyApp(page);
+}
+
+async function waitForReadyApp(page) {
+  // The app's test seam is installed only after IndexedDB selection, rail
+  // hydration, and the initial canvas/blank state have finished. Waiting for
+  // this product-specific milestone is deterministic even when an intentionally
+  // held model request keeps the browser from ever reaching `networkidle`.
+  await page.waitForFunction(() => !!window.__rabbitholeTest
+    && document.body.classList.contains("web-app")
+    && !!document.getElementById("viewport"));
 }
 
 function pdfLiteral(value) {

@@ -5,10 +5,10 @@ import { openBrowser } from "./browser.js";
 import { log, error as logError } from "../logger.js";
 import { addAssetsToHole, defaultFsStore, resolveAsset } from "../fs-store.js";
 import { maybeUpgradeBaseUrlFromFrontmatter, normalizeBaseUrl } from "../../core/base-url.js";
-import { extractNodeAssetRefs } from "../../core/assets.js";
+import { cropAssetNameForNode, extractNodeAssetRefs } from "../../core/assets.js";
 import { createHoleState, holeStateToHole, holeStateToHydrationNodes, reduceHoleEvent } from "../../core/reducer.js";
 import { toPersistedHole } from "../../core/schema.js";
-import { lineageTitlesFromMap } from "../../core/model.js";
+import { lineageTitlesFromMap, normalizePdfAnchor } from "../../core/model.js";
 import { buildJsonError, closeServerGracefully, CLOSE_TIMEOUT_MS } from "./http.js";
 import { writeSseEvent } from "./sse.js";
 import { handleSessionRequest } from "./session-router.js";
@@ -16,7 +16,7 @@ import { GenerationIngress } from "./generation-ingress.js";
 import { applyPersistedBrowserEvent, assetsOrphanedByDeletion, buildNodeAnsweredEvent, createSaveChain, dispatchBrowserEvent } from "../../core/hole-host.js";
 import { MAX_PDF_FIGURE_ASSET_BYTES, normalizePdfExtension, parseFigureRefs, rewriteFigureRefs } from "../../core/pdf-shared.js";
 import { TRANSCRIBE_V1_RULES } from "../../core/prompts/transcribe-v1.js";
-import { cropPdfFigureToAsset, cropPdfRegionToFile, sweepPdfRegionFiles } from "../pdf-crop.js";
+import { cropPdfFigureToAsset, cropPdfRegionToAsset, cropPdfRegionToFile, sweepPdfRegionFiles } from "../pdf-crop.js";
 
 const SESSION_TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2 hours
 const SAVE_DEBOUNCE_MS = 400;
@@ -89,10 +89,8 @@ export class RabbitHoleSession {
     this.rearmDetachTimer = null;
     this.inFlightBranchRequests = new Map(); // request_id -> last delivered branch_request not yet answered
     this.convertRequests = new Map();
-    // Transient region-crop JPEGs written for the agent (request_id -> path).
-    // They are never part of the hole's durable assets: each is removed when
-    // its request is answered, and the rest are removed at session close. A
-    // resume sweeps crash orphans before re-cropping its saved asks.
+    // Legacy/failure-fallback transient region JPEGs (request_id -> path).
+    // Successful region asks use branch-owned crop-* assets instead.
     this.regionFiles = new Map();
     this.regionSweep = isResume ? sweepPdfRegionFiles(this.holeId).catch(() => {}) : Promise.resolve();
 
@@ -664,6 +662,7 @@ export class RabbitHoleSession {
   // construction on resume, before the agent's first waitForEvent, so saved
   // questions are answered before anything new.
   requeueSavedAsks() {
+    let enqueue = Promise.resolve();
     const saved = [...this.nodes.values()]
       .filter((n) => n.status === "pending" && n.origin)
       .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
@@ -688,26 +687,14 @@ export class RabbitHoleSession {
         this.needsRehydration = false;
         event.rehydration = this.buildRehydrationPayload();
       }
-      this.queue.push(event);
-      // A saved PDF ask re-crops its region so the reconnecting agent sees the
-      // same image a live one would. The event is already queued: if the crop
-      // loses the race with delivery the request goes out lean, same as a live
-      // crop failure. Chained after the orphan sweep so it can't be swept.
-      const anchor = node.origin?.anchor?.pdf;
-      const parentPdf = anchor ? normalizePdfExtension(parent) : null;
-      const anchorPage = parentPdf ? parentPdf.pages.find((entry) => entry.n === anchor.page) : null;
-      if (anchorPage) {
-        this.regionSweep
-          .then(() => cropPdfRegionToFile({ holeId: this.holeId, asset: anchorPage.asset, rect: anchor.rect, requestId }))
-          .then((imagePath) => { event.region = { page: anchor.page, image_path: imagePath }; this.regionFiles.set(requestId, imagePath); })
-          .catch((error) => { logError(`PDF region re-crop failed: ${error.message}`); });
-      }
+      enqueue = enqueue.then(() => this.queueBranchEvent(event, node, parent));
     }
+    enqueue.catch((error) => logError(`Saved branch requeue failed: ${error.message}`));
   }
 
   // ---- browser events (browser -> server) ---------------------------------
 
-  handleBranchRequest(payload) {
+  handleBranchRequest(payload, preparedCrop = null) {
     const parentId = String(payload.parent_id || "");
     const parent = this.nodes.get(parentId);
     if (!parent) throw buildJsonError(`Parent node ${parentId} not found`, 404);
@@ -718,7 +705,8 @@ export class RabbitHoleSession {
     const requestId = String(payload.request_id || randomUUID());
     const nodeId = String(payload.node_id || randomUUID());
     const effects = this.dispatchHoleEvent(
-      { ...payload, type: "branch_request", request_id: requestId, node_id: nodeId, parent_id: parentId },
+      { ...payload, type: "branch_request", request_id: requestId, node_id: nodeId, parent_id: parentId,
+        ...(preparedCrop ? { crop_asset: preparedCrop.name } : {}) },
       { now: new Date().toISOString() }
     );
     const node = effects.createdNode;
@@ -738,16 +726,6 @@ export class RabbitHoleSession {
       lineage: this.lineageTitles(parentId),
     };
 
-    const pdf = normalizePdfExtension(parent);
-    const anchor = node.origin?.anchor?.pdf;
-    const page = pdf && anchor ? pdf.pages.find((entry) => entry.n === anchor.page) : null;
-    const enqueue = page
-      ? cropPdfRegionToFile({ holeId: this.holeId, asset: page.asset, rect: anchor.rect, requestId })
-          .then((imagePath) => { event.region = { page: anchor.page, image_path: imagePath }; this.regionFiles.set(requestId, imagePath); })
-          .catch((error) => { logError(`PDF region crop failed: ${error.message}`); })
-          .then(() => this.pushEvent(event))
-      : null;
-
     if (this.needsRehydration) {
       this.needsRehydration = false;
       event.rehydration = this.buildRehydrationPayload();
@@ -757,8 +735,62 @@ export class RabbitHoleSession {
     // SIGKILL between ask and answer can't lose the question.
     this.scheduleSave();
 
-    if (!enqueue) this.pushEvent(event);
-    return { ok: true, node_id: nodeId, request_id: requestId };
+    this.queueBranchEvent(event, node, parent, preparedCrop).catch((error) => {
+      logError(`PDF region attachment failed: ${error.message}`);
+      this.pushEvent(event);
+    });
+    return { ok: true, node_id: nodeId, request_id: requestId, ...(preparedCrop ? { crop_asset: preparedCrop.name } : {}) };
+  }
+
+  async preparePdfCrop(payload) {
+    const parent = this.nodes.get(String(payload.parent_id || ""));
+    const anchor = normalizePdfAnchor(payload.anchor?.pdf);
+    const pdf = normalizePdfExtension(parent);
+    const page = pdf && anchor ? pdf.pages.find((entry) => entry.n === anchor.page) : null;
+    const nodeId = String(payload.node_id || "");
+    if (!nodeId || !page) return null;
+    const name = cropAssetNameForNode(nodeId);
+    if (!this.assetNames.has(name) && this.assetNames.size >= 200) throw new Error("asset limit");
+    const crop = await cropPdfRegionToAsset({ holeId: this.holeId, asset: page.asset, rect: anchor.rect, name });
+    this.assetNames.add(name);
+    return { name, imagePath: crop.filePath, page: anchor.page };
+  }
+
+  async queueBranchEvent(event, node, parent, preparedCrop = null) {
+    if (preparedCrop?.imagePath) {
+      event.region = { page: preparedCrop.page, image_path: preparedCrop.imagePath };
+      this.pushEvent(event);
+      return;
+    }
+
+    const ownAsset = node?.origin?.crop_asset;
+    const inheritedAsset = ownAsset ? null : parent?.origin?.crop_asset;
+    const durableAsset = ownAsset || inheritedAsset;
+    if (durableAsset) {
+      const imagePath = await resolveAsset(this.holeId, durableAsset).catch(() => null);
+      if (imagePath) {
+        const owner = ownAsset ? node : parent;
+        event.region = { page: owner?.origin?.anchor?.pdf?.page || 1, image_path: imagePath };
+        this.pushEvent(event);
+        return;
+      }
+      // A missing inherited asset degrades to the ordinary text-only request.
+      if (!ownAsset) { this.pushEvent(event); return; }
+    }
+
+    // Compatibility/failure fallback for old PDF asks without crop provenance.
+    const anchor = node?.origin?.anchor?.pdf;
+    const pdf = anchor ? normalizePdfExtension(parent) : null;
+    const page = pdf ? pdf.pages.find((entry) => entry.n === anchor.page) : null;
+    if (page) try {
+      await this.regionSweep;
+      const imagePath = await cropPdfRegionToFile({ holeId: this.holeId, asset: page.asset, rect: anchor.rect, requestId: event.request_id });
+      event.region = { page: anchor.page, image_path: imagePath };
+      this.regionFiles.set(event.request_id, imagePath);
+    } catch (error) {
+      logError(`PDF region crop failed: ${error.message}`);
+    }
+    this.pushEvent(event);
   }
 
   // Remove a branch and its whole subtree. Any in-flight ask targeting a doomed
@@ -821,7 +853,14 @@ export class RabbitHoleSession {
   async handleBrowserEvent(payload) {
     return dispatchBrowserEvent(payload, {
       handlers: {
-        branch_request: (event) => this.handleBranchRequest(event),
+        branch_request: async (event) => {
+          let preparedCrop = null;
+          try { preparedCrop = await this.preparePdfCrop(event); }
+          catch (error) { logError(`PDF crop persistence failed: ${error.message}`); }
+          const result = this.handleBranchRequest(event, preparedCrop);
+          await this.flushSave();
+          return result;
+        },
         node_update: (event) => this.handleNodeUpdate(event),
         nodes_update: (event) => this.handleNodesUpdate(event),
         block_state: (event) => this.applyPersistedBrowserEvent(event),

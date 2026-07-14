@@ -91,6 +91,7 @@ export function extractAssetRefsFromMarkdown(markdown) {
 /** @param {any} node */
 export function extractNodeAssetRefs(node) {
   const refs = new Set(extractAssetRefsFromMarkdown(node?.markdown));
+  try { refs.add(validateAssetName(node?.origin?.crop_asset)); } catch {}
   const pages = node?.extensions?.pdf?.pages;
   if (Array.isArray(pages)) {
     for (const page of pages) {
@@ -98,4 +99,15 @@ export function extractNodeAssetRefs(node) {
     }
   }
   return refs;
+}
+
+/** Deterministic durable name for a region crop owned by a branch node. */
+/** @param {unknown} nodeId */
+export function cropAssetNameForNode(nodeId) {
+  const safe = String(nodeId ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 96) || "selection";
+  return `crop-${safe}.jpg`;
 }

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { buildPdfDocument, normalizePdfExtension } from "../../src/core/pdf-shared.js";
+import { createHoleState, holeStateToHole, reduceHoleEvent } from "../../src/core/reducer.js";
+import { parsePersistedHole, toPersistedHole } from "../../src/core/schema.js";
 
 const built = buildPdfDocument({
   title: "Hostile paper",
@@ -34,4 +36,17 @@ for (const invalid of [
   { ...built.pdfExtension, lines: Array.from({ length: 25001 }, () => ({})) },
 ]) assert.equal(normalizePdfExtension({ markdown: built.markdown, extensions: { pdf: invalid } }), null);
 
-console.log("ok PDF provenance: normalize-first offsets, scanned markers, notes, clamping, and hostile fallback");
+const branch = reduceHoleEvent(createHoleState({
+  hole_id: "crop-roundtrip", title: "Crop", root_id: "root",
+  nodes: [{ id: "root", parent_id: null, title: "Root", markdown: "Body", extensions: {} }],
+}), {
+  type: "branch_request", parent_id: "root", node_id: "clip-child", question: "What is this?",
+  anchor: { offset_start: 0, offset_end: 0, pdf: { page: 1, rect: { x: .1, y: .2, w: .3, h: .4 } } },
+  crop_asset: "crop-clip-child.jpg",
+}, { now: "2026-07-13T00:00:00.000Z" });
+const persistedCrop = parsePersistedHole(toPersistedHole(holeStateToHole(branch.state), { updatedAt: "2026-07-13T00:00:01.000Z" }));
+const cropNode = persistedCrop.nodes.find((node) => node.id === "clip-child");
+assert.equal(cropNode.origin.crop_asset, "crop-clip-child.jpg");
+assert.equal(cropNode.markdown, "", "crop provenance must never enter the branch body");
+
+console.log("ok PDF provenance: offsets, hostile fallback, and origin crop schema round-trip");

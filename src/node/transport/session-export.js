@@ -1,5 +1,5 @@
 import fs from "node:fs/promises";
-import { extractAssetRefsFromMarkdown } from "../../core/assets.js";
+import { extractNodeAssetRefs } from "../../core/assets.js";
 import { createSnapshotProjection } from "../../core/snapshot-projection.js";
 import { buildSnapshotHtml } from "../../core/snapshot-html.js";
 import { CANVAS_STYLES } from "../../core/html/styles.js";
@@ -12,7 +12,7 @@ async function buildSessionSnapshotProjection(session) {
   const hole = toPersistedHole(session.toHole(), { cloneExtensions: false });
   const referencedNames = new Set();
   for (const node of hole.nodes) {
-    for (const name of extractAssetRefsFromMarkdown(node.markdown)) referencedNames.add(name);
+    for (const name of extractNodeAssetRefs(node)) referencedNames.add(name);
   }
   const names = [...referencedNames].sort();
   const entries = new Array(names.length);

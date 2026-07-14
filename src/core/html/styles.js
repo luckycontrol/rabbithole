@@ -262,10 +262,11 @@ body.mode-canvas #reader { display: none; }
 #composer textarea::placeholder { color: var(--fg-faint); }
 
 /* ---------- CANVAS ---------- */
-#viewport { position: fixed; inset: 0; overflow: hidden; cursor: grab; display: none;
+#viewport { position: fixed; inset: 0; overflow: hidden; cursor: grab; display: none; touch-action: none;
   background-color: var(--bg); background-image: radial-gradient(var(--grid) 1px, transparent 1px); background-size: 26px 26px; }
 body.mode-canvas #viewport { display: block; }
 #viewport.panning { cursor: grabbing; }
+#viewport.pinching { cursor: zoom-in; }
 #world { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
 #edges { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; }
 #edges path { stroke: var(--edge); stroke-width: 1.5; fill: none; transition: stroke 0.22s ease; }
@@ -301,7 +302,8 @@ body.mode-canvas #viewport { display: block; }
 .tool-icon:focus-visible, .node-btn:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 .node-btn.danger:hover { color: var(--warn); background-color: color-mix(in srgb, var(--warn) 12%, transparent); }
 @media (hover: none) { .node-btn.danger, .node-font-btn, .node-act-divider { opacity: 1; } }
-.node-body { padding: 14px 16px; overflow: auto; flex: 1; min-height: 0; overscroll-behavior: contain; }
+.node-body { padding: 14px 16px; overflow: auto; flex: 1; min-height: 0; overscroll-behavior: contain;
+  touch-action: pan-x pan-y; -webkit-overflow-scrolling: touch; }
 .node-resize { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; background: linear-gradient(135deg, transparent 50%, var(--border-focus) 50%); border-bottom-right-radius: 9px; opacity: 0.5; }
 .node-resize:hover { opacity: 1; }
 .node.collapsed .node-body, .node.collapsed .node-resize, .node.collapsed .node-composer { display: none; }
@@ -351,6 +353,12 @@ body.mode-canvas #viewport { display: block; }
 .nc-inner .send-btn svg { width: 12px; height: 12px; }
 @media (hover: none), (pointer: coarse) { .nc-handle { opacity: 1; pointer-events: auto; transition: none; } .node-composer.open .nc-handle { opacity: 0; pointer-events: none; } }
 .origin-quote { font-family: var(--font-doc); font-size: 12px; color: var(--fg-dim); border-left: 2px solid var(--border-focus); padding-left: 9px; margin-bottom: 12px; font-style: italic; }
+.rh-origin-crop { display: block; width: fit-content; max-width: 58%; overflow: hidden; box-sizing: border-box; margin: 0 0 14px; padding: 0; border: 1px solid color-mix(in srgb, var(--border-focus) 42%, var(--border)); border-radius: 8px; background: color-mix(in srgb, var(--node-bg) 94%, var(--fg) 6%); box-shadow: 0 1px 1px color-mix(in srgb, var(--fg) 8%, transparent); cursor: zoom-in; line-height: 0; }
+.rh-origin-crop:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
+.rh-origin-crop:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.rh-origin-crop img { display: block; width: auto; max-width: 100%; height: auto; max-height: 180px; object-fit: contain; }
+.rh-origin-crop-reader { margin-bottom: 24px; }
+.rh-origin-crop-reader img { max-height: 260px; }
 
 #toolbar { position: fixed; top: 14px; left: 14px; z-index: 50; display: none; align-items: center; gap: var(--space-3); background: var(--bar-bg); border: 1px solid var(--border); border-radius: 10px; padding: 7px 10px; box-shadow: var(--shadow); }
 body.mode-canvas #toolbar { display: flex; }
@@ -359,6 +367,16 @@ body.mode-canvas #toolbar { display: flex; }
 .zoom-controls .tool-icon { width: var(--control-h-xs); height: var(--control-h-xs); }
 #t-new svg { transform: scale(1.08); }
 #zoom-label { height: 24px; min-width: 40px; padding: 0 4px; font-size: 11px; color: var(--fg-faint); text-align: center; font-variant-numeric: tabular-nums; }
+@media (hover: none), (pointer: coarse), (max-width: 760px) {
+  #toolbar { top: max(8px, env(safe-area-inset-top));
+    left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); max-width: none;
+    gap: 2px; padding: 5px 6px; overflow-x: auto; overscroll-behavior-x: contain;
+    touch-action: pan-x; scrollbar-width: none; }
+  #toolbar::-webkit-scrollbar { display: none; }
+  #toolbar > .tool-icon, .zoom-controls .tool-icon { width: 44px; height: 44px; }
+  #zoom-label { height: 44px; min-width: 52px; padding-inline: 6px; font-size: 12px; }
+  #toolbar .sep { height: 24px; flex: 0 0 1px; }
+}
 
 /* ---------- ask popup — a small command palette for the selection ----------
    Two rows, nothing else: a borderless input with the shared circular send, and
@@ -388,6 +406,23 @@ body.mode-canvas #toolbar { display: flex; }
 .lens kbd { font-family: var(--font-ui); font-size: 9px; font-weight: 500; color: var(--fg-faint);
   background: color-mix(in srgb, var(--fg) 8%, transparent); border-radius: 4px; padding: 1px 4.5px; line-height: 1.6; }
 .lens:hover kbd { color: var(--fg-dim); background: color-mix(in srgb, var(--fg) 13%, transparent); }
+
+/* Mobile selection is a separate interaction model: keep the desktop palette
+   anchored to the text, but give touch users a stable, thumb-reachable sheet. */
+#ask.mobile-sheet { width: min(420px, calc(var(--overlay-viewport-width, 100vw) - var(--surface-edge) * 2));
+  max-height: max(0px, calc(var(--overlay-viewport-height, 100vh) - var(--surface-edge) * 2));
+  overflow: auto; overscroll-behavior: contain; border-radius: 16px;
+  transform: translateY(18px); transform-origin: bottom center; }
+#ask.mobile-sheet.visible { transform: translateY(0); }
+#ask.mobile-sheet .ask-input { align-items: center; gap: 10px; padding: 10px 10px 10px 14px; }
+#ask.mobile-sheet .ask-input textarea { min-height: 24px; max-height: 96px; font-size: 16px; line-height: 1.45; }
+#ask.mobile-sheet .ask-input .send-btn { width: 40px; height: 40px; flex: 0 0 40px; }
+#ask.mobile-sheet .ask-lenses { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;
+  padding: 8px 8px max(8px, env(safe-area-inset-bottom)); }
+#ask.mobile-sheet .lens { min-height: 46px; padding: 10px 8px; font-size: 13px;
+  color: var(--fg); background: color-mix(in srgb, var(--fg) 5%, transparent); }
+#ask.mobile-sheet .lens:active { background: var(--hl-strong); }
+#ask.mobile-sheet .lens kbd { display: none; }
 
 /* ---------- ⌘K palette — search the whole hole ---------- */
 #palette { position: fixed; inset: 0; z-index: 120; display: none; background: color-mix(in srgb, var(--bg) 35%, transparent); }

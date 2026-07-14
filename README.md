@@ -35,6 +35,23 @@ Keys never leave the browser: they're stored locally (or session-only, your
 choice) and sent exclusively to the provider origin you configure. Exports
 scrub anything credential-shaped.
 
+### Run the browser version locally
+
+Requires Node 18+:
+
+```bash
+git clone https://github.com/shlokkhemani/rabbithole.git
+cd rabbithole
+npm install
+npm run build
+npx -y serve web/dist
+```
+
+Open **[http://localhost:3000](http://localhost:3000)** (or the URL printed by
+`serve`). The local browser build has the same OpenRouter and
+OpenAI-compatible local-model options as [rabbithole.ing](https://rabbithole.ing),
+and its documents and provider settings stay in that browser's local storage.
+
 Holes persist in IndexedDB, and each document gets a memorable local URL such
 as `rabbithole.ing/curious-teacup-abcdef`. That path names a record in *your*
 browser's database — it is not a sharing link. To move a hole between
@@ -237,6 +254,22 @@ npm run check:dist
 
 Commit both the source changes and `dist/`. There is no `prepare` build step;
 GitHub `npx` installs use the committed artifacts.
+
+### Production deployment
+
+The [`Deploy Cloudflare Pages`](./.github/workflows/deploy-pages.yml) workflow
+runs the complete test suite and deploys `publish/` to the `rabbithole` Pages
+project on every push to `main`. It can also be rerun manually from GitHub
+Actions. Each Cloudflare deployment is tagged with the exact Git commit.
+
+The workflow requires:
+
+- repository variable `CLOUDFLARE_ACCOUNT_ID`;
+- repository secret `CLOUDFLARE_API_TOKEN`, scoped to **Account → Cloudflare
+  Pages → Edit**.
+
+Configure them with `gh variable set CLOUDFLARE_ACCOUNT_ID` and `gh secret set
+CLOUDFLARE_API_TOKEN`; both commands prompt without committing credentials.
 
 ## License
 
