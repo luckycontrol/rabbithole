@@ -7,54 +7,53 @@ import { iconSvg } from "./icons.js";
  * node --check gate.
  */
 export const CANVAS_SHELL = `
-<div id="reader">
-  <div id="reader-top">
-    <nav id="breadcrumb" aria-label="Breadcrumb"></nav>
-    ${iconButtonMarkup({ bare: true, className: "activity", id: "act-reader", title: "Jump to it", ariaLabel: "Jump to active answer" })}
-    ${buttonMarkup({ id: "r-textdown", title: "Smaller text", label: "A−" })}
-    ${buttonMarkup({ id: "r-textup", title: "Larger text", label: "A+" })}
-    ${buttonMarkup({ id: "r-canvas", title: "Open the spatial canvas", label: "⤢ Canvas" })}
-    ${buttonMarkup({ id: "r-share", title: "Share, export, synthesize", label: "↗ Share", ariaHaspopup: "menu", ariaControls: "sharemenu", ariaExpanded: "false" })}
-    ${iconButtonMarkup({ bare: true, className: "tool-btn", id: "r-theme", title: "Toggle theme", ariaLabel: "Toggle theme", icon: "◑" })}
-    ${buttonMarkup({ id: "r-done", title: "End the session (the hole stays saved)", label: "Done" })}
+<div id="taskbar">
+  <div class="tb-pill" id="tb-tools">
+    ${iconButtonMarkup({ id: "t-rail", title: "Rabbitholes · S", ariaLabel: "Toggle rabbitholes", ariaExpanded: "false", ariaControls: "web-rail", svgIconHtml: iconSvg("rail") })}
+    ${iconButtonMarkup({ id: "t-new", title: "New Rabbithole · N", ariaLabel: "New Rabbithole", svgIconHtml: iconSvg("new") })}
+    <span class="sep" id="app-sep"></span>
+    <span class="tb-group" data-mode="reader">
+      ${buttonMarkup({ id: "t-canvas", title: "Open the spatial canvas", label: "Canvas" })}
+      <span class="sep"></span>
+      ${buttonMarkup({ id: "r-textdown", title: "Smaller text", label: "A−" })}
+      ${buttonMarkup({ id: "r-textup", title: "Larger text", label: "A+" })}
+    </span>
+    <span class="tb-group" data-mode="canvas">
+      ${buttonMarkup({ id: "t-reader", title: "Read this document", label: "Reader" })}
+      <span class="sep"></span>
+      <span class="zoom-controls">
+        ${iconButtonMarkup({ id: "t-zout", title: "Zoom out", ariaLabel: "Zoom out", svgIconHtml: iconSvg("zoom-out") })}
+        ${buttonMarkup({ id: "zoom-label", title: "Zoom to 100%", ariaLabel: "Zoom to 100%", label: "100%" })}
+        ${iconButtonMarkup({ id: "t-zin", title: "Zoom in", ariaLabel: "Zoom in", svgIconHtml: iconSvg("zoom-in") })}
+      </span>
+      ${iconButtonMarkup({ id: "t-frame", title: "Frame everything · F", ariaLabel: "Frame everything · F", svgIconHtml: iconSvg("frame") })}
+      ${iconButtonMarkup({ id: "t-tidy", title: "Tidy up layout · T", ariaLabel: "Tidy up layout · T", svgIconHtml: iconSvg("tidy") })}
+    </span>
   </div>
-  <div id="since"><span class="since-dot"></span><span class="since-msg" id="since-msg"></span>${buttonMarkup({ id: "since-show", label: "Show me" })}${iconButtonMarkup({ bare: true, id: "since-x", title: "Dismiss", ariaLabel: "Dismiss activity notice", icon: "×" })}</div>
-  <div id="reader-cols">
-    <div id="reader-center">
-      <div id="reader-main"></div>
-      <div id="composer">
-        <div class="composer-inner" id="composer-inner">
-          <textarea id="composer-text" rows="1" placeholder="Ask a follow-up about this document…"></textarea>
-          <button id="composer-send" class="send-btn" title="Send (Enter) · New line (Shift+Enter)" aria-label="Send follow-up" disabled>${iconSvg("send")}</button>
-        </div>
-      </div>
+  <div id="tb-session">
+    <div class="tb-pill">
+    ${iconButtonMarkup({ id: "t-share", title: "Share, export, synthesize", ariaLabel: "Share, export, synthesize", ariaHaspopup: "menu", ariaControls: "sharemenu", ariaExpanded: "false", svgIconHtml: iconSvg("share") })}
+    ${iconButtonMarkup({ id: "t-theme", title: "Toggle theme", ariaLabel: "Toggle theme", svgIconHtml: iconSvg("theme") })}
+    ${iconButtonMarkup({ id: "t-settings", title: "Model settings", ariaLabel: "Model settings", ariaExpanded: "false", svgIconHtml: iconSvg("settings") })}
     </div>
-    <div id="reader-side"></div>
+    <div class="tb-pill" id="tb-done-pill">
+      ${buttonMarkup({ id: "tb-done", title: "End the session (the hole stays saved)", label: "Done" })}
+    </div>
+  </div>
+</div>
+
+<div id="reader">
+  <div id="since"><span class="since-dot"></span><span class="since-msg" id="since-msg"></span>${buttonMarkup({ id: "since-show", label: "Show me" })}${iconButtonMarkup({ bare: true, id: "since-x", title: "Dismiss", ariaLabel: "Dismiss activity notice", icon: "×" })}</div>
+  <div id="reader-main"></div>
+  <div id="composer">
+    <div class="composer-inner" id="composer-inner">
+      <textarea id="composer-text" rows="1" placeholder="Ask a follow-up about this document…"></textarea>
+      <button id="composer-send" class="send-btn" title="Send (Enter) · New line (Shift+Enter)" aria-label="Send follow-up" disabled>${iconSvg("send")}</button>
+    </div>
   </div>
 </div>
 
 <div id="viewport"><div id="world"><svg id="edges"></svg></div></div>
-<div id="toolbar">
-  ${iconButtonMarkup({ id: "t-rail", title: "Rabbitholes · S", ariaLabel: "Toggle rabbitholes", ariaExpanded: "false", ariaControls: "web-rail", svgIconHtml: iconSvg("rail") })}
-  ${iconButtonMarkup({ id: "t-new", title: "New Rabbithole · N", ariaLabel: "New Rabbithole", svgIconHtml: iconSvg("new") })}
-  <span class="sep" id="app-sep"></span>
-  ${buttonMarkup({ id: "t-reader", title: "Back to reading", label: "Reader", svgIconHtml: iconSvg("reader") })}
-  <span class="sep"></span>
-  <span class="zoom-controls">
-    ${iconButtonMarkup({ id: "t-zout", title: "Zoom out", ariaLabel: "Zoom out", svgIconHtml: iconSvg("zoom-out") })}
-    ${buttonMarkup({ id: "zoom-label", title: "Zoom to 100%", ariaLabel: "Zoom to 100%", label: "100%" })}
-    ${iconButtonMarkup({ id: "t-zin", title: "Zoom in", ariaLabel: "Zoom in", svgIconHtml: iconSvg("zoom-in") })}
-  </span>
-  ${iconButtonMarkup({ id: "t-frame", title: "Frame everything · F", ariaLabel: "Frame everything · F", svgIconHtml: iconSvg("frame") })}
-  ${iconButtonMarkup({ id: "t-tidy", title: "Tidy up layout · T", ariaLabel: "Tidy up layout · T", svgIconHtml: iconSvg("tidy") })}
-  <span class="sep"></span>
-  ${iconButtonMarkup({ id: "t-share", title: "Share, export, synthesize", ariaLabel: "Share, export, synthesize", ariaHaspopup: "menu", ariaControls: "sharemenu", ariaExpanded: "false", svgIconHtml: iconSvg("share") })}
-  <span class="sep"></span>
-  ${iconButtonMarkup({ id: "t-theme", title: "Toggle theme", ariaLabel: "Toggle theme", svgIconHtml: iconSvg("theme") })}
-  ${iconButtonMarkup({ id: "t-settings", title: "Model settings", ariaLabel: "Model settings", ariaExpanded: "false", svgIconHtml: iconSvg("settings") })}
-  <span class="sep" id="act-sep" style="display:none"></span>
-  ${iconButtonMarkup({ bare: true, className: "activity", id: "act-canvas", title: "Jump to it", ariaLabel: "Jump to active answer" })}
-</div>
 
 <div id="ask">
   <div class="ask-input">

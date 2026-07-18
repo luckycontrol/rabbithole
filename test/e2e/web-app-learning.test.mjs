@@ -43,7 +43,7 @@ async function verifyBranchContentSizing() {
   await page.click("#composer-send");
   const shortCard = page.locator(".node:not(.root)", { hasText: "Brief answer" });
   await shortCard.waitFor({ state: "attached" });
-  await page.click("#r-canvas");
+  await page.click("#t-canvas");
   await shortCard.waitFor();
   const shortSize = await shortCard.evaluate((el) => ({ height: el.offsetHeight, cap: parseFloat(el.style.maxHeight), bodyClient: el.querySelector(".node-body").clientHeight, bodyScroll: el.querySelector(".node-body").scrollHeight }));
   assert.equal(shortSize.cap, 460, "a branch should retain the saved/default height as its cap");
@@ -56,7 +56,7 @@ async function verifyBranchContentSizing() {
   await page.click("#composer-send");
   const longCard = page.locator(".node:not(.root)", { hasText: "Long answer" });
   await longCard.waitFor({ state: "attached" });
-  await page.click("#r-canvas");
+  await page.click("#t-canvas");
   await longCard.waitFor();
   await page.waitForFunction(() => {
     const cards = Array.from(document.querySelectorAll(".node:not(.root)"));

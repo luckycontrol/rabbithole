@@ -9,7 +9,6 @@ import {
   hydration,
   nextOrder,
   nodes,
-  refreshAmbient,
   registerNode,
   rootId,
   setCanvasFramed,
@@ -58,7 +57,6 @@ export function hydrateInitialState({ connectSse = null, refreshStatus = null } 
   openNode(currentNodeId); // READER is the default; canvas DOM is built lazily
   if (vs && vs.mode === "canvas") setMode("canvas");
   if (unreadNodes().length){ armSince(); updateSince(); }
-  refreshAmbient();
   if (typeof refreshStatus === "function") refreshStatus();
   if (!frozen && typeof connectSse === "function") connectSse();
 }

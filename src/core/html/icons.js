@@ -20,7 +20,6 @@ const ICON_DEFINITIONS = Object.freeze({
   bunny: { size: null, attrs: 'viewBox="0 0 64 64" fill="currentColor"', body: BUNNY_SHAPES },
   rail: { size: 16, attrs: STROKE_16, body: '<rect x="2.5" y="2.75" width="11" height="10.5" rx="1.6"/><path d="M6.25 2.75v10.5"/>' },
   new: { size: 16, attrs: STROKE_16, body: '<path d="M9.75 3.25H4.5c-.7 0-1.25.55-1.25 1.25v7c0 .7.55 1.25 1.25 1.25h7c.7 0 1.25-.55 1.25-1.25V6.25"/><path d="m7.25 9.25.35-1.7 4.55-4.55a.85.85 0 0 1 1.2 1.2L8.8 8.75z"/>' },
-  reader: { size: 16, attrs: STROKE_16, body: '<path d="M3.75 3.25h4.5c1 0 1.8.8 1.8 1.8v7.7H5.15c-.77 0-1.4-.63-1.4-1.4z"/><path d="M5.15 12.75c-.77 0-1.4-.63-1.4-1.4s.63-1.4 1.4-1.4h4.9"/>' },
   "zoom-out": { size: 16, attrs: STROKE_16, body: '<path d="M4 8h8"/>' },
   "zoom-in": { size: 16, attrs: STROKE_16, body: '<path d="M8 4v8M4 8h8"/>' },
   frame: { size: 16, attrs: STROKE_16, body: '<path d="M5.8 3.25H3.25V5.8"/><path d="M10.2 3.25h2.55V5.8"/><path d="M12.75 10.2v2.55H10.2"/><path d="M5.8 12.75H3.25V10.2"/>' },

@@ -260,7 +260,7 @@ try {
   await boxCard.locator(".node-head").evaluate((el) => el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
   await page.waitForSelector(`.reader-col .rh-origin-crop-reader img[src]`);
   assert.equal(await page.locator(".reader-col .rh-origin-crop-reader").count(), 1, "reader must render clip provenance in its origin slot");
-  await page.click("#r-canvas");
+  await page.click("#t-canvas");
 
   await page.evaluate(async ({ name }) => {
     const holeId = window.__rabbitholeTest.currentHoleId();

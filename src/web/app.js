@@ -149,7 +149,7 @@ function renderShell() {
     </nav>
     <div id="web-toast" class="web-toast"><span data-notice-message></span>${buttonMarkup({ bare: true, label: "Action", hidden: true, dataAttrs: { noticeAction: "" } })}</div>`;
   toastNotice = wireNotice(document.getElementById("web-toast"), { variant: "toast" });
-  document.getElementById("toolbar")?.insertAdjacentHTML("afterbegin",
+  document.getElementById("tb-tools")?.insertAdjacentHTML("afterbegin",
     `${iconButtonMarkup({ className: "toolbar-brand", id: "t-project", title: "About Rabbithole and project links", ariaLabel: "Rabbithole project menu", ariaHaspopup: "menu", ariaControls: "project-menu", ariaExpanded: "false", svgIconHtml: TOOLBAR_BUNNY_MARK_SVG })}<span class="sep toolbar-brand-sep"></span>`);
   railOpen = false;
   applyRailState();
@@ -218,7 +218,12 @@ function initAppChrome() {
     validateKey: validateKeyForPreset,
     openOllamaRecovery: ({ settings, trigger }) => ollamaRecoveryController.open({ settings, trigger }),
   });
-  settingsTrigger?.addEventListener("click", () => settingsController.open());
+  // The gear toggles: the layer stack ignores pointerdown on its own trigger,
+  // so a second click reaches us with the popover still open — close it.
+  settingsTrigger?.addEventListener("click", () => {
+    if (settingsController.isOpen()) settingsController.close();
+    else settingsController.open();
+  });
   document.getElementById("blank-start-new")?.addEventListener("click", (event) => requestNewRabbithole({ source: "button", trigger: event.currentTarget }));
   document.getElementById("blank-start-setup")?.addEventListener("click", (event) => openModelSetup({ trigger: event.currentTarget }));
   syncGenerationSetupUi();
@@ -788,7 +793,7 @@ async function mountHole(hole, { replace = false } = {}) {
       loadMermaid: loadMermaidRuntime,
       getPdfTranscriptionCapability: () => currentPdfTranscriptionCapability,
     });
-    document.getElementById("r-canvas")?.click();
+    document.getElementById("t-canvas")?.click();
     const isNewRailItem = !railSummaries?.some((summary) => summary.hole_id === hole.hole_id);
     await renderRail({ refresh: isNewRailItem, firstHoleId: isNewRailItem ? hole.hole_id : null });
     host.startRootAnswer();
@@ -832,7 +837,6 @@ function resetHoleSurface() {
     world.style.transform = "";
   }
   document.getElementById("reader-main")?.replaceChildren();
-  document.getElementById("reader-side")?.replaceChildren();
   document.getElementById("breadcrumb")?.replaceChildren();
 }
 
@@ -966,7 +970,7 @@ function toggleRail() {
 
 function syncRailPosition() {
   const rail = document.getElementById("web-rail");
-  const toolbar = document.getElementById("toolbar");
+  const toolbar = document.getElementById("tb-tools");
   if (!rail || !toolbar) return;
   rail.style.setProperty("--rail-top", `${toolbar.getBoundingClientRect().bottom + 14}px`);
 }

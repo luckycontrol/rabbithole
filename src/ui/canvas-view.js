@@ -90,7 +90,7 @@ export function initCanvasView(){
   initViewportPan();
   canvasScope.listen(viewport, "wheel", onViewportWheel, { passive: false });
   canvasScope.listen(viewport, "dblclick", onViewportDblClick);
-  canvasScope.listen(document.getElementById("t-reader"), "click", function(){ openNode(currentNodeId); });
+  canvasScope.listen(document.getElementById("t-reader"), "click", function(){ if (mode !== "canvas") return; openNode(currentNodeId); });
   canvasScope.listen(document.getElementById("t-frame"), "click", function(e){ frameAll(true, motionSourceFromEvent(e)); });
   canvasScope.listen(document.getElementById("t-tidy"), "click", function(e){ tidy(motionSourceFromEvent(e)); });
   canvasScope.listen(document.getElementById("t-zin"), "click", function(){ zoomAt(viewport.clientWidth/2, viewport.clientHeight/2, 1.15); });
@@ -863,9 +863,9 @@ export function frameAll(animate, source){
     var minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
     ids.forEach(function(id){ var n=nodes[id]; minX=Math.min(minX,n.x); minY=Math.min(minY,n.y); maxX=Math.max(maxX,n.x+n.w); maxY=Math.max(maxY,n.y+effH(n)); });
     var fullW=viewport.clientWidth||window.innerWidth, fullH=viewport.clientHeight||window.innerHeight, pad=100;
-    var rail=document.getElementById("web-rail"), toolbar=document.getElementById("toolbar");
+    var rail=document.getElementById("web-rail"), taskbar=document.getElementById("taskbar");
     var insetX=(rail && rail.classList.contains("open")) ? rail.getBoundingClientRect().width : 0;
-    var insetY=toolbar ? toolbar.getBoundingClientRect().height : 0;
+    var insetY=taskbar ? taskbar.getBoundingClientRect().height : 0;
     var vw=fullW-insetX, vh=fullH-insetY;
     var ts = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min((vw-pad)/(maxX-minX), (vh-pad)/(maxY-minY), 1.2)));
     var tx = insetX+vw/2 - (minX+(maxX-minX)/2)*ts, ty = insetY+vh/2 - (minY+(maxY-minY)/2)*ts;

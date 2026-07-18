@@ -147,10 +147,10 @@ async function runLiveSnapshotDownload() {
   try {
     const page = await browser.newPage({ acceptDownloads: true });
     await page.goto(session.url);
-    await page.waitForSelector("#r-share");
+    await page.waitForSelector("#t-share");
     const liveStyles = await page.locator("head style:first-of-type").textContent();
 
-    await page.click("#r-share");
+    await page.click("#t-share");
     await page.waitForSelector("#sharemenu.visible");
     const downloadPromise = page.waitForEvent("download");
     await page.click("#sm-export");

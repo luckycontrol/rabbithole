@@ -280,7 +280,7 @@ export function createSettingsPopover(options) {
     void callback?.();
   }
 
-  return { open, close, completeLocalSetup };
+  return { open, close, completeLocalSetup, isOpen: () => !!surface };
 }
 
 function keyIdleWhisper(preset) { return `Stored only in this browser, sent directly to ${preset.label}.`; }

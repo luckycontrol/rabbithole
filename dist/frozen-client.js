@@ -1865,7 +1865,6 @@ var RabbitholeFrozenClient = (() => {
     bunny: { size: null, attrs: 'viewBox="0 0 64 64" fill="currentColor"', body: BUNNY_SHAPES },
     rail: { size: 16, attrs: STROKE_16, body: '<rect x="2.5" y="2.75" width="11" height="10.5" rx="1.6"/><path d="M6.25 2.75v10.5"/>' },
     new: { size: 16, attrs: STROKE_16, body: '<path d="M9.75 3.25H4.5c-.7 0-1.25.55-1.25 1.25v7c0 .7.55 1.25 1.25 1.25h7c.7 0 1.25-.55 1.25-1.25V6.25"/><path d="m7.25 9.25.35-1.7 4.55-4.55a.85.85 0 0 1 1.2 1.2L8.8 8.75z"/>' },
-    reader: { size: 16, attrs: STROKE_16, body: '<path d="M3.75 3.25h4.5c1 0 1.8.8 1.8 1.8v7.7H5.15c-.77 0-1.4-.63-1.4-1.4z"/><path d="M5.15 12.75c-.77 0-1.4-.63-1.4-1.4s.63-1.4 1.4-1.4h4.9"/>' },
     "zoom-out": { size: 16, attrs: STROKE_16, body: '<path d="M4 8h8"/>' },
     "zoom-in": { size: 16, attrs: STROKE_16, body: '<path d="M8 4v8M4 8h8"/>' },
     frame: { size: 16, attrs: STROKE_16, body: '<path d="M5.8 3.25H3.25V5.8"/><path d="M10.2 3.25h2.55V5.8"/><path d="M12.75 10.2v2.55H10.2"/><path d="M5.8 12.75H3.25V10.2"/>' },
@@ -2600,7 +2599,6 @@ var RabbitholeFrozenClient = (() => {
   var orderCounter = 0;
   var loadingTimers = /* @__PURE__ */ new Set();
   var readerMain = null;
-  var sideEl = null;
   var breadcrumbEl = null;
   var viewport = null;
   var world = null;
@@ -2616,9 +2614,6 @@ var RabbitholeFrozenClient = (() => {
   var composerInner = null;
   var composerText = null;
   var composerSend = null;
-  var actReader = null;
-  var actCanvas = null;
-  var actSep = null;
   var sinceEl = null;
   var sinceMsg = null;
   var paletteEl = null;
@@ -2679,8 +2674,9 @@ var RabbitholeFrozenClient = (() => {
     sinceDismissed = false;
     sinceArmed = false;
     readerMain = document.getElementById("reader-main");
-    sideEl = document.getElementById("reader-side");
-    breadcrumbEl = document.getElementById("breadcrumb");
+    breadcrumbEl = document.createElement("nav");
+    breadcrumbEl.id = "breadcrumb";
+    breadcrumbEl.setAttribute("aria-label", "Breadcrumb");
     viewport = document.getElementById("viewport");
     world = document.getElementById("world");
     edgesSvg = document.getElementById("edges");
@@ -2695,9 +2691,6 @@ var RabbitholeFrozenClient = (() => {
     composerInner = document.getElementById("composer-inner");
     composerText = document.getElementById("composer-text");
     composerSend = document.getElementById("composer-send");
-    actReader = document.getElementById("act-reader");
-    actCanvas = document.getElementById("act-canvas");
-    actSep = document.getElementById("act-sep");
     sinceEl = document.getElementById("since");
     sinceMsg = document.getElementById("since-msg");
     paletteEl = document.getElementById("palette");
@@ -2706,8 +2699,10 @@ var RabbitholeFrozenClient = (() => {
     shareMenu = document.getElementById("sharemenu");
     confirmEl = document.getElementById("confirm");
     initReduceMotion(coreScope);
-    coreScope.listen(actReader, "click", onActivityClick);
-    coreScope.listen(actCanvas, "click", onActivityClick);
+    coreScope.listen(document.getElementById("tb-done"), "click", function() {
+      if (!closed) coreHooks.post({ type: "done" });
+    });
+    coreScope.listen(document.getElementById("t-theme"), "click", toggleTheme);
     coreScope.listen(document.getElementById("since-show"), "click", function(e) {
       var un = unreadNodes();
       if (un.length) goToNode(un[0], motionSourceFromEvent(e));
@@ -2755,11 +2750,10 @@ var RabbitholeFrozenClient = (() => {
     viewAdjusted = false;
     orderCounter = 0;
     loadingTimers.clear();
-    readerMain = sideEl = breadcrumbEl = viewport = world = edgesSvg = null;
+    readerMain = breadcrumbEl = viewport = world = edgesSvg = null;
     ask = askText = askGo = zoomLabel = hintEl = bannerEl = null;
     hintNotice = bannerNotice = null;
     composerInner = composerText = composerSend = null;
-    actReader = actCanvas = actSep = null;
     sinceEl = sinceMsg = paletteEl = palText = palResults = null;
     shareMenu = confirmEl = null;
     sinceDismissed = false;
@@ -2889,9 +2883,6 @@ var RabbitholeFrozenClient = (() => {
   function boundsOverlap2(a, b) {
     return boundsOverlap(a, b);
   }
-  function agentDown() {
-    return closed || connLost || !agentAttached;
-  }
   function sessionPhase() {
     if (frozen) return "frozen";
     if (closed) return "closed";
@@ -2958,20 +2949,11 @@ var RabbitholeFrozenClient = (() => {
     node.read = true;
     if (!frozen && !closed) coreHooks.post({ type: "node_update", node_id: node.id, read: true });
     if (node.el) node.el.classList.remove("unread");
-    refreshAmbient();
     updateSince();
   }
   function unreadNodes() {
     var out = [];
     for (var k in nodes) if (isUnread(nodes[k])) out.push(nodes[k]);
-    out.sort(function(a, b) {
-      return (a._order || 0) - (b._order || 0);
-    });
-    return out;
-  }
-  function pendingNodes() {
-    var out = [];
-    for (var k in nodes) if (nodes[k].status === "pending") out.push(nodes[k]);
     out.sort(function(a, b) {
       return (a._order || 0) - (b._order || 0);
     });
@@ -2987,35 +2969,6 @@ var RabbitholeFrozenClient = (() => {
     } else {
       coreHooks.openNode(node.id);
     }
-  }
-  function refreshAmbient() {
-    var writing = pendingNodes().length;
-    var label = "", cls = "activity on";
-    if (writing > 0 && !agentDown()) {
-      label = writing + " writing\u2026";
-      cls += " writing";
-    } else cls = "activity";
-    var chips = [actReader, actCanvas];
-    for (var i2 = 0; i2 < chips.length; i2++) {
-      chips[i2].className = cls;
-      var dot = chips[i2].querySelector(".act-dot");
-      var text2 = chips[i2].querySelector(".act-label");
-      if (!dot || !text2) {
-        dot = document.createElement("span");
-        dot.className = "act-dot";
-        text2 = document.createElement("span");
-        text2.className = "act-label";
-        chips[i2].replaceChildren(dot, text2);
-      }
-      text2.textContent = label;
-      chips[i2].title = "Watch it being written";
-    }
-    if (actSep) actSep.style.display = label ? "" : "none";
-  }
-  function onActivityClick(e) {
-    var source2 = motionSourceFromEvent(e);
-    var pend = pendingNodes();
-    if (pend.length) goToNode(pend[pend.length - 1], source2);
   }
   var sinceDismissed = false;
   var sinceArmed = false;
@@ -29825,7 +29778,8 @@ ${text2}</tr>
     readerLifecycle.register(hooks);
   }
   var breadcrumbNodes = {};
-  var sidebarNodes = {};
+  var noteNodes = {};
+  var marginObserver = null;
   function openNode(id) {
     if (!nodes[id]) return;
     var transferredPosition = document.body.classList.contains("mode-canvas") ? captureContentPosition(nodes[id].bodyEl) : null;
@@ -29842,7 +29796,7 @@ ${text2}</tr>
       restoreContentPosition(readerMain, transferredPosition);
       nodes[id]._scrollTop = readerMain.scrollTop;
     }
-    renderSidebar();
+    renderMarginNotes();
     readerLifecycle.hooks.updateComposerState();
     if (nodes[id].status === "answered") markRead(nodes[id]);
     readerLifecycle.hooks.scheduleViewSave();
@@ -29899,22 +29853,24 @@ ${text2}</tr>
       readerScope.listen(readerMain, "keydown", onMarkKeydown);
       readerScope.listen(world, "click", onCanvasMarkClick);
       readerScope.listen(world, "keydown", onCanvasMarkKeydown);
-      readerScope.listen(sideEl, "click", onSidebarClick);
-      readerScope.listen(sideEl, "keydown", onSidebarKeydown);
+      readerScope.listen(readerMain, "click", onNoteClick);
+      readerScope.listen(readerMain, "keydown", onNoteKeydown);
+      readerScope.listen(readerMain, "mouseover", function(e) {
+        syncNoteHover(e, true);
+      });
+      readerScope.listen(readerMain, "mouseout", function(e) {
+        syncNoteHover(e, false);
+      });
       readerScope.listen(document.getElementById("r-textdown"), "click", function() {
         setReaderFontScale(-0.1);
       });
       readerScope.listen(document.getElementById("r-textup"), "click", function() {
         setReaderFontScale(0.1);
       });
-      readerScope.listen(document.getElementById("r-canvas"), "click", function() {
+      readerScope.listen(document.getElementById("t-canvas"), "click", function() {
+        if (mode === "canvas") return;
         readerLifecycle.hooks.setMode("canvas");
       });
-      readerScope.listen(document.getElementById("r-done"), "click", function() {
-        if (!closed) readerLifecycle.hooks.post({ type: "done" });
-      });
-      readerScope.listen(document.getElementById("r-theme"), "click", toggleTheme);
-      readerScope.listen(document.getElementById("t-theme"), "click", toggleTheme);
       return disposeReader;
     } catch (error) {
       disposeReader();
@@ -29926,8 +29882,12 @@ ${text2}</tr>
   }
   function disposeReaderResources(resetHooks) {
     readerLifecycle.dispose(resetHooks);
+    if (marginObserver) {
+      marginObserver.disconnect();
+      marginObserver = null;
+    }
     breadcrumbNodes = {};
-    sidebarNodes = {};
+    noteNodes = {};
     kbdMarkIdx = -1;
   }
   function renderReaderBody() {
@@ -29937,6 +29897,7 @@ ${text2}</tr>
     readerMain.innerHTML = "";
     var col = document.createElement("div");
     col.className = "reader-col";
+    if (breadcrumbEl) col.appendChild(breadcrumbEl);
     if (node.origin && (node.origin.selected_text || node.origin.question)) {
       var ctx = document.createElement("div");
       ctx.className = "reader-context";
@@ -29983,6 +29944,9 @@ ${text2}</tr>
         if (k.status === "answered") markRead(k);
       });
     }
+    var notes = document.createElement("div");
+    notes.id = "margin-notes";
+    col.appendChild(notes);
     readerMain.appendChild(col);
     readerMain.scrollTop = node._scrollTop || 0;
   }
@@ -30088,33 +30052,22 @@ ${text2}</tr>
     e.preventDefault();
     goToNode(k, motionSourceFromEvent(e));
   }
-  function renderSidebar() {
+  function renderMarginNotes() {
+    var layer = readerMain && readerMain.querySelector("#margin-notes");
+    if (!layer) return;
     var kids = childrenOf(currentNodeId).filter(function(k) {
       return !isFollowup(k);
     }).sort(function(a, b) {
       return anchorStart(a) - anchorStart(b) || (a._order || 0) - (b._order || 0);
     });
-    if (!kids.length) {
-      var emptyHeading = document.createElement("h3");
-      emptyHeading.textContent = "Branches";
-      var empty = document.createElement("div");
-      empty.className = "side-empty";
-      empty.textContent = "Select any text in the document and ask about it \u2014 the answer opens as a branch here. Or ask a follow-up in the box below the document.";
-      sideEl.replaceChildren(emptyHeading, empty);
-      return;
-    }
-    var heading2 = sideEl.querySelector(":scope > h3");
-    if (!heading2) heading2 = document.createElement("h3");
-    heading2.textContent = "Branches (" + kids.length + ")";
     var fragment = document.createDocumentFragment();
-    fragment.appendChild(heading2);
     var newLivePanes = [];
-    kids.forEach(function(k, i2) {
+    kids.forEach(function(k) {
       var pending = k.status !== "answered";
       var qHtml = k.origin && k.origin.synthesis ? '<span class="lens-badge">\u2726 Synthesis</span>' : k.origin && k.origin.lens ? lensBadgeHtml(k.origin.lens) : escapeHtml(k.origin && k.origin.question ? k.origin.question : k.title || "Untitled");
       var quote = k.origin && k.origin.selected_text ? k.origin.selected_text : "";
       var status = pending ? pendingStatusHtml(k) : isUnread(k) ? '<span class="si-new">new \u2014 open \u2192</span>' : "open \u2192";
-      var tile = sidebarNodes[k.id];
+      var tile = noteNodes[k.id];
       if (!tile) {
         tile = document.createElement("div");
         tile.className = "side-item";
@@ -30123,20 +30076,15 @@ ${text2}</tr>
         tile.tabIndex = 0;
         tile._question = document.createElement("div");
         tile._question.className = "si-q";
-        tile._num = document.createElement("span");
-        tile._num.className = "si-num";
-        tile._questionText = document.createElement("span");
-        tile._question.append(tile._num, tile._questionText);
         tile._quote = document.createElement("div");
         tile._quote.className = "si-quote";
         tile._status = document.createElement("div");
         tile._status.className = "si-status";
         tile.append(tile._question, tile._quote, tile._status);
-        sidebarNodes[k.id] = tile;
+        noteNodes[k.id] = tile;
       }
       tile.classList.toggle("pending", pending);
-      tile._num.textContent = i2 + 1;
-      tile._questionText.innerHTML = qHtml;
+      tile._question.innerHTML = qHtml;
       tile._quote.textContent = quote ? "\u201C" + truncate2(quote, 80) + "\u201D" : "";
       tile._quote.hidden = !quote;
       tile._status.innerHTML = status;
@@ -30160,12 +30108,67 @@ ${text2}</tr>
       }
       fragment.appendChild(tile);
     });
-    sideEl.replaceChildren(fragment);
-    mountSidebarVisuals(newLivePanes);
+    layer.replaceChildren(fragment);
+    mountNoteVisuals(newLivePanes);
+    layoutMarginNotes();
   }
-  function mountSidebarVisuals(panes) {
+  function layoutMarginNotes() {
+    var layer = readerMain && readerMain.querySelector("#margin-notes");
+    if (!layer) return;
+    if (!marginObserver && typeof ResizeObserver === "function") {
+      marginObserver = new ResizeObserver(function() {
+        positionNotes();
+      });
+    }
+    if (marginObserver) {
+      marginObserver.disconnect();
+      marginObserver.observe(layer.parentNode);
+      for (var i2 = 0; i2 < layer.children.length; i2++) marginObserver.observe(layer.children[i2]);
+    }
+    positionNotes();
+  }
+  function positionNotes() {
+    var layer = readerMain && readerMain.querySelector("#margin-notes");
+    if (!layer || !layer.clientWidth) {
+      if (layer) layer.classList.remove("settled");
+      return;
+    }
+    var layerTop = layer.getBoundingClientRect().top;
+    var cursor = 0;
+    for (var i2 = 0; i2 < layer.children.length; i2++) {
+      var tile = layer.children[i2];
+      var mark = readerMain.querySelector('mark[data-child="' + tile.dataset.child + '"]');
+      tile.classList.toggle("unanchored", !mark);
+      var desired = mark ? Math.round(mark.getBoundingClientRect().top - layerTop) : cursor;
+      var top = Math.max(desired, cursor);
+      tile.style.top = top + "px";
+      cursor = top + tile.offsetHeight + 10;
+    }
+    layer.classList.add("settled");
+  }
+  function onNoteClick(e) {
+    var it = e.target.closest && e.target.closest("#margin-notes .side-item");
+    if (!it) return;
+    openNode(it.dataset.child);
+  }
+  function onNoteKeydown(e) {
+    if (e.key !== "Enter") return;
+    var it = e.target.closest && e.target.closest('#margin-notes .side-item[role="link"]');
+    if (!it) return;
+    e.preventDefault();
+    openNode(it.dataset.child);
+  }
+  function syncNoteHover(e, on) {
+    var tile = e.target.closest && e.target.closest("#margin-notes .side-item");
+    if (!tile) return;
+    var related = e.relatedTarget;
+    if (related && tile.contains(related)) return;
+    var marks = readerMain.querySelectorAll('mark[data-child="' + tile.dataset.child + '"]');
+    for (var i2 = 0; i2 < marks.length; i2++) marks[i2].classList.toggle("mark-focus", on);
+  }
+  function mountNoteVisuals(panes) {
     for (var i2 = 0; i2 < panes.length; i2++) {
-      var key = "reader-side:" + panes[i2].node.id;
+      var key = "margin-notes:" + panes[i2].node.id;
       mountVisuals(panes[i2].pane, key);
       if (typeof readerLifecycle.hooks.mountDocImages === "function") readerLifecycle.hooks.mountDocImages(panes[i2].pane, panes[i2].node, null, key);
     }
@@ -30178,18 +30181,6 @@ ${text2}</tr>
       live: k && k.html ? '<span class="shimmer-text">Writing\u2026</span>' : '<span class="shimmer-text">Thinking\u2026</span>'
     };
     return copy[sessionPhase()];
-  }
-  function onSidebarClick(e) {
-    var it = e.target.closest(".side-item");
-    if (!it) return;
-    openNode(it.dataset.child);
-  }
-  function onSidebarKeydown(e) {
-    if (e.key !== "Enter") return;
-    var it = e.target.closest && e.target.closest('.side-item[role="link"]');
-    if (!it) return;
-    e.preventDefault();
-    openNode(it.dataset.child);
   }
   function setReaderFontScale(delta) {
     var node = nodes[currentNodeId];
@@ -30360,6 +30351,7 @@ ${text2}</tr>
     canvasScope.listen(viewport, "wheel", onViewportWheel, { passive: false });
     canvasScope.listen(viewport, "dblclick", onViewportDblClick);
     canvasScope.listen(document.getElementById("t-reader"), "click", function() {
+      if (mode !== "canvas") return;
       openNode(currentNodeId);
     });
     canvasScope.listen(document.getElementById("t-frame"), "click", function(e) {
@@ -31353,9 +31345,9 @@ ${text2}</tr>
       maxY = Math.max(maxY, n.y + effH(n));
     });
     var fullW = viewport.clientWidth || window.innerWidth, fullH = viewport.clientHeight || window.innerHeight, pad2 = 100;
-    var rail = document.getElementById("web-rail"), toolbar = document.getElementById("toolbar");
+    var rail = document.getElementById("web-rail"), taskbar = document.getElementById("taskbar");
     var insetX = rail && rail.classList.contains("open") ? rail.getBoundingClientRect().width : 0;
-    var insetY = toolbar ? toolbar.getBoundingClientRect().height : 0;
+    var insetY = taskbar ? taskbar.getBoundingClientRect().height : 0;
     var vw = fullW - insetX, vh = fullH - insetY;
     var ts = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min((vw - pad2) / (maxX - minX), (vh - pad2) / (maxY - minY), 1.2)));
     var tx = insetX + vw / 2 - (minX + (maxX - minX) / 2) * ts, ty = insetY + vh / 2 - (minY + (maxY - minY) / 2) * ts;
@@ -31973,18 +31965,17 @@ ${text2}</tr>
         if (mode === "reader") mountPdfRectMark(readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"]'), anchor, childId, "rh-pdf-mark mark-pending");
         if (parent.bodyEl) mountPdfRectMark(parent.bodyEl.querySelector(".doc-content"), anchor, childId, "rh-pdf-mark mark-pending");
         scheduleEdges();
-        if (mode === "reader" && currentNodeId === parent.id) renderSidebar();
+        if (mode === "reader" && currentNodeId === parent.id) renderMarginNotes();
       } else if (mode === "reader") {
         var rdc = readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"]');
         wrapInContainer(rdc, anchor, childId, "hl mark-pending");
-        if (currentNodeId === parent.id) renderSidebar();
+        if (currentNodeId === parent.id) renderMarginNotes();
       }
       if (parent.bodyEl && !isPdfRegion) {
         wrapInContainer(parent.bodyEl.querySelector(".doc-content"), anchor, childId, "hl mark-pending");
         scheduleEdges();
       }
       revealNode(node, source2);
-      refreshAmbient();
     }
     var sel = window.getSelection();
     if (sel) sel.removeAllRanges();
@@ -32065,7 +32056,7 @@ ${text2}</tr>
       drawEdges();
     }
     if (currentNodeId === parent.id && mode === "reader") {
-      if (synthesis) renderSidebar();
+      if (synthesis) renderMarginNotes();
       else {
         var t = ensureThread();
         if (t) t.appendChild(buildThreadItem(node));
@@ -32088,7 +32079,6 @@ ${text2}</tr>
     askLifecycle.hooks.post(payload).then(function(res) {
       if (!res || !res.ok) rollbackBranch(node);
     });
-    refreshAmbient();
     return node;
   }
   var scrollAnimId = 0;
@@ -32161,8 +32151,7 @@ ${text2}</tr>
     if (!live || live.status === "answered") return;
     teardownNode(node.id);
     if (canvasBuilt) drawEdges();
-    if (mode === "reader" && currentNodeId === node.parent_id) renderSidebar();
-    refreshAmbient();
+    if (mode === "reader" && currentNodeId === node.parent_id) renderMarginNotes();
     flashHint("Couldn't reach the agent \u2014 that ask was undone.");
   }
   function placeChild2(parent, branchType) {
@@ -32999,10 +32988,6 @@ ${text2}</tr>
     disposeBranchSurfaceResources(false);
     var branchScope = branchLifecycle.beginInit();
     try {
-      branchScope.listen(document.getElementById("r-share"), "click", function(e) {
-        e.stopPropagation();
-        toggleShare(e.currentTarget, e.detail === 0);
-      });
       branchScope.listen(document.getElementById("t-share"), "click", function(e) {
         e.stopPropagation();
         toggleShare(e.currentTarget, e.detail === 0);
@@ -33290,9 +33275,8 @@ ${text2}</tr>
     }
     if (mode === "reader") {
       renderBreadcrumb();
-      renderSidebar();
+      renderMarginNotes();
     }
-    refreshAmbient();
     updateSince();
   }
 
@@ -33346,7 +33330,6 @@ ${text2}</tr>
       armSince();
       updateSince();
     }
-    refreshAmbient();
     if (typeof refreshStatus === "function") refreshStatus();
     if (!frozen && typeof connectSse === "function") connectSse();
   }

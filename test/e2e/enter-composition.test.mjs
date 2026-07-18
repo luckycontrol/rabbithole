@@ -112,7 +112,7 @@ async function verifyReaderComposer(page, calls) {
 }
 
 async function verifyCardComposer(page, calls) {
-  await page.click("#r-canvas");
+  await page.click("#t-canvas");
   await page.waitForFunction(() => document.body.classList.contains("mode-canvas"));
   await page.locator(".node.root .nc-handle").evaluate((button) => button.click());
   const selector = ".node.root .nc-inner textarea";
