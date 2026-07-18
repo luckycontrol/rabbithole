@@ -13,7 +13,6 @@ import {
   motionSourceFromEvent,
   nodes,
   readerMain,
-  refreshAmbient,
   rootId,
   setCurrentNodeId,
   setSurfaceOrigin,
@@ -31,7 +30,7 @@ import {
 import {
   openNode,
   renderBreadcrumb,
-  renderSidebar
+  renderMarginNotes
 } from "./reader.js";
 import { openPopover } from "./primitives/popover.js";
 import { createModuleLifecycle } from "./lifecycle.js";
@@ -59,7 +58,6 @@ export function initBranchSurfaces(){
   disposeBranchSurfaceResources(false);
   var branchScope = branchLifecycle.beginInit();
   try {
-  branchScope.listen(document.getElementById("r-share"), "click", function(e){ e.stopPropagation(); toggleShare(e.currentTarget, e.detail === 0); });
   branchScope.listen(document.getElementById("t-share"), "click", function(e){ e.stopPropagation(); toggleShare(e.currentTarget, e.detail === 0); });
   branchScope.listen(shareMenu, "keydown", onShareMenuKeydown);
   branchScope.listen(document.getElementById("sm-doc"), "click", onCopyDoc);
@@ -309,7 +307,6 @@ export function removeNodesLocal(ids, parentId){
       if (mode === "reader") openNode(currentNodeId);
     }
     if (canvasBuilt){ renderVisibility(); drawEdges(); }
-    if (mode === "reader"){ renderBreadcrumb(); renderSidebar(); }
-    refreshAmbient();
+    if (mode === "reader"){ renderBreadcrumb(); renderMarginNotes(); }
     updateSince();
   }

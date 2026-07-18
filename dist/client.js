@@ -1847,15 +1847,52 @@ var RabbitholeClient = (() => {
     return JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026").replace(LINE_SEP, "\\u2028").replace(PARA_SEP, "\\u2029");
   }
 
-  // src/core/html/bunny-markup.js
-  var BUNNY_MARK_SHAPES = `
+  // src/core/html/icons.js
+  var BUNNY_SHAPES = `
   <ellipse cx="30" cy="17" rx="4.6" ry="12.5" transform="rotate(20 30 17)"></ellipse>
   <ellipse cx="21.5" cy="15.5" rx="4.6" ry="13" transform="rotate(3 21.5 15.5)"></ellipse>
   <circle cx="21" cy="33" r="9.5"></circle>
   <ellipse cx="36" cy="45" rx="17" ry="13.5"></ellipse>
   <circle cx="52.5" cy="49" r="5"></circle>`;
-  var BUNNY_MARK_SVG = `<svg viewBox="0 0 64 64" fill="currentColor" focusable="false" aria-hidden="true">${BUNNY_MARK_SHAPES}
-</svg>`;
+  var STROKE_16 = 'viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"';
+  var ICON_DEFINITIONS = Object.freeze({
+    bunny: { size: null, attrs: 'viewBox="0 0 64 64" fill="currentColor"', body: BUNNY_SHAPES },
+    rail: { size: 16, attrs: STROKE_16, body: '<rect x="2.5" y="2.75" width="11" height="10.5" rx="1.6"/><path d="M6.25 2.75v10.5"/>' },
+    new: { size: 16, attrs: STROKE_16, body: '<path d="M9.75 3.25H4.5c-.7 0-1.25.55-1.25 1.25v7c0 .7.55 1.25 1.25 1.25h7c.7 0 1.25-.55 1.25-1.25V6.25"/><path d="m7.25 9.25.35-1.7 4.55-4.55a.85.85 0 0 1 1.2 1.2L8.8 8.75z"/>' },
+    "zoom-out": { size: 16, attrs: STROKE_16, body: '<path d="M4 8h8"/>' },
+    "zoom-in": { size: 16, attrs: STROKE_16, body: '<path d="M8 4v8M4 8h8"/>' },
+    frame: { size: 16, attrs: STROKE_16, body: '<path d="M5.8 3.25H3.25V5.8"/><path d="M10.2 3.25h2.55V5.8"/><path d="M12.75 10.2v2.55H10.2"/><path d="M5.8 12.75H3.25V10.2"/>' },
+    tidy: { size: 16, attrs: STROKE_16, body: '<rect x="6.25" y="2.5" width="3.5" height="2.75" rx="0.7"/><rect x="2.75" y="10.75" width="3.5" height="2.75" rx="0.7"/><rect x="9.75" y="10.75" width="3.5" height="2.75" rx="0.7"/><path d="M8 5.25v2.25"/><path d="M4.5 7.5h7"/><path d="M4.5 7.5v3.25"/><path d="M11.5 7.5v3.25"/>' },
+    share: { size: 16, attrs: STROKE_16, body: '<path d="M5 11 11.25 4.75"/><path d="M7.5 4.75h3.75V8.5"/>' },
+    theme: { size: 16, attrs: 'viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" fill="none"', body: '<circle cx="8" cy="8" r="5.25"/><path d="M8 2.75a5.25 5.25 0 0 0 0 10.5z" fill="currentColor" stroke="none"/>' },
+    settings: { size: 16, attrs: 'viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"', body: '<g transform="translate(12 12) scale(0.78) translate(-12 -12)"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></g>' },
+    send: { size: 14, attrs: 'viewBox="0 0 16 16" fill="none"', body: '<path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>' },
+    search: { size: 14, attrs: 'viewBox="0 0 16 16" fill="none"', body: '<circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 10.5 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>' },
+    expand: { size: 16, attrs: STROKE_16, body: '<path d="M9.25 3.75h3v3"/><path d="M12.25 3.75 8.75 7.25"/><path d="M6.75 12.25h-3v-3"/><path d="M3.75 12.25l3.5-3.5"/>' },
+    collapse: { size: 16, attrs: STROKE_16, body: '<path d="M3 8h10"/>' },
+    restore: { size: 16, attrs: STROKE_16, body: '<path d="M3 8h10M8 3v10"/>' },
+    "area-select": { size: 16, attrs: 'viewBox="0 0 16 16"', body: '<rect x="2.5" y="2.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.6 2.1"/>' },
+    "file-text": { size: 16, attrs: 'viewBox="0 0 16 16"', body: '<path d="M4 2.5h5l3 3v8H4z" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><path d="M9 2.5v3h3M6 8h4M6 10.5h4" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/>' },
+    question: { size: 18, attrs: 'viewBox="0 0 18 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"', body: '<path d="M5.25 6.6A3.75 3.75 0 0 1 9 3a3.5 3.5 0 0 1 3.75 3.35c0 2.25-2.35 2.65-3.2 4.05-.25.4-.3.75-.3 1.1"/><path d="M9.25 14.5h.01"/>' },
+    file: { size: 18, attrs: 'viewBox="0 0 18 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"', body: '<path d="M5 2.75h5l3 3v9.5H5z"/><path d="M10 2.75v3h3"/><path d="M7.25 9h3.5M7.25 11.75h3.5"/>' },
+    link: { size: 18, attrs: 'viewBox="0 0 18 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"', body: '<path d="m7.15 10.85 3.7-3.7"/><path d="M6.05 12.95 4.9 14.1a2.85 2.85 0 0 1-4-4L3.8 7.2a2.85 2.85 0 0 1 4 0" transform="translate(2 0)"/><path d="m9.95 5.05 1.15-1.15a2.85 2.85 0 0 1 4 4l-2.9 2.9a2.85 2.85 0 0 1-4 0"/>' },
+    plus: { size: 14, attrs: 'viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none"', body: '<path d="M8 3.25v9.5"/><path d="M3.25 8h9.5"/>' },
+    delete: { size: 16, attrs: STROKE_16, body: '<path d="M3.25 4.5h9.5"/><path d="M6.25 2.75h3.5"/><path d="M4.75 4.5l.6 8h5.3l.6-8"/>' },
+    eye: { size: 14, attrs: 'viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"', body: '<path d="M1.9 8S4.2 3.8 8 3.8 14.1 8 14.1 8 11.8 12.2 8 12.2 1.9 8 1.9 8Z"/><circle cx="8" cy="8" r="1.9"/>' },
+    "eye-off": { size: 14, attrs: 'viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"', body: '<path d="M1.9 8S4.2 3.8 8 3.8 14.1 8 14.1 8 11.8 12.2 8 12.2 1.9 8 1.9 8Z"/><circle cx="8" cy="8" r="1.9"/><path d="m3.2 2.6 9.6 10.8"/>' },
+    chevron: { size: 12, attrs: 'viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"', body: '<path d="m4.5 6.5 3.5 3.5 3.5-3.5"/>' },
+    info: { size: 13, attrs: 'viewBox="0 0 16 16" fill="none"', body: '<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.35"/><path d="M8 7.15v4" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/><circle cx="8" cy="4.7" r=".75" fill="currentColor"/>' }
+  });
+  function iconSvg(name, options2 = {}) {
+    var _a2;
+    const definition = ICON_DEFINITIONS[name];
+    if (!definition) throw new Error(`Unknown Rabbithole icon: ${name}`);
+    const size = (_a2 = options2.size) != null ? _a2 : definition.size;
+    if (size !== null && (!Number.isFinite(size) || size <= 0)) throw new Error("Icon size must be a positive number");
+    const dimensions = size === null ? "" : ` width="${size}" height="${size}"`;
+    return `<svg${dimensions} ${definition.attrs} focusable="false" aria-hidden="true">${definition.body}</svg>`;
+  }
+  var BUNNY_MARK_SVG = iconSvg("bunny");
 
   // src/ui/lifecycle.js
   function createCleanupScope() {
@@ -2434,7 +2471,6 @@ var RabbitholeClient = (() => {
   var orderCounter = 0;
   var loadingTimers = /* @__PURE__ */ new Set();
   var readerMain = null;
-  var sideEl = null;
   var breadcrumbEl = null;
   var viewport = null;
   var world = null;
@@ -2450,9 +2486,6 @@ var RabbitholeClient = (() => {
   var composerInner = null;
   var composerText = null;
   var composerSend = null;
-  var actReader = null;
-  var actCanvas = null;
-  var actSep = null;
   var sinceEl = null;
   var sinceMsg = null;
   var paletteEl = null;
@@ -2513,8 +2546,9 @@ var RabbitholeClient = (() => {
     sinceDismissed = false;
     sinceArmed = false;
     readerMain = document.getElementById("reader-main");
-    sideEl = document.getElementById("reader-side");
-    breadcrumbEl = document.getElementById("breadcrumb");
+    breadcrumbEl = document.createElement("nav");
+    breadcrumbEl.id = "breadcrumb";
+    breadcrumbEl.setAttribute("aria-label", "Breadcrumb");
     viewport = document.getElementById("viewport");
     world = document.getElementById("world");
     edgesSvg = document.getElementById("edges");
@@ -2529,9 +2563,6 @@ var RabbitholeClient = (() => {
     composerInner = document.getElementById("composer-inner");
     composerText = document.getElementById("composer-text");
     composerSend = document.getElementById("composer-send");
-    actReader = document.getElementById("act-reader");
-    actCanvas = document.getElementById("act-canvas");
-    actSep = document.getElementById("act-sep");
     sinceEl = document.getElementById("since");
     sinceMsg = document.getElementById("since-msg");
     paletteEl = document.getElementById("palette");
@@ -2540,8 +2571,10 @@ var RabbitholeClient = (() => {
     shareMenu = document.getElementById("sharemenu");
     confirmEl = document.getElementById("confirm");
     initReduceMotion(coreScope);
-    coreScope.listen(actReader, "click", onActivityClick);
-    coreScope.listen(actCanvas, "click", onActivityClick);
+    coreScope.listen(document.getElementById("tb-done"), "click", function() {
+      if (!closed) coreHooks.post({ type: "done" });
+    });
+    coreScope.listen(document.getElementById("t-theme"), "click", toggleTheme);
     coreScope.listen(document.getElementById("since-show"), "click", function(e) {
       var un = unreadNodes();
       if (un.length) goToNode(un[0], motionSourceFromEvent(e));
@@ -2589,11 +2622,10 @@ var RabbitholeClient = (() => {
     viewAdjusted = false;
     orderCounter = 0;
     loadingTimers.clear();
-    readerMain = sideEl = breadcrumbEl = viewport = world = edgesSvg = null;
+    readerMain = breadcrumbEl = viewport = world = edgesSvg = null;
     ask = askText = askGo = zoomLabel = hintEl = bannerEl = null;
     hintNotice = bannerNotice = null;
     composerInner = composerText = composerSend = null;
-    actReader = actCanvas = actSep = null;
     sinceEl = sinceMsg = paletteEl = palText = palResults = null;
     shareMenu = confirmEl = null;
     sinceDismissed = false;
@@ -2743,9 +2775,6 @@ var RabbitholeClient = (() => {
   function boundsOverlap2(a, b) {
     return boundsOverlap(a, b);
   }
-  function agentDown() {
-    return closed || connLost || !agentAttached;
-  }
   function sessionPhase() {
     if (frozen) return "frozen";
     if (closed) return "closed";
@@ -2812,20 +2841,11 @@ var RabbitholeClient = (() => {
     node.read = true;
     if (!frozen && !closed) coreHooks.post({ type: "node_update", node_id: node.id, read: true });
     if (node.el) node.el.classList.remove("unread");
-    refreshAmbient();
     updateSince();
   }
   function unreadNodes() {
     var out = [];
     for (var k in nodes) if (isUnread(nodes[k])) out.push(nodes[k]);
-    out.sort(function(a, b) {
-      return (a._order || 0) - (b._order || 0);
-    });
-    return out;
-  }
-  function pendingNodes() {
-    var out = [];
-    for (var k in nodes) if (nodes[k].status === "pending") out.push(nodes[k]);
     out.sort(function(a, b) {
       return (a._order || 0) - (b._order || 0);
     });
@@ -2841,35 +2861,6 @@ var RabbitholeClient = (() => {
     } else {
       coreHooks.openNode(node.id);
     }
-  }
-  function refreshAmbient() {
-    var writing = pendingNodes().length;
-    var label = "", cls = "activity on";
-    if (writing > 0 && !agentDown()) {
-      label = writing + " writing\u2026";
-      cls += " writing";
-    } else cls = "activity";
-    var chips = [actReader, actCanvas];
-    for (var i2 = 0; i2 < chips.length; i2++) {
-      chips[i2].className = cls;
-      var dot = chips[i2].querySelector(".act-dot");
-      var text2 = chips[i2].querySelector(".act-label");
-      if (!dot || !text2) {
-        dot = document.createElement("span");
-        dot.className = "act-dot";
-        text2 = document.createElement("span");
-        text2.className = "act-label";
-        chips[i2].replaceChildren(dot, text2);
-      }
-      text2.textContent = label;
-      chips[i2].title = "Watch it being written";
-    }
-    if (actSep) actSep.style.display = label ? "" : "none";
-  }
-  function onActivityClick(e) {
-    var source2 = motionSourceFromEvent(e);
-    var pend = pendingNodes();
-    if (pend.length) goToNode(pend[pend.length - 1], source2);
   }
   var sinceDismissed = false;
   var sinceArmed = false;
@@ -29689,7 +29680,8 @@ ${text2}</tr>
     readerLifecycle.register(hooks);
   }
   var breadcrumbNodes = {};
-  var sidebarNodes = {};
+  var noteNodes = {};
+  var marginObserver = null;
   function openNode(id) {
     if (!nodes[id]) return;
     var transferredPosition = document.body.classList.contains("mode-canvas") ? captureContentPosition(nodes[id].bodyEl) : null;
@@ -29706,7 +29698,7 @@ ${text2}</tr>
       restoreContentPosition(readerMain, transferredPosition);
       nodes[id]._scrollTop = readerMain.scrollTop;
     }
-    renderSidebar();
+    renderMarginNotes();
     readerLifecycle.hooks.updateComposerState();
     if (nodes[id].status === "answered") markRead(nodes[id]);
     readerLifecycle.hooks.scheduleViewSave();
@@ -29763,22 +29755,24 @@ ${text2}</tr>
       readerScope.listen(readerMain, "keydown", onMarkKeydown);
       readerScope.listen(world, "click", onCanvasMarkClick);
       readerScope.listen(world, "keydown", onCanvasMarkKeydown);
-      readerScope.listen(sideEl, "click", onSidebarClick);
-      readerScope.listen(sideEl, "keydown", onSidebarKeydown);
+      readerScope.listen(readerMain, "click", onNoteClick);
+      readerScope.listen(readerMain, "keydown", onNoteKeydown);
+      readerScope.listen(readerMain, "mouseover", function(e) {
+        syncNoteHover(e, true);
+      });
+      readerScope.listen(readerMain, "mouseout", function(e) {
+        syncNoteHover(e, false);
+      });
       readerScope.listen(document.getElementById("r-textdown"), "click", function() {
         setReaderFontScale(-0.1);
       });
       readerScope.listen(document.getElementById("r-textup"), "click", function() {
         setReaderFontScale(0.1);
       });
-      readerScope.listen(document.getElementById("r-canvas"), "click", function() {
+      readerScope.listen(document.getElementById("t-canvas"), "click", function() {
+        if (mode === "canvas") return;
         readerLifecycle.hooks.setMode("canvas");
       });
-      readerScope.listen(document.getElementById("r-done"), "click", function() {
-        if (!closed) readerLifecycle.hooks.post({ type: "done" });
-      });
-      readerScope.listen(document.getElementById("r-theme"), "click", toggleTheme);
-      readerScope.listen(document.getElementById("t-theme"), "click", toggleTheme);
       return disposeReader;
     } catch (error) {
       disposeReader();
@@ -29790,8 +29784,12 @@ ${text2}</tr>
   }
   function disposeReaderResources(resetHooks) {
     readerLifecycle.dispose(resetHooks);
+    if (marginObserver) {
+      marginObserver.disconnect();
+      marginObserver = null;
+    }
     breadcrumbNodes = {};
-    sidebarNodes = {};
+    noteNodes = {};
     kbdMarkIdx = -1;
   }
   function renderReaderBody() {
@@ -29801,6 +29799,7 @@ ${text2}</tr>
     readerMain.innerHTML = "";
     var col = document.createElement("div");
     col.className = "reader-col";
+    if (breadcrumbEl) col.appendChild(breadcrumbEl);
     if (node.origin && (node.origin.selected_text || node.origin.question)) {
       var ctx = document.createElement("div");
       ctx.className = "reader-context";
@@ -29847,6 +29846,9 @@ ${text2}</tr>
         if (k.status === "answered") markRead(k);
       });
     }
+    var notes = document.createElement("div");
+    notes.id = "margin-notes";
+    col.appendChild(notes);
     readerMain.appendChild(col);
     readerMain.scrollTop = node._scrollTop || 0;
   }
@@ -29961,33 +29963,22 @@ ${text2}</tr>
     e.preventDefault();
     goToNode(k, motionSourceFromEvent(e));
   }
-  function renderSidebar() {
+  function renderMarginNotes() {
+    var layer = readerMain && readerMain.querySelector("#margin-notes");
+    if (!layer) return;
     var kids = childrenOf(currentNodeId).filter(function(k) {
       return !isFollowup(k);
     }).sort(function(a, b) {
       return anchorStart(a) - anchorStart(b) || (a._order || 0) - (b._order || 0);
     });
-    if (!kids.length) {
-      var emptyHeading = document.createElement("h3");
-      emptyHeading.textContent = "Branches";
-      var empty = document.createElement("div");
-      empty.className = "side-empty";
-      empty.textContent = "Select any text in the document and ask about it \u2014 the answer opens as a branch here. Or ask a follow-up in the box below the document.";
-      sideEl.replaceChildren(emptyHeading, empty);
-      return;
-    }
-    var heading2 = sideEl.querySelector(":scope > h3");
-    if (!heading2) heading2 = document.createElement("h3");
-    heading2.textContent = "Branches (" + kids.length + ")";
     var fragment = document.createDocumentFragment();
-    fragment.appendChild(heading2);
     var newLivePanes = [];
-    kids.forEach(function(k, i2) {
+    kids.forEach(function(k) {
       var pending = k.status !== "answered";
       var qHtml = k.origin && k.origin.synthesis ? '<span class="lens-badge">\u2726 Synthesis</span>' : k.origin && k.origin.lens ? lensBadgeHtml(k.origin.lens) : escapeHtml(k.origin && k.origin.question ? k.origin.question : k.title || "Untitled");
       var quote = k.origin && k.origin.selected_text ? k.origin.selected_text : "";
       var status = pending ? pendingStatusHtml(k) : isUnread(k) ? '<span class="si-new">new \u2014 open \u2192</span>' : "open \u2192";
-      var tile = sidebarNodes[k.id];
+      var tile = noteNodes[k.id];
       if (!tile) {
         tile = document.createElement("div");
         tile.className = "side-item";
@@ -29996,20 +29987,15 @@ ${text2}</tr>
         tile.tabIndex = 0;
         tile._question = document.createElement("div");
         tile._question.className = "si-q";
-        tile._num = document.createElement("span");
-        tile._num.className = "si-num";
-        tile._questionText = document.createElement("span");
-        tile._question.append(tile._num, tile._questionText);
         tile._quote = document.createElement("div");
         tile._quote.className = "si-quote";
         tile._status = document.createElement("div");
         tile._status.className = "si-status";
         tile.append(tile._question, tile._quote, tile._status);
-        sidebarNodes[k.id] = tile;
+        noteNodes[k.id] = tile;
       }
       tile.classList.toggle("pending", pending);
-      tile._num.textContent = i2 + 1;
-      tile._questionText.innerHTML = qHtml;
+      tile._question.innerHTML = qHtml;
       tile._quote.textContent = quote ? "\u201C" + truncate2(quote, 80) + "\u201D" : "";
       tile._quote.hidden = !quote;
       tile._status.innerHTML = status;
@@ -30033,12 +30019,67 @@ ${text2}</tr>
       }
       fragment.appendChild(tile);
     });
-    sideEl.replaceChildren(fragment);
-    mountSidebarVisuals(newLivePanes);
+    layer.replaceChildren(fragment);
+    mountNoteVisuals(newLivePanes);
+    layoutMarginNotes();
   }
-  function mountSidebarVisuals(panes) {
+  function layoutMarginNotes() {
+    var layer = readerMain && readerMain.querySelector("#margin-notes");
+    if (!layer) return;
+    if (!marginObserver && typeof ResizeObserver === "function") {
+      marginObserver = new ResizeObserver(function() {
+        positionNotes();
+      });
+    }
+    if (marginObserver) {
+      marginObserver.disconnect();
+      marginObserver.observe(layer.parentNode);
+      for (var i2 = 0; i2 < layer.children.length; i2++) marginObserver.observe(layer.children[i2]);
+    }
+    positionNotes();
+  }
+  function positionNotes() {
+    var layer = readerMain && readerMain.querySelector("#margin-notes");
+    if (!layer || !layer.clientWidth) {
+      if (layer) layer.classList.remove("settled");
+      return;
+    }
+    var layerTop = layer.getBoundingClientRect().top;
+    var cursor = 0;
+    for (var i2 = 0; i2 < layer.children.length; i2++) {
+      var tile = layer.children[i2];
+      var mark = readerMain.querySelector('mark[data-child="' + tile.dataset.child + '"]');
+      tile.classList.toggle("unanchored", !mark);
+      var desired = mark ? Math.round(mark.getBoundingClientRect().top - layerTop) : cursor;
+      var top = Math.max(desired, cursor);
+      tile.style.top = top + "px";
+      cursor = top + tile.offsetHeight + 10;
+    }
+    layer.classList.add("settled");
+  }
+  function onNoteClick(e) {
+    var it = e.target.closest && e.target.closest("#margin-notes .side-item");
+    if (!it) return;
+    openNode(it.dataset.child);
+  }
+  function onNoteKeydown(e) {
+    if (e.key !== "Enter") return;
+    var it = e.target.closest && e.target.closest('#margin-notes .side-item[role="link"]');
+    if (!it) return;
+    e.preventDefault();
+    openNode(it.dataset.child);
+  }
+  function syncNoteHover(e, on) {
+    var tile = e.target.closest && e.target.closest("#margin-notes .side-item");
+    if (!tile) return;
+    var related = e.relatedTarget;
+    if (related && tile.contains(related)) return;
+    var marks = readerMain.querySelectorAll('mark[data-child="' + tile.dataset.child + '"]');
+    for (var i2 = 0; i2 < marks.length; i2++) marks[i2].classList.toggle("mark-focus", on);
+  }
+  function mountNoteVisuals(panes) {
     for (var i2 = 0; i2 < panes.length; i2++) {
-      var key = "reader-side:" + panes[i2].node.id;
+      var key = "margin-notes:" + panes[i2].node.id;
       mountVisuals(panes[i2].pane, key);
       if (typeof readerLifecycle.hooks.mountDocImages === "function") readerLifecycle.hooks.mountDocImages(panes[i2].pane, panes[i2].node, null, key);
     }
@@ -30051,18 +30092,6 @@ ${text2}</tr>
       live: k && k.html ? '<span class="shimmer-text">Writing\u2026</span>' : '<span class="shimmer-text">Thinking\u2026</span>'
     };
     return copy[sessionPhase()];
-  }
-  function onSidebarClick(e) {
-    var it = e.target.closest(".side-item");
-    if (!it) return;
-    openNode(it.dataset.child);
-  }
-  function onSidebarKeydown(e) {
-    if (e.key !== "Enter") return;
-    var it = e.target.closest && e.target.closest('.side-item[role="link"]');
-    if (!it) return;
-    e.preventDefault();
-    openNode(it.dataset.child);
   }
   function setReaderFontScale(delta) {
     var node = nodes[currentNodeId];
@@ -30213,6 +30242,7 @@ ${text2}</tr>
   }
   var canvasLifecycle = createModuleLifecycle({ defaults: defaultCanvasHooks });
   var filmCameraHandle = null;
+  var cardResizeObserver = null;
   var activePointerGestures = /* @__PURE__ */ new Set();
   function registerCanvasHooks(hooks) {
     canvasLifecycle.register(hooks);
@@ -30220,6 +30250,7 @@ ${text2}</tr>
   function initCanvasView() {
     cleanupCanvasView(false);
     var canvasScope = canvasLifecycle.beginInit();
+    if (typeof ResizeObserver === "function") cardResizeObserver = new ResizeObserver(scheduleEdges);
     registerCoreHooks({
       ensureCanvasBuilt,
       diveToNode,
@@ -30231,6 +30262,7 @@ ${text2}</tr>
     canvasScope.listen(viewport, "wheel", onViewportWheel, { passive: false });
     canvasScope.listen(viewport, "dblclick", onViewportDblClick);
     canvasScope.listen(document.getElementById("t-reader"), "click", function() {
+      if (mode !== "canvas") return;
       openNode(currentNodeId);
     });
     canvasScope.listen(document.getElementById("t-frame"), "click", function(e) {
@@ -30257,6 +30289,8 @@ ${text2}</tr>
   function cleanupCanvasView(resetHooks) {
     var _a2;
     canvasLifecycle.dispose(resetHooks);
+    if (cardResizeObserver) cardResizeObserver.disconnect();
+    cardResizeObserver = null;
     activePointerGestures.forEach(function(cancel) {
       cancel();
     });
@@ -30343,9 +30377,9 @@ ${text2}</tr>
     view.y = sy - w.y * view.scale;
     applyTransform();
   }
-  var NODE_EXPAND_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M9.25 3.75h3v3"/><path d="M12.25 3.75 8.75 7.25"/><path d="M6.75 12.25h-3v-3"/><path d="M3.75 12.25l3.5-3.5"/></svg>';
-  var NODE_COLLAPSE_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M3 8h10"/></svg>';
-  var NODE_RESTORE_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M3 8h10M8 3v10"/></svg>';
+  var NODE_EXPAND_ICON = iconSvg("expand");
+  var NODE_COLLAPSE_ICON = iconSvg("collapse");
+  var NODE_RESTORE_ICON = iconSvg("restore");
   function syncCollapseButton(node, btn) {
     var action = node.collapsed ? "Expand document" : "Collapse document";
     btn.innerHTML = node.collapsed ? NODE_RESTORE_ICON : NODE_COLLAPSE_ICON;
@@ -30408,6 +30442,7 @@ ${text2}</tr>
     node.el = el;
     node.bodyEl = body;
     node.titleEl = titleEl;
+    if (cardResizeObserver) cardResizeObserver.observe(el);
     fillBody(node);
     updateCardComposer(node);
     if (node.collapsed) el.classList.add("collapsed");
@@ -30468,7 +30503,7 @@ ${text2}</tr>
     template.innerHTML = markup;
     return template.content.firstElementChild;
   }
-  var SEND_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var SEND_ICON = iconSvg("send");
   function autoGrowEl(ta, max) {
     ta.style.height = "auto";
     ta.style.height = Math.min(max, ta.scrollHeight) + "px";
@@ -30583,7 +30618,7 @@ ${text2}</tr>
     if (mode !== "canvas" || !n) return;
     var pad2 = 30, vw = viewport.clientWidth, vh = viewport.clientHeight;
     var x1 = n.x * view.scale + view.x, y1 = n.y * view.scale + view.y;
-    var x2 = (n.x + n.w) * view.scale + view.x, y2 = (n.y + n.h) * view.scale + view.y;
+    var x2 = (n.x + n.w) * view.scale + view.x, y2 = (n.y + effH(n)) * view.scale + view.y;
     var dx = 0, dy = 0;
     if (x2 > vw - pad2) dx = vw - pad2 - x2;
     if (x1 + dx < pad2) dx = pad2 - x1;
@@ -30673,7 +30708,15 @@ ${text2}</tr>
     el.style.left = node.x + "px";
     el.style.top = node.y + "px";
     el.style.width = node.w + "px";
-    if (!node.collapsed) el.style.height = node.h + "px";
+    if (!node.collapsed) {
+      if (node.id === rootId) {
+        el.style.height = node.h + "px";
+        el.style.maxHeight = "";
+      } else {
+        el.style.height = "auto";
+        el.style.maxHeight = node.h + "px";
+      }
+    }
   }
   function onPointerGesture(handle, onDown, onMove, onUp, scope) {
     function pointerDown(e) {
@@ -30795,7 +30838,7 @@ ${text2}</tr>
     });
   }
   function effH(n) {
-    return n.collapsed && n.el ? n.el.offsetHeight || 36 : n.h;
+    return n.el ? n.el.offsetHeight || (n.collapsed ? 36 : n.h) : n.h;
   }
   function clamp2(lo, hi, v) {
     return Math.max(lo, Math.min(hi, v));
@@ -31210,12 +31253,12 @@ ${text2}</tr>
       minX = Math.min(minX, n.x);
       minY = Math.min(minY, n.y);
       maxX = Math.max(maxX, n.x + n.w);
-      maxY = Math.max(maxY, n.y + (n.collapsed ? 40 : n.h));
+      maxY = Math.max(maxY, n.y + effH(n));
     });
     var fullW = viewport.clientWidth || window.innerWidth, fullH = viewport.clientHeight || window.innerHeight, pad2 = 100;
-    var rail = document.getElementById("web-rail"), toolbar = document.getElementById("toolbar");
+    var rail = document.getElementById("web-rail"), taskbar = document.getElementById("taskbar");
     var insetX = rail && rail.classList.contains("open") ? rail.getBoundingClientRect().width : 0;
-    var insetY = toolbar ? toolbar.getBoundingClientRect().height : 0;
+    var insetY = taskbar ? taskbar.getBoundingClientRect().height : 0;
     var vw = fullW - insetX, vh = fullH - insetY;
     var ts = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min((vw - pad2) / (maxX - minX), (vh - pad2) / (maxY - minY), 1.2)));
     var tx = insetX + vw / 2 - (minX + (maxX - minX) / 2) * ts, ty = insetY + vh / 2 - (minY + (maxY - minY) / 2) * ts;
@@ -31865,18 +31908,17 @@ ${text2}</tr>
         if (mode === "reader") mountPdfRectMark(readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"]'), anchor, childId, "rh-pdf-mark mark-pending");
         if (parent.bodyEl) mountPdfRectMark(parent.bodyEl.querySelector(".doc-content"), anchor, childId, "rh-pdf-mark mark-pending");
         scheduleEdges();
-        if (mode === "reader" && currentNodeId === parent.id) renderSidebar();
+        if (mode === "reader" && currentNodeId === parent.id) renderMarginNotes();
       } else if (mode === "reader") {
         var rdc = readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"]');
         wrapInContainer(rdc, anchor, childId, "hl mark-pending");
-        if (currentNodeId === parent.id) renderSidebar();
+        if (currentNodeId === parent.id) renderMarginNotes();
       }
       if (parent.bodyEl && !isPdfRegion) {
         wrapInContainer(parent.bodyEl.querySelector(".doc-content"), anchor, childId, "hl mark-pending");
         scheduleEdges();
       }
       revealNode(node, source2);
-      refreshAmbient();
     }
     var sel = window.getSelection();
     if (sel) sel.removeAllRanges();
@@ -31957,7 +31999,7 @@ ${text2}</tr>
       drawEdges();
     }
     if (currentNodeId === parent.id && mode === "reader") {
-      if (synthesis) renderSidebar();
+      if (synthesis) renderMarginNotes();
       else {
         var t = ensureThread();
         if (t) t.appendChild(buildThreadItem(node));
@@ -31980,7 +32022,6 @@ ${text2}</tr>
     askLifecycle.hooks.post(payload).then(function(res) {
       if (!res || !res.ok) rollbackBranch(node);
     });
-    refreshAmbient();
     return node;
   }
   var scrollAnimId = 0;
@@ -32053,8 +32094,7 @@ ${text2}</tr>
     if (!live || live.status === "answered") return;
     teardownNode(node.id);
     if (canvasBuilt) drawEdges();
-    if (mode === "reader" && currentNodeId === node.parent_id) renderSidebar();
-    refreshAmbient();
+    if (mode === "reader" && currentNodeId === node.parent_id) renderMarginNotes();
     flashHint("Couldn't reach the agent \u2014 that ask was undone.");
   }
   function placeChild2(parent, branchType) {
@@ -32891,10 +32931,6 @@ ${text2}</tr>
     disposeBranchSurfaceResources(false);
     var branchScope = branchLifecycle.beginInit();
     try {
-      branchScope.listen(document.getElementById("r-share"), "click", function(e) {
-        e.stopPropagation();
-        toggleShare(e.currentTarget, e.detail === 0);
-      });
       branchScope.listen(document.getElementById("t-share"), "click", function(e) {
         e.stopPropagation();
         toggleShare(e.currentTarget, e.detail === 0);
@@ -33182,9 +33218,8 @@ ${text2}</tr>
     }
     if (mode === "reader") {
       renderBreadcrumb();
-      renderSidebar();
+      renderMarginNotes();
     }
-    refreshAmbient();
     updateSince();
   }
 
@@ -33238,7 +33273,6 @@ ${text2}</tr>
       armSince();
       updateSince();
     }
-    refreshAmbient();
     if (typeof refreshStatus2 === "function") refreshStatus2();
     if (!frozen && typeof connectSse2 === "function") connectSse2();
   }
@@ -33689,9 +33723,9 @@ ${text2}</tr>
         updateThreadItem(node);
         readerMain.scrollTop = keep;
       } else {
-        var live = sideEl.querySelector('.side-item[data-child="' + node.id + '"] .si-live .md');
+        var live = readerMain.querySelector('#margin-notes .side-item[data-child="' + node.id + '"] .si-live .md');
         if (live && !firstChunk) live.innerHTML = node.html || "";
-        else renderSidebar();
+        else renderMarginNotes();
       }
     }
   }
@@ -33755,7 +33789,7 @@ ${text2}</tr>
         if (currentNodeId === node.id) {
           renderBreadcrumb();
           renderReaderBody();
-          renderSidebar();
+          renderMarginNotes();
           updateComposerState();
           markRead(node);
         } else {
@@ -33764,14 +33798,13 @@ ${text2}</tr>
             if (isFollowup(node)) {
               updateThreadItem(node);
               markRead(node);
-            } else renderSidebar();
+            } else renderMarginNotes();
           }
         }
       }
       var p = nodes[node.parent_id];
       if (p && p.bodyEl) upgradeMarks(p.bodyEl, node.id);
       if (isUnread(node) && node.el) node.el.classList.add("unread");
-      refreshAmbient();
       updateSince();
     } else if (msg.type === "node_deleted") {
       removeNodesLocal(msg.node_ids || [], null);
@@ -33825,10 +33858,9 @@ ${text2}</tr>
             updateComposerState();
           } else if (currentNodeId === en.parent_id) {
             if (isFollowup(en)) updateThreadItem(en);
-            else renderSidebar();
+            else renderMarginNotes();
           }
         }
-        refreshAmbient();
       }
     } else if (msg.type === "agent_status") {
       setAgentAttached(!!msg.attached);
@@ -33889,7 +33921,7 @@ ${text2}</tr>
       clearBanner();
       bannerDismissed = {};
     }
-    if (mode === "reader") renderSidebar();
+    if (mode === "reader") renderMarginNotes();
     updateComposerState();
     if (canvasBuilt) for (var cid in nodes) updateCardComposer(nodes[cid]);
   }
@@ -33976,59 +34008,58 @@ ${text2}</tr>
 
   // src/core/html/shell.js
   var CANVAS_SHELL = `
-<div id="reader">
-  <div id="reader-top">
-    <nav id="breadcrumb" aria-label="Breadcrumb"></nav>
-    ${iconButtonMarkup({ bare: true, className: "activity", id: "act-reader", title: "Jump to it", ariaLabel: "Jump to active answer" })}
-    ${buttonMarkup({ id: "r-textdown", title: "Smaller text", label: "A\u2212" })}
-    ${buttonMarkup({ id: "r-textup", title: "Larger text", label: "A+" })}
-    ${buttonMarkup({ id: "r-canvas", title: "Open the spatial canvas", label: "\u2922 Canvas" })}
-    ${buttonMarkup({ id: "r-share", title: "Share, export, synthesize", label: "\u2197 Share", ariaHaspopup: "menu", ariaControls: "sharemenu", ariaExpanded: "false" })}
-    ${iconButtonMarkup({ bare: true, className: "tool-btn", id: "r-theme", title: "Toggle theme", ariaLabel: "Toggle theme", icon: "\u25D1" })}
-    ${buttonMarkup({ id: "r-done", title: "End the session (the hole stays saved)", label: "Done" })}
+<div id="taskbar">
+  <div class="tb-pill" id="tb-tools">
+    ${iconButtonMarkup({ id: "t-rail", title: "Rabbitholes \xB7 S", ariaLabel: "Toggle rabbitholes", ariaExpanded: "false", ariaControls: "web-rail", svgIconHtml: iconSvg("rail") })}
+    ${iconButtonMarkup({ id: "t-new", title: "New Rabbithole \xB7 N", ariaLabel: "New Rabbithole", svgIconHtml: iconSvg("new") })}
+    <span class="sep" id="app-sep"></span>
+    <span class="tb-group" data-mode="reader">
+      ${buttonMarkup({ id: "t-canvas", title: "Open the spatial canvas", label: "Canvas" })}
+      <span class="sep"></span>
+      ${buttonMarkup({ id: "r-textdown", title: "Smaller text", label: "A\u2212" })}
+      ${buttonMarkup({ id: "r-textup", title: "Larger text", label: "A+" })}
+    </span>
+    <span class="tb-group" data-mode="canvas">
+      ${buttonMarkup({ id: "t-reader", title: "Read this document", label: "Reader" })}
+      <span class="sep"></span>
+      <span class="zoom-controls">
+        ${iconButtonMarkup({ id: "t-zout", title: "Zoom out", ariaLabel: "Zoom out", svgIconHtml: iconSvg("zoom-out") })}
+        ${buttonMarkup({ id: "zoom-label", title: "Zoom to 100%", ariaLabel: "Zoom to 100%", label: "100%" })}
+        ${iconButtonMarkup({ id: "t-zin", title: "Zoom in", ariaLabel: "Zoom in", svgIconHtml: iconSvg("zoom-in") })}
+      </span>
+      ${iconButtonMarkup({ id: "t-frame", title: "Frame everything \xB7 F", ariaLabel: "Frame everything \xB7 F", svgIconHtml: iconSvg("frame") })}
+      ${iconButtonMarkup({ id: "t-tidy", title: "Tidy up layout \xB7 T", ariaLabel: "Tidy up layout \xB7 T", svgIconHtml: iconSvg("tidy") })}
+    </span>
   </div>
-  <div id="since"><span class="since-dot"></span><span class="since-msg" id="since-msg"></span>${buttonMarkup({ id: "since-show", label: "Show me" })}${iconButtonMarkup({ bare: true, id: "since-x", title: "Dismiss", ariaLabel: "Dismiss activity notice", icon: "\xD7" })}</div>
-  <div id="reader-cols">
-    <div id="reader-center">
-      <div id="reader-main"></div>
-      <div id="composer">
-        <div class="composer-inner" id="composer-inner">
-          <textarea id="composer-text" rows="1" placeholder="Ask a follow-up about this document\u2026"></textarea>
-          <button id="composer-send" class="send-btn" title="Send (Enter) \xB7 New line (Shift+Enter)" aria-label="Send follow-up" disabled><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-        </div>
-      </div>
+  <div id="tb-session">
+    <div class="tb-pill">
+    ${iconButtonMarkup({ id: "t-share", title: "Share, export, synthesize", ariaLabel: "Share, export, synthesize", ariaHaspopup: "menu", ariaControls: "sharemenu", ariaExpanded: "false", svgIconHtml: iconSvg("share") })}
+    ${iconButtonMarkup({ id: "t-theme", title: "Toggle theme", ariaLabel: "Toggle theme", svgIconHtml: iconSvg("theme") })}
+    ${iconButtonMarkup({ id: "t-settings", title: "Model settings", ariaLabel: "Model settings", ariaExpanded: "false", svgIconHtml: iconSvg("settings") })}
     </div>
-    <div id="reader-side"></div>
+    <div class="tb-pill" id="tb-done-pill">
+      ${buttonMarkup({ id: "tb-done", title: "End the session (the hole stays saved)", label: "Done" })}
+    </div>
+  </div>
+</div>
+
+<div id="reader">
+  <div id="since"><span class="since-dot"></span><span class="since-msg" id="since-msg"></span>${buttonMarkup({ id: "since-show", label: "Show me" })}${iconButtonMarkup({ bare: true, id: "since-x", title: "Dismiss", ariaLabel: "Dismiss activity notice", icon: "\xD7" })}</div>
+  <div id="reader-main"></div>
+  <div id="composer">
+    <div class="composer-inner" id="composer-inner">
+      <textarea id="composer-text" rows="1" placeholder="Ask a follow-up about this document\u2026"></textarea>
+      <button id="composer-send" class="send-btn" title="Send (Enter) \xB7 New line (Shift+Enter)" aria-label="Send follow-up" disabled>${iconSvg("send")}</button>
+    </div>
   </div>
 </div>
 
 <div id="viewport"><div id="world"><svg id="edges"></svg></div></div>
-<div id="toolbar">
-  ${iconButtonMarkup({ id: "t-rail", title: "Rabbitholes \xB7 S", ariaLabel: "Toggle rabbitholes", ariaExpanded: "false", ariaControls: "web-rail", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><rect x="2.5" y="2.75" width="11" height="10.5" rx="1.6"/><path d="M6.25 2.75v10.5"/></svg>' })}
-  ${iconButtonMarkup({ id: "t-new", title: "New Rabbithole \xB7 N", ariaLabel: "New Rabbithole", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M9.75 3.25H4.5c-.7 0-1.25.55-1.25 1.25v7c0 .7.55 1.25 1.25 1.25h7c.7 0 1.25-.55 1.25-1.25V6.25"/><path d="m7.25 9.25.35-1.7 4.55-4.55a.85.85 0 0 1 1.2 1.2L8.8 8.75z"/></svg>' })}
-  <span class="sep" id="app-sep"></span>
-  ${buttonMarkup({ id: "t-reader", title: "Back to reading", label: "Reader", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M3.75 3.25h4.5c1 0 1.8.8 1.8 1.8v7.7H5.15c-.77 0-1.4-.63-1.4-1.4z"/><path d="M5.15 12.75c-.77 0-1.4-.63-1.4-1.4s.63-1.4 1.4-1.4h4.9"/></svg>' })}
-  <span class="sep"></span>
-  <span class="zoom-controls">
-    ${iconButtonMarkup({ id: "t-zout", title: "Zoom out", ariaLabel: "Zoom out", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M4 8h8"/></svg>' })}
-    ${buttonMarkup({ id: "zoom-label", title: "Zoom to 100%", ariaLabel: "Zoom to 100%", label: "100%" })}
-    ${iconButtonMarkup({ id: "t-zin", title: "Zoom in", ariaLabel: "Zoom in", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M8 4v8M4 8h8"/></svg>' })}
-  </span>
-  ${iconButtonMarkup({ id: "t-frame", title: "Frame everything \xB7 F", ariaLabel: "Frame everything \xB7 F", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M5.8 3.25H3.25V5.8"/><path d="M10.2 3.25h2.55V5.8"/><path d="M12.75 10.2v2.55H10.2"/><path d="M5.8 12.75H3.25V10.2"/></svg>' })}
-  ${iconButtonMarkup({ id: "t-tidy", title: "Tidy up layout \xB7 T", ariaLabel: "Tidy up layout \xB7 T", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><rect x="6.25" y="2.5" width="3.5" height="2.75" rx="0.7"/><rect x="2.75" y="10.75" width="3.5" height="2.75" rx="0.7"/><rect x="9.75" y="10.75" width="3.5" height="2.75" rx="0.7"/><path d="M8 5.25v2.25"/><path d="M4.5 7.5h7"/><path d="M4.5 7.5v3.25"/><path d="M11.5 7.5v3.25"/></svg>' })}
-  <span class="sep"></span>
-  ${iconButtonMarkup({ id: "t-share", title: "Share, export, synthesize", ariaLabel: "Share, export, synthesize", ariaHaspopup: "menu", ariaControls: "sharemenu", ariaExpanded: "false", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M5 11 11.25 4.75"/><path d="M7.5 4.75h3.75V8.5"/></svg>' })}
-  <span class="sep"></span>
-  ${iconButtonMarkup({ id: "t-theme", title: "Toggle theme", ariaLabel: "Toggle theme", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="5.25"/><path d="M8 2.75a5.25 5.25 0 0 0 0 10.5z" fill="currentColor" stroke="none"/></svg>' })}
-  ${iconButtonMarkup({ id: "t-settings", title: "Model settings", ariaLabel: "Model settings", ariaExpanded: "false", svgIconHtml: '<svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><g transform="translate(12 12) scale(0.78) translate(-12 -12)"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></g></svg>' })}
-  <span class="sep" id="act-sep" style="display:none"></span>
-  ${iconButtonMarkup({ bare: true, className: "activity", id: "act-canvas", title: "Jump to it", ariaLabel: "Jump to active answer" })}
-</div>
 
 <div id="ask">
   <div class="ask-input">
     <textarea id="ask-text" rows="1" placeholder="Ask about this\u2026"></textarea>
-    ${iconButtonMarkup({ bare: true, className: "send-btn", id: "ask-go", title: "Send (Enter) \xB7 New line (Shift+Enter)", ariaLabel: "Ask", svgIconHtml: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>' })}
+    ${iconButtonMarkup({ bare: true, className: "send-btn", id: "ask-go", title: "Send (Enter) \xB7 New line (Shift+Enter)", ariaLabel: "Ask", svgIconHtml: iconSvg("send") })}
   </div>
   <div class="ask-lenses" id="ask-lenses">
     ${buttonMarkup({ bare: true, className: "lens", dataAttrs: { lens: "explain" }, label: "Explain ", kbdHint: "1" })}
@@ -34040,7 +34071,7 @@ ${text2}</tr>
 
 <div id="palette" hidden><div id="palette-panel">
   <div class="pal-input">
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 10.5 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    ${iconSvg("search")}
     <input id="pal-text" placeholder="Search this Rabbithole\u2026" aria-label="Search this Rabbithole" aria-controls="pal-results" aria-autocomplete="list" autocomplete="off" spellcheck="false">
     <kbd>esc</kbd>
   </div>
@@ -34465,7 +34496,7 @@ ${text2}</tr>
     boxButton = document.createElement("button");
     boxButton.type = "button";
     boxButton.className = "node-btn rh-pdf-box-toggle";
-    boxButton.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.6 2.1"/></svg><span>Ask about an area</span>';
+    boxButton.innerHTML = iconSvg("area-select") + "<span>Ask about an area</span>";
     boxButton.title = "Draw over a figure, table, or area to ask about it";
     boxButton.setAttribute("aria-label", "Ask about an area of the PDF");
     boxButton.setAttribute("aria-pressed", "false");
@@ -34479,7 +34510,7 @@ ${text2}</tr>
       var convertButton = document.createElement("button");
       convertButton.type = "button";
       convertButton.className = "node-btn rh-pdf-convert" + (scanned ? " primary" : "");
-      convertButton.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h5l3 3v8H4z" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><path d="M9 2.5v3h3M6 8h4M6 10.5h4" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Create text version</span>';
+      convertButton.innerHTML = iconSvg("file-text") + "<span>Create text version</span>";
       convertButton.setAttribute("aria-label", "Create a searchable text version of this PDF");
       convertButton.title = "Turn every page into clean, searchable text while preserving figures";
       convertButton.addEventListener("click", function(event) {

@@ -25,6 +25,7 @@ const mobileWebKit = await webkit.launch();
 try {
   await verifyMobileCanvasNavigation(browser, "chromium");
   await verifyMobileCanvasNavigation(mobileWebKit, "webkit");
+  await verifyDesktopReaderLayout(browser);
   await verifyMobileSelectionSurface(browser, "chromium");
   await verifyMobileSelectionSurface(mobileWebKit, "webkit");
   await verifyCanvasBranching();
@@ -55,22 +56,21 @@ async function verifyMobileCanvasNavigation(browserEngine, engineName) {
         && getComputedStyle(document.getElementById("world")).transform !== "none";
     });
 
-    const toolbar = await page.locator("#toolbar").evaluate((element) => {
+    const toolbar = await page.locator("#taskbar").evaluate((element) => {
       const rect = element.getBoundingClientRect();
       const controls = ["t-zout", "zoom-label", "t-zin"].map((id) => {
         const item = document.getElementById(id).getBoundingClientRect();
-        return { id, width: item.width, height: item.height };
+        return { id, width: item.width, height: item.height, right: item.right };
       });
       return { left: rect.left, right: rect.right, width: rect.width, viewportWidth: innerWidth,
         scrollable: element.scrollWidth > element.clientWidth, controls };
     });
     assert(toolbar.left >= 0 && toolbar.right <= toolbar.viewportWidth,
-      `${engineName}: mobile toolbar must stay inside the viewport (${JSON.stringify(toolbar)})`);
+      `${engineName}: mobile taskbar must stay inside the viewport (${JSON.stringify(toolbar)})`);
     for (const control of toolbar.controls) {
       assert(control.width >= 44 && control.height >= 44,
         `${engineName}: ${control.id} must be a reliable mobile touch target (${JSON.stringify(control)})`);
     }
-
     // Start from a known scale: initial framing may still be settling on a
     // resource-constrained mobile engine, and zoom-in is intentionally a no-op
     // at the 250% ceiling.
@@ -193,6 +193,113 @@ async function verifyMobileCanvasNavigation(browserEngine, engineName) {
     assert.equal(pinch.pinching, false, `${engineName}: pinch state must clean up after both fingers lift`);
     assert.equal(pinch.panning, false, `${engineName}: pinch-to-pan continuation must clean up after the last finger lifts`);
 
+    await page.click("#t-reader");
+    await page.waitForFunction(() => !document.body.classList.contains("mode-canvas"));
+    const mobileReader = await page.evaluate(() => {
+      const rect = (selector) => {
+        const value = document.querySelector(selector).getBoundingClientRect();
+        return { left: value.left, right: value.right, top: value.top, bottom: value.bottom,
+          width: value.width, height: value.height };
+      };
+      const main = document.getElementById("reader-main");
+      const input = document.getElementById("composer-text");
+      const send = rect("#composer-send");
+      return {
+        viewport: { width: innerWidth, height: innerHeight },
+        reader: rect("#reader"),
+        top: rect("#taskbar"),
+        main: { ...rect("#reader-main"), clientWidth: main.clientWidth, scrollWidth: main.scrollWidth,
+          clientHeight: main.clientHeight, scrollHeight: main.scrollHeight, touchAction: getComputedStyle(main).touchAction },
+        column: rect(".reader-col"),
+        composer: rect("#composer"),
+        inputFont: parseFloat(getComputedStyle(input).fontSize),
+        send,
+        notesDisplay: getComputedStyle(document.getElementById("margin-notes")).display,
+      };
+    });
+    assert.equal(mobileReader.reader.width, mobileReader.viewport.width,
+      `${engineName}: the mobile reader must own the full viewport width (${JSON.stringify(mobileReader)})`);
+    assert(mobileReader.main.width >= mobileReader.viewport.width - 1,
+      `${engineName}: the hidden desktop branch rail must not squeeze the document (${JSON.stringify(mobileReader)})`);
+    assert(mobileReader.column.width >= mobileReader.viewport.width - 48,
+      `${engineName}: the phone reading column must remain comfortably readable (${JSON.stringify(mobileReader)})`);
+    assert(mobileReader.main.scrollWidth <= mobileReader.main.clientWidth,
+      `${engineName}: the mobile reader must not have page-level horizontal overflow (${JSON.stringify(mobileReader)})`);
+    assert(mobileReader.main.scrollHeight > mobileReader.main.clientHeight + 200,
+      `${engineName}: the mobile reader fixture must expose a real vertical reading surface`);
+    assert.match(mobileReader.main.touchAction, /pan-y/,
+      `${engineName}: one-finger swipes must be routed to native vertical reading (${JSON.stringify(mobileReader)})`);
+    assert(mobileReader.composer.bottom <= mobileReader.viewport.height + 0.5,
+      `${engineName}: the follow-up composer must remain above the phone viewport edge (${JSON.stringify(mobileReader)})`);
+    assert(mobileReader.inputFont >= 16,
+      `${engineName}: the mobile follow-up field must not trigger iOS focus zoom`);
+    assert(mobileReader.send.width >= 44 && mobileReader.send.height >= 44,
+      `${engineName}: the mobile follow-up send target must be at least 44px (${JSON.stringify(mobileReader)})`);
+    assert.equal(mobileReader.notesDisplay, "none",
+      `${engineName}: margin notes must stay out of the phone reading surface — inline marks carry narrow screens`);
+
+    if (engineName === "chromium") await verifyRealChromiumReaderScroll(context, page);
+
+    await page.close();
+  } finally {
+    await context.close();
+  }
+}
+
+async function verifyRealChromiumReaderScroll(context, page) {
+  const client = await context.newCDPSession(page);
+  const main = await page.locator("#reader-main").evaluate((element) => {
+    element.scrollTop = 0;
+    const rect = element.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, startY: rect.bottom - 70, endY: rect.top + 70 };
+  });
+  await client.send("Input.dispatchTouchEvent", { type: "touchStart",
+    touchPoints: [{ id: 61, x: main.x, y: main.startY, radiusX: 4, radiusY: 4, force: 1 }] });
+  for (let step = 1; step <= 6; step += 1) {
+    await client.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ id: 61,
+      x: main.x, y: main.startY + (main.endY - main.startY) * step / 6,
+      radiusX: 4, radiusY: 4, force: 1 }] });
+  }
+  await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await page.waitForTimeout(100);
+  const scrollTop = await page.locator("#reader-main").evaluate((element) => element.scrollTop);
+  assert(scrollTop > 80, `chromium: a physical one-finger reader swipe must scroll the document (got ${scrollTop})`);
+  await client.detach();
+}
+
+async function verifyDesktopReaderLayout(browserEngine) {
+  const context = await browserEngine.newContext({ viewport: { width: 1280, height: 900 } });
+  try {
+    const page = await context.newPage();
+    await routeProvider(page);
+    await page.goto(baseUrl, { waitUntil: "networkidle" });
+    await createDocument(page, "# Desktop reader invariant\n\nThe established desktop layout must remain unchanged.");
+    await page.click("#t-reader");
+    const desktop = await page.evaluate(() => {
+      const notes = document.getElementById("margin-notes");
+      const main = document.getElementById("reader-main");
+      const mainStyle = getComputedStyle(main);
+      const column = document.querySelector(".reader-col").getBoundingClientRect();
+      const notesRect = notes.getBoundingClientRect();
+      const bar = document.getElementById("taskbar").getBoundingClientRect();
+      const session = document.getElementById("tb-session").getBoundingClientRect();
+      const readerTop = document.getElementById("reader").getBoundingClientRect().top
+        + parseFloat(getComputedStyle(document.getElementById("reader")).paddingTop);
+      return { notesDisplay: getComputedStyle(notes).display, notesLeft: notesRect.left, columnRight: column.right,
+        mainWidth: main.getBoundingClientRect().width,
+        viewportWidth: innerWidth, barHeight: bar.height, barBottom: bar.bottom, contentTop: readerTop,
+        sessionRight: session.right,
+        doneDisplay: getComputedStyle(document.getElementById("tb-done-pill")).display,
+        mainPaddingLeft: parseFloat(mainStyle.paddingLeft) };
+    });
+    assert.equal(desktop.notesDisplay, "block", `desktop: the margin-note layer must be live beside the text (${JSON.stringify(desktop)})`);
+    assert(desktop.notesLeft > desktop.columnRight, `desktop: margin notes hang in the right margin, outside the column (${JSON.stringify(desktop)})`);
+    assert(desktop.mainWidth >= desktop.viewportWidth - 1, `desktop: the document must own the full width (${JSON.stringify(desktop)})`);
+    assert(desktop.barHeight < 52, `desktop: the shared taskbar must remain a single compact row (${JSON.stringify(desktop)})`);
+    assert(desktop.contentTop >= desktop.barBottom, `desktop: reader content must clear the floating taskbar (${JSON.stringify(desktop)})`);
+    assert(desktop.viewportWidth - desktop.sessionRight <= 20, `desktop: the session cluster must hug the top-right corner (${JSON.stringify(desktop)})`);
+    assert.equal(desktop.doneDisplay, "none", `desktop: Done ends an agent session — it must never render in the web app (${JSON.stringify(desktop)})`);
+    assert.equal(desktop.mainPaddingLeft, 48, `desktop: the established reading gutter must stay at 48px`);
     await page.close();
   } finally {
     await context.close();
@@ -206,7 +313,7 @@ async function verifyRealChromiumTouches(context, page) {
       for (let x = innerWidth - 28; x >= 28; x -= 36) {
         const target = document.elementFromPoint(x, y);
         if (target && surface.contains(target)
-          && !target.closest(".node") && !target.closest("#toolbar")) return { x, y };
+          && !target.closest(".node") && !target.closest("#taskbar")) return { x, y };
       }
     }
     return null;
@@ -404,7 +511,12 @@ async function verifyMobileSelectionSurface(browserEngine, engineName) {
     await readerPage.waitForSelector("#ask:not(.visible)");
     await readerPage.waitForFunction((before) => document.querySelectorAll(".side-item").length > before, sidebarBranchCount);
     await readerPage.waitForFunction(() => Array.from(document.querySelectorAll(".side-item")).some((item) => !item.classList.contains("pending")));
-    assert.match(await readerPage.locator(".side-item").last().innerText(), /Explain[\s\S]*reliable action sheet/i, `${engineName}: the reader lens action should retain its lens and selected context`);
+    // Margin notes stay off the phone reading surface, but the note still
+    // carries its lens and selected context for wider screens.
+    assert.match(await readerPage.locator("#margin-notes .side-item").last().evaluate((tile) => tile.textContent),
+      /Explain[\s\S]*reliable action sheet/i, `${engineName}: the reader lens action should retain its lens and selected context`);
+    assert(await readerPage.locator("#reader-main mark[data-child]").count() >= 1,
+      `${engineName}: the lens branch must leave an inline mark as the phone affordance`);
     await readerPage.close();
   } finally {
     await context.close();
@@ -571,6 +683,11 @@ async function verifyCanvasBranching() {
   assert.equal(await page.evaluate(() => document.activeElement?.id), "t-settings", "closing settings should restore focus to its trigger");
   await page.click("#t-settings");
   await page.waitForSelector("#web-settings-popover");
+  await page.click("#t-settings");
+  await page.waitForSelector("#web-settings-popover", { state: "detached" });
+  assert.equal(await page.getAttribute("#t-settings", "aria-expanded"), "false", "clicking the gear while settings is open must close it");
+  await page.click("#t-settings");
+  await page.waitForSelector("#web-settings-popover");
   await page.mouse.click(4, 300);
   await page.waitForSelector("#web-settings-popover", { state: "detached" });
   await page.waitForTimeout(30);
@@ -685,9 +802,9 @@ async function verifyCanvasBranching() {
   assert(Math.abs(readerReadingPosition.offset - canvasReadingPosition.offset) < 0.2, `canvas-to-reader should preserve the position within the visible block: ${JSON.stringify({ canvasReadingPosition, readerReadingPosition })}`);
   await page.focus("#r-textup");
   await page.keyboard.press("Tab");
-  assert.equal(await page.evaluate(() => document.activeElement?.id), "r-canvas");
-  const readerFocusRing = await page.evaluate(() => getComputedStyle(document.getElementById("r-canvas")).outlineStyle);
-  assert.notEqual(readerFocusRing, "none", "keyboard focus should show the reader-toolbar focus-visible ring");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "t-share", "reader tools should tab straight into the session cluster");
+  const readerFocusRing = await page.evaluate(() => getComputedStyle(document.getElementById("t-share")).outlineStyle);
+  assert.notEqual(readerFocusRing, "none", "keyboard focus should show the taskbar focus-visible ring");
   const readerReturnPosition = await page.locator("#reader-main").evaluate((scroller) => {
     scroller.scrollTop = (scroller.scrollHeight - scroller.clientHeight) * 0.35;
     const top = scroller.getBoundingClientRect().top;
@@ -696,6 +813,7 @@ async function verifyCanvasBranching() {
     const rect = blocks[block].getBoundingClientRect();
     return { block, offset: (top - rect.top) / rect.height };
   });
+  await page.focus("#t-canvas");
   await page.keyboard.press("Enter");
   await page.waitForSelector("body.mode-canvas");
   await page.waitForTimeout(50);
@@ -715,7 +833,7 @@ async function verifyCanvasBranching() {
   assert.notEqual(canvasFocusRing, "none", "keyboard focus should show the canvas-toolbar focus-visible ring");
   await page.keyboard.press("Space");
   await page.waitForSelector("body:not(.mode-canvas)");
-  await page.focus("#r-canvas");
+  await page.focus("#t-canvas");
   await page.keyboard.press("Enter");
   await page.waitForSelector("body.mode-canvas");
 
@@ -786,14 +904,14 @@ async function verifyCanvasBranching() {
   assert.equal(await page.evaluate(() => document.activeElement?.id), "t-share", "closing Share should restore focus to its trigger");
 
   const frozenHtml = await page.evaluate(() => window.__rabbitholeTest.exportSnapshot());
-  assert(frozenHtml.includes("#toolbar"), "web-exported snapshots should embed durable canvas styling");
+  assert(frozenHtml.includes("#taskbar"), "web-exported snapshots should embed durable canvas styling");
   assert(frozenHtml.includes(".katex"), "web-exported snapshots should embed self-contained KaTeX styling");
   assert(!frozenHtml.includes(".web-rail"), "web-exported snapshots must exclude web-only rail styling");
   const frozenPage = await context.newPage();
   await frozenPage.setContent(frozenHtml, { waitUntil: "load" });
   const frozenStyles = await frozenPage.evaluate(() => ({
     surfaceGap: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--surface-gap")),
-    toolbarPosition: getComputedStyle(document.getElementById("toolbar")).position,
+    toolbarPosition: getComputedStyle(document.getElementById("taskbar")).position,
   }));
   assert(frozenStyles.surfaceGap > 0, "web-exported snapshots should preserve positive shared surface spacing");
   assert.equal(frozenStyles.toolbarPosition, "fixed", "web-exported snapshots should apply structural toolbar styling");
@@ -861,8 +979,15 @@ async function verifyCanvasBranching() {
     tile.__s9Identity = "pending-stream-tile";
     return { id: tile.dataset.child, tabIndex: tile.tabIndex, name: tile.getAttribute("aria-label") };
   });
-  assert.equal(pendingSidebarContract.tabIndex, 0, "pending sidebar branches should be tabbable links");
-  assert.match(pendingSidebarContract.name, /^Open branch: .+, pending$/, "pending sidebar links should name the branch and pending state");
+  assert.equal(pendingSidebarContract.tabIndex, 0, "pending margin notes should be tabbable links");
+  assert.match(pendingSidebarContract.name, /^Open branch: .+, pending$/, "pending margin notes should name the branch and pending state");
+  const pendingAlignment = await page.evaluate((id) => {
+    const tile = document.querySelector(`#margin-notes .side-item[data-child="${id}"]`);
+    const mark = document.querySelector(`#reader-main mark[data-child="${id}"]`);
+    return { tileTop: Math.round(tile.getBoundingClientRect().top), markTop: mark ? Math.round(mark.getBoundingClientRect().top) : null };
+  }, pendingSidebarContract.id);
+  assert(pendingAlignment.markTop !== null && Math.abs(pendingAlignment.tileTop - pendingAlignment.markTop) <= 2,
+    `margin notes must top-align with their highlight like a document comment (${JSON.stringify(pendingAlignment)})`);
   const streamedSidebarTile = page.locator(`.side-item[data-child="${pendingSidebarContract.id}"][role="link"]`);
   await page.waitForFunction((id) => !document.querySelector(`.side-item[data-child="${id}"]`)?.classList.contains("pending"), pendingSidebarContract.id);
   assert.equal(await streamedSidebarTile.evaluate((tile) => tile.__s9Identity),
@@ -918,7 +1043,7 @@ async function verifyCanvasBranching() {
   await page.waitForFunction(() => window.__s9OriginFlashed === true);
   assert.equal(await page.evaluate(() => { window.__s9OriginFlashObserver.disconnect(); return window.__s9OriginFlashed; }), true,
     "reader-context Enter should jump to and flash the origin");
-  await page.click("#r-canvas");
+  await page.click("#t-canvas");
   await waitForCanvasText(page, "Euler identity connects rotation");
 
   const branchMark = page.locator('.node mark[data-child].mark-ready').first();
@@ -928,9 +1053,9 @@ async function verifyCanvasBranching() {
   await page.waitForTimeout(350);
   assert.equal(await page.locator("#peek").count(), 0, "hovering a mark must not raise any peek surface — marks are plain links");
 
-  await page.focus("#r-theme");
+  await page.focus("#t-theme");
   const visitedTabStops = new Set([await page.evaluate(() => {
-    const start = document.querySelector("#r-theme");
+    const start = document.querySelector("#t-theme");
     return start?.id || `${start?.tagName}:${[...document.querySelectorAll(start?.tagName || "*")].indexOf(start)}`;
   })]);
   for (let i = 0; i < 40; i += 1) {
@@ -971,7 +1096,7 @@ async function verifyCanvasBranching() {
   await page.waitForFunction(() => window.__markDiveFlashed === true);
   assert.equal(await page.evaluate(() => document.body.classList.contains("mode-canvas")), true, "clicking a canvas mark must stay in canvas and dive to the card");
 
-  if (!await page.evaluate(() => document.body.classList.contains("mode-canvas"))) await page.click("#r-canvas");
+  if (!await page.evaluate(() => document.body.classList.contains("mode-canvas"))) await page.click("#t-canvas");
   await page.click("#t-frame"); // leave the mark-dive zoom behind so popover geometry is measured from a neutral view
   await page.waitForTimeout(400);
   const childDelete = page.locator('.node:not(.root)', { hasText: "Euler identity connects rotation" }).locator('.node-btn.danger');
@@ -1004,7 +1129,7 @@ async function verifyCanvasBranching() {
   await page.click("#t-reader");
   await page.locator('.side-item[role="link"]').first().click();
   await page.locator("#reader-main", { hasText: "Euler identity connects rotation" }).waitFor();
-  await page.click("#r-canvas");
+  await page.click("#t-canvas");
   const branchFrozenHtml = await page.evaluate(() => window.__rabbitholeTest.exportSnapshot());
   const branchFrozenPage = await context.newPage();
   await branchFrozenPage.setContent(branchFrozenHtml, { waitUntil: "load" });
@@ -1016,14 +1141,14 @@ async function verifyCanvasBranching() {
   await branchFrozenPage.waitForFunction(() => document.querySelectorAll("#breadcrumb .crumb").length === 1);
   const frozenSidebar = branchFrozenPage.locator('.side-item[role="link"]').first();
   assert.equal(await frozenSidebar.evaluate((tile) => tile.tabIndex), 0,
-    "frozen sidebar branches should remain keyboard navigable");
+    "frozen margin notes should remain keyboard navigable");
   await frozenSidebar.focus();
   await branchFrozenPage.keyboard.press("Enter");
   await branchFrozenPage.waitForFunction(() => document.querySelectorAll("#breadcrumb .crumb").length > 1);
   await branchFrozenPage.locator('.crumb[role="link"]').focus();
   await branchFrozenPage.keyboard.press("Enter");
   await branchFrozenPage.waitForFunction(() => document.querySelectorAll("#breadcrumb .crumb").length === 1);
-  await branchFrozenPage.click("#r-canvas");
+  await branchFrozenPage.click("#t-canvas");
   const frozenMark = branchFrozenPage.locator('.node mark[data-child].mark-ready').first();
   await frozenMark.focus();
   await branchFrozenPage.evaluate(() => {
@@ -1054,7 +1179,7 @@ async function verifyCanvasBranching() {
   assert(!reloadedRaw.includes(MOCK_KEY), "IndexedDB hole record must not contain provider key");
   assert(!page.url().includes(MOCK_KEY), "URL must not contain provider key");
 
-  if (!await page.evaluate(() => document.body.classList.contains("mode-canvas"))) await page.click("#r-canvas");
+  if (!await page.evaluate(() => document.body.classList.contains("mode-canvas"))) await page.click("#t-canvas");
   const removeTrigger = page.locator('.node:not(.root) .node-btn.danger').first();
   await removeTrigger.focus();
   await page.keyboard.press("Enter");

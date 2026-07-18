@@ -50,7 +50,7 @@ import { applyChildHighlights } from "./text-marks.js";
 import { easeInOutMotion, easeOutMotion } from "./easing.js";
 import { buttonMarkup, iconButtonMarkup } from "../core/html/button-markup.js";
 import { buildOriginCrop } from "./origin-provenance.js";
-import { BUNNY_MARK_SVG } from "../core/html/bunny-markup.js";
+import { BUNNY_MARK_SVG, iconSvg } from "../core/html/icons.js";
 import { createModuleLifecycle } from "./lifecycle.js";
 import { captureContentPosition, restoreContentPosition } from "./scroll-position.js";
 import { applyComposerState } from "./composer-state.js";
@@ -69,6 +69,7 @@ function defaultCanvasHooks(){
 
 var canvasLifecycle = createModuleLifecycle({ defaults: defaultCanvasHooks });
 var filmCameraHandle = null;
+var cardResizeObserver = null;
 var activePointerGestures = new Set();
 
 export function registerCanvasHooks(hooks) {
@@ -78,6 +79,7 @@ export function registerCanvasHooks(hooks) {
 export function initCanvasView(){
   cleanupCanvasView(false);
   var canvasScope = canvasLifecycle.beginInit();
+  if (typeof ResizeObserver === "function") cardResizeObserver = new ResizeObserver(scheduleEdges);
   registerCoreHooks({
     ensureCanvasBuilt: ensureCanvasBuilt,
     diveToNode: diveToNode,
@@ -88,7 +90,7 @@ export function initCanvasView(){
   initViewportPan();
   canvasScope.listen(viewport, "wheel", onViewportWheel, { passive: false });
   canvasScope.listen(viewport, "dblclick", onViewportDblClick);
-  canvasScope.listen(document.getElementById("t-reader"), "click", function(){ openNode(currentNodeId); });
+  canvasScope.listen(document.getElementById("t-reader"), "click", function(){ if (mode !== "canvas") return; openNode(currentNodeId); });
   canvasScope.listen(document.getElementById("t-frame"), "click", function(e){ frameAll(true, motionSourceFromEvent(e)); });
   canvasScope.listen(document.getElementById("t-tidy"), "click", function(e){ tidy(motionSourceFromEvent(e)); });
   canvasScope.listen(document.getElementById("t-zin"), "click", function(){ zoomAt(viewport.clientWidth/2, viewport.clientHeight/2, 1.15); });
@@ -104,6 +106,8 @@ export function disposeCanvasView(){
 
 function cleanupCanvasView(resetHooks){
   canvasLifecycle.dispose(resetHooks);
+  if (cardResizeObserver) cardResizeObserver.disconnect();
+  cardResizeObserver = null;
   activePointerGestures.forEach(function(cancel){ cancel(); });
   activePointerGestures.clear();
   cancelViewAnimation();
@@ -173,9 +177,9 @@ function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy -
     setViewAdjusted(true);
     var w = screenToWorld(sx, sy); view.scale = next; view.x = sx - w.x * view.scale; view.y = sy - w.y * view.scale; applyTransform();
   }
-  var NODE_EXPAND_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M9.25 3.75h3v3"/><path d="M12.25 3.75 8.75 7.25"/><path d="M6.75 12.25h-3v-3"/><path d="M3.75 12.25l3.5-3.5"/></svg>';
-  var NODE_COLLAPSE_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M3 8h10"/></svg>';
-  var NODE_RESTORE_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M3 8h10M8 3v10"/></svg>';
+  var NODE_EXPAND_ICON = iconSvg("expand");
+  var NODE_COLLAPSE_ICON = iconSvg("collapse");
+  var NODE_RESTORE_ICON = iconSvg("restore");
 
   function syncCollapseButton(node, btn){
     var action = node.collapsed ? "Expand document" : "Collapse document";
@@ -220,6 +224,7 @@ export function createNodeEl(node, enter){
     world.appendChild(el);
 
     node.el = el; node.bodyEl = body; node.titleEl = titleEl;
+    if (cardResizeObserver) cardResizeObserver.observe(el);
     fillBody(node);
     updateCardComposer(node);
     if (node.collapsed) el.classList.add("collapsed");
@@ -268,7 +273,7 @@ function diveToNode(node, source){
   }
 
   // ---------- per-card follow-up composer ----------
-  var SEND_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6 3.9 7.7M8 3.6l4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var SEND_ICON = iconSvg("send");
   // The scrollbar only appears once the textarea is actually at its cap —
   // otherwise sub-pixel rounding paints a stray thumb next to the send button.
 export function autoGrowEl(ta, max){
@@ -351,7 +356,7 @@ export function revealNode(n, source){
     if (mode !== "canvas" || !n) return;
     var pad = 30, vw = viewport.clientWidth, vh = viewport.clientHeight;
     var x1 = n.x * view.scale + view.x, y1 = n.y * view.scale + view.y;
-    var x2 = (n.x + n.w) * view.scale + view.x, y2 = (n.y + n.h) * view.scale + view.y;
+    var x2 = (n.x + n.w) * view.scale + view.x, y2 = (n.y + effH(n)) * view.scale + view.y;
     var dx = 0, dy = 0;
     if (x2 > vw - pad) dx = vw - pad - x2;
     if (x1 + dx < pad) dx = pad - x1;
@@ -419,7 +424,19 @@ export function fillBody(node){
 
 function layoutNode(node){
     var el = node.el; el.style.left = node.x + "px"; el.style.top = node.y + "px"; el.style.width = node.w + "px";
-    if (!node.collapsed) el.style.height = node.h + "px";
+    if (!node.collapsed){
+      // Branch cards use their saved/default height as a ceiling, not a floor.
+      // Short answers therefore hug their content while longer answers retain
+      // the existing scrollable viewport. Keep the root's established fixed
+      // document window; it is the canvas anchor rather than a branch.
+      if (node.id === rootId){
+        el.style.height = node.h + "px";
+        el.style.maxHeight = "";
+      } else {
+        el.style.height = "auto";
+        el.style.maxHeight = node.h + "px";
+      }
+    }
   }
 
   // Shared pointer-gesture wiring: cleans up on pointerup AND pointercancel/
@@ -481,8 +498,9 @@ export function scheduleEdges(){
     edgeRaf = requestAnimationFrame(function(){ edgeRaf = 0; drawEdges(); });
   }
 
-  // Effective on-canvas height: a collapsed card is its head only.
-export function effH(n){ return (n.collapsed && n.el) ? (n.el.offsetHeight || 36) : n.h; }
+  // Effective on-canvas height follows the rendered card: collapsed cards are
+  // head-only and short branches may be smaller than their saved height cap.
+export function effH(n){ return n.el ? (n.el.offsetHeight || (n.collapsed ? 36 : n.h)) : n.h; }
 function clamp(lo, hi, v){ return Math.max(lo, Math.min(hi, v)); }
 
   // Which side the edge leaves the parent from and enters the child on — chosen
@@ -843,11 +861,11 @@ export function frameAll(animate, source){
     var ids = Object.keys(nodes).filter(function(id){ return isVisible(nodes[id], visCache); });
     if (!ids.length) return;
     var minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
-    ids.forEach(function(id){ var n=nodes[id]; minX=Math.min(minX,n.x); minY=Math.min(minY,n.y); maxX=Math.max(maxX,n.x+n.w); maxY=Math.max(maxY,n.y+(n.collapsed?40:n.h)); });
+    ids.forEach(function(id){ var n=nodes[id]; minX=Math.min(minX,n.x); minY=Math.min(minY,n.y); maxX=Math.max(maxX,n.x+n.w); maxY=Math.max(maxY,n.y+effH(n)); });
     var fullW=viewport.clientWidth||window.innerWidth, fullH=viewport.clientHeight||window.innerHeight, pad=100;
-    var rail=document.getElementById("web-rail"), toolbar=document.getElementById("toolbar");
+    var rail=document.getElementById("web-rail"), taskbar=document.getElementById("taskbar");
     var insetX=(rail && rail.classList.contains("open")) ? rail.getBoundingClientRect().width : 0;
-    var insetY=toolbar ? toolbar.getBoundingClientRect().height : 0;
+    var insetY=taskbar ? taskbar.getBoundingClientRect().height : 0;
     var vw=fullW-insetX, vh=fullH-insetY;
     var ts = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min((vw-pad)/(maxX-minX), (vh-pad)/(maxY-minY), 1.2)));
     var tx = insetX+vw/2 - (minX+(maxX-minX)/2)*ts, ty = insetY+vh/2 - (minY+(maxY-minY)/2)*ts;

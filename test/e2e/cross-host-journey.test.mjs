@@ -56,7 +56,7 @@ async function modernJourney() {
     assert.equal(branch.status, "branch_request", `modern MCP open result: ${JSON.stringify(branch)}`);
     assert.equal(branch.selected_text, "Select this exact phrase");
     await streamAnswer(mcp.client, branch, "Modern branch");
-    await page.click("#r-canvas");
+    await page.click("#t-canvas");
     await page.locator(".doc-content", { hasText: "Second final paragraph" }).waitFor();
 
     const snapshotPath = await downloadShare(page, "#sm-export", "modern-snapshot.html");
@@ -175,7 +175,7 @@ async function streamAnswer(client, request, title) {
 }
 
 async function downloadShare(page, selector, filename) {
-  await page.click(await page.locator("#t-share:visible").count() ? "#t-share" : "#r-share");
+  await page.click("#t-share");
   const pending = page.waitForEvent("download");
   await page.click(selector);
   const download = await pending;

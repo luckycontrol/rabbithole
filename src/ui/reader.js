@@ -9,7 +9,6 @@ import {
   disposeNodeContent,
   buildLoading,
   childrenOf,
-  closed,
   currentNodeId,
   followupsOf,
   fontPx,
@@ -26,8 +25,6 @@ import {
   readerMain,
   setCurrentNodeId,
   setModeValue,
-  sideEl,
-  toggleTheme,
   truncate,
   world,
   sessionPhase
@@ -59,7 +56,8 @@ export function registerReaderHooks(hooks) {
 }
 
 var breadcrumbNodes = {};
-var sidebarNodes = {};
+var noteNodes = {};
+var marginObserver = null;
 
   // ===========================================================================
   // READER
@@ -86,7 +84,7 @@ export function openNode(id){
       restoreContentPosition(readerMain, transferredPosition);
       nodes[id]._scrollTop = readerMain.scrollTop;
     }
-    renderSidebar();
+    renderMarginNotes();
     readerLifecycle.hooks.updateComposerState();
     if (nodes[id].status === "answered") markRead(nodes[id]);
     readerLifecycle.hooks.scheduleViewSave();
@@ -145,14 +143,14 @@ export function initReader(){
     // Canvas marks dive to the answer card in place — never yank into the reader.
     readerScope.listen(world, "click", onCanvasMarkClick);
     readerScope.listen(world, "keydown", onCanvasMarkKeydown);
-    readerScope.listen(sideEl, "click", onSidebarClick);
-    readerScope.listen(sideEl, "keydown", onSidebarKeydown);
+    readerScope.listen(readerMain, "click", onNoteClick);
+    readerScope.listen(readerMain, "keydown", onNoteKeydown);
+    // Hovering a margin note lights its highlight so the pair reads as one.
+    readerScope.listen(readerMain, "mouseover", function(e){ syncNoteHover(e, true); });
+    readerScope.listen(readerMain, "mouseout", function(e){ syncNoteHover(e, false); });
     readerScope.listen(document.getElementById("r-textdown"), "click", function(){ setReaderFontScale(-0.1); });
     readerScope.listen(document.getElementById("r-textup"), "click", function(){ setReaderFontScale(0.1); });
-    readerScope.listen(document.getElementById("r-canvas"), "click", function(){ readerLifecycle.hooks.setMode("canvas"); });
-    readerScope.listen(document.getElementById("r-done"), "click", function(){ if (!closed) readerLifecycle.hooks.post({ type: "done" }); });
-    readerScope.listen(document.getElementById("r-theme"), "click", toggleTheme);
-    readerScope.listen(document.getElementById("t-theme"), "click", toggleTheme);
+    readerScope.listen(document.getElementById("t-canvas"), "click", function(){ if (mode === "canvas") return; readerLifecycle.hooks.setMode("canvas"); });
     return disposeReader;
     } catch (error) {
       disposeReader();
@@ -166,8 +164,9 @@ export function disposeReader(){
 
 function disposeReaderResources(resetHooks){
     readerLifecycle.dispose(resetHooks);
+    if (marginObserver){ marginObserver.disconnect(); marginObserver = null; }
     breadcrumbNodes = {};
-    sidebarNodes = {};
+    noteNodes = {};
     kbdMarkIdx = -1;
   }
 
@@ -177,6 +176,9 @@ export function renderReaderBody(){
     readerMain.innerHTML = "";
     var col = document.createElement("div");
     col.className = "reader-col";
+    // The lineage trail leads the document column and scrolls with it — the
+    // floating taskbar above carries no per-document state.
+    if (breadcrumbEl) col.appendChild(breadcrumbEl);
     if (node.origin && (node.origin.selected_text || node.origin.question)){
       var ctx = document.createElement("div");
       ctx.className = "reader-context";
@@ -222,6 +224,11 @@ export function renderReaderBody(){
       // Rendering the thread IS reading it — answered follow-ups shed their dots.
       fups.forEach(function(k){ if (k.status === "answered") markRead(k); });
     }
+    // The margin-note layer hangs off the column's right edge; renderMarginNotes
+    // fills and positions it once the column is in the document.
+    var notes = document.createElement("div");
+    notes.id = "margin-notes";
+    col.appendChild(notes);
     readerMain.appendChild(col);
     // Each document remembers where you were; a first open starts at the top.
     readerMain.scrollTop = node._scrollTop || 0;
@@ -347,26 +354,19 @@ export function removeThreadItem(childId){
     e.preventDefault();
     goToNode(k, motionSourceFromEvent(e));
   }
-export function renderSidebar(){
+  // Branches render as margin notes — comment cards hanging in the right
+  // margin, each top-aligned with the highlight it grew from. The layer lives
+  // inside .reader-col so the cards scroll with the text; CSS hides it when
+  // the window has no margin to spare (the inline marks carry those widths).
+export function renderMarginNotes(){
+    var layer = readerMain && readerMain.querySelector("#margin-notes");
+    if (!layer) return;
     var kids = childrenOf(currentNodeId).filter(function(k){ return !isFollowup(k); }).sort(function(a,b){
       return (anchorStart(a) - anchorStart(b)) || ((a._order||0) - (b._order||0));
     });
-    if (!kids.length){
-      var emptyHeading = document.createElement("h3");
-      emptyHeading.textContent = "Branches";
-      var empty = document.createElement("div");
-      empty.className = "side-empty";
-      empty.textContent = "Select any text in the document and ask about it — the answer opens as a branch here. Or ask a follow-up in the box below the document.";
-      sideEl.replaceChildren(emptyHeading, empty);
-      return;
-    }
-    var heading = sideEl.querySelector(":scope > h3");
-    if (!heading) heading = document.createElement("h3");
-    heading.textContent = "Branches (" + kids.length + ")";
     var fragment = document.createDocumentFragment();
-    fragment.appendChild(heading);
     var newLivePanes = [];
-    kids.forEach(function(k, i){
+    kids.forEach(function(k){
       var pending = k.status !== "answered";
       var qHtml = (k.origin && k.origin.synthesis) ? '<span class="lens-badge">✦ Synthesis</span>'
         : (k.origin && k.origin.lens) ? lensBadgeHtml(k.origin.lens)
@@ -375,7 +375,7 @@ export function renderSidebar(){
       var status = pending ? pendingStatusHtml(k)
         : isUnread(k) ? '<span class="si-new">new — open →</span>'
         : 'open →';
-      var tile = sidebarNodes[k.id];
+      var tile = noteNodes[k.id];
       if (!tile){
         tile = document.createElement("div");
         tile.className = "side-item";
@@ -383,17 +383,13 @@ export function renderSidebar(){
         tile.setAttribute("role", "link");
         tile.tabIndex = 0;
         tile._question = document.createElement("div"); tile._question.className = "si-q";
-        tile._num = document.createElement("span"); tile._num.className = "si-num";
-        tile._questionText = document.createElement("span");
-        tile._question.append(tile._num, tile._questionText);
         tile._quote = document.createElement("div"); tile._quote.className = "si-quote";
         tile._status = document.createElement("div"); tile._status.className = "si-status";
         tile.append(tile._question, tile._quote, tile._status);
-        sidebarNodes[k.id] = tile;
+        noteNodes[k.id] = tile;
       }
       tile.classList.toggle("pending", pending);
-      tile._num.textContent = i + 1;
-      tile._questionText.innerHTML = qHtml;
+      tile._question.innerHTML = qHtml;
       tile._quote.textContent = quote ? "“" + truncate(quote, 80) + "”" : "";
       tile._quote.hidden = !quote;
       tile._status.innerHTML = status;
@@ -401,7 +397,7 @@ export function renderSidebar(){
         : ((k.origin && k.origin.question) || k.title || "Untitled");
       tile.setAttribute("aria-label", "Open branch: " + name + (pending ? ", pending" : isUnread(k) ? ", new" : ""));
       // A streaming answer is watchable right here: its last lines render live
-      // inside the tile (and the whole tile opens the full streaming view).
+      // inside the note (and the whole note opens the full streaming view).
       if (pending && k.html){
         if (!tile._live){
           tile._live = document.createElement("div"); tile._live.className = "si-live";
@@ -418,12 +414,65 @@ export function renderSidebar(){
       }
       fragment.appendChild(tile);
     });
-    sideEl.replaceChildren(fragment);
-    mountSidebarVisuals(newLivePanes);
+    layer.replaceChildren(fragment);
+    mountNoteVisuals(newLivePanes);
+    layoutMarginNotes();
   }
-function mountSidebarVisuals(panes){
+  // Each note wants the y of its first mark; stacking resolves collisions in
+  // document order. Re-runs whenever the column or a note changes size (fonts,
+  // images, streaming text), so alignment holds without any scroll listener.
+export function layoutMarginNotes(){
+    var layer = readerMain && readerMain.querySelector("#margin-notes");
+    if (!layer) return;
+    if (!marginObserver && typeof ResizeObserver === "function"){
+      marginObserver = new ResizeObserver(function(){ positionNotes(); });
+    }
+    if (marginObserver){
+      marginObserver.disconnect();
+      marginObserver.observe(layer.parentNode);
+      for (var i = 0; i < layer.children.length; i++) marginObserver.observe(layer.children[i]);
+    }
+    positionNotes();
+  }
+function positionNotes(){
+    var layer = readerMain && readerMain.querySelector("#margin-notes");
+    if (!layer || !layer.clientWidth){ if (layer) layer.classList.remove("settled"); return; }
+    var layerTop = layer.getBoundingClientRect().top;
+    var cursor = 0;
+    for (var i = 0; i < layer.children.length; i++){
+      var tile = layer.children[i];
+      var mark = readerMain.querySelector('mark[data-child="' + tile.dataset.child + '"]');
+      tile.classList.toggle("unanchored", !mark);
+      var desired = mark ? Math.round(mark.getBoundingClientRect().top - layerTop) : cursor;
+      var top = Math.max(desired, cursor);
+      tile.style.top = top + "px";
+      cursor = top + tile.offsetHeight + 10;
+    }
+    layer.classList.add("settled");
+  }
+function onNoteClick(e){
+    var it = e.target.closest && e.target.closest("#margin-notes .side-item");
+    if (!it) return;
+    openNode(it.dataset.child); // pending notes open too — the answer streams there
+  }
+function onNoteKeydown(e){
+    if (e.key !== "Enter") return;
+    var it = e.target.closest && e.target.closest('#margin-notes .side-item[role="link"]');
+    if (!it) return;
+    e.preventDefault();
+    openNode(it.dataset.child);
+  }
+function syncNoteHover(e, on){
+    var tile = e.target.closest && e.target.closest("#margin-notes .side-item");
+    if (!tile) return;
+    var related = e.relatedTarget;
+    if (related && tile.contains(related)) return;
+    var marks = readerMain.querySelectorAll('mark[data-child="' + tile.dataset.child + '"]');
+    for (var i = 0; i < marks.length; i++) marks[i].classList.toggle("mark-focus", on);
+  }
+function mountNoteVisuals(panes){
     for (var i = 0; i < panes.length; i++){
-      var key = "reader-side:" + panes[i].node.id;
+      var key = "margin-notes:" + panes[i].node.id;
       mountVisuals(panes[i].pane, key);
       if (typeof readerLifecycle.hooks.mountDocImages === "function") readerLifecycle.hooks.mountDocImages(panes[i].pane, panes[i].node, null, key);
     }
@@ -437,19 +486,6 @@ function pendingStatusHtml(k){
     };
     return copy[sessionPhase()];
   }
-  function onSidebarClick(e){
-    var it = e.target.closest(".side-item");
-    if (!it) return;
-    openNode(it.dataset.child); // pending items open too — the answer streams there
-  }
-  function onSidebarKeydown(e){
-    if (e.key !== "Enter") return;
-    var it = e.target.closest && e.target.closest('.side-item[role="link"]');
-    if (!it) return;
-    e.preventDefault();
-    openNode(it.dataset.child);
-  }
-
 function setReaderFontScale(delta){
     var node = nodes[currentNodeId];
     node.font_scale = Math.min(MAX_FS, Math.max(MIN_FS, (node.font_scale || 1) + delta));

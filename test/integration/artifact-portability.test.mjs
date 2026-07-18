@@ -106,8 +106,8 @@ try {
     const { names: assets, sizes } = await window.__rabbitholeTest.inspectAssets(holeId);
     return { holeId, raw, assets, sizes };
   });
-  assert.deepEqual(original.assets, ["page-001.jpg"]);
-  assert(original.sizes["page-001.jpg"] > 100, "PDF page asset should be non-empty");
+  assert.deepEqual(original.assets, ["page-001.webp"]);
+  assert(original.sizes["page-001.webp"] > 100, "PDF page asset should be non-empty");
 
   const shareDownloadPromise = page.waitForEvent("download");
   await page.click("#t-share");
@@ -123,7 +123,7 @@ try {
   assert.equal(exported.format, "rabbithole");
   assert.equal(exported.format_version, 1);
   assert.equal(exported.hole.schema_version, 2);
-  assert.equal(typeof exported.assets["page-001.jpg"], "string");
+  assert.equal(typeof exported.assets["page-001.webp"], "string");
 
   await ensureRailOpen(page);
   assert.equal(await page.locator(".rail-export").count(), 0, "sidebar rows should reserve their full width for titles");
@@ -147,7 +147,7 @@ try {
   });
   assert.deepEqual(projectHole(imported.raw), projectHole(original.raw));
   assert.deepEqual(imported.assets, original.assets);
-  assert.equal(imported.sizes["page-001.jpg"], original.sizes["page-001.jpg"]);
+  assert.equal(imported.sizes["page-001.webp"], original.sizes["page-001.webp"]);
 
   await fresh.close();
   await context.close();
@@ -162,8 +162,8 @@ try {
 async function assertShellPolish(page) {
   await page.waitForSelector("#blank-start:not([hidden])");
   assert.equal(await page.locator("#blank-start-new").isDisabled(), true, "new Rabbithole should wait for model setup");
-  assert.equal(await page.locator("#toolbar #t-rail").count(), 1, "rail toggle should live in the toolbar");
-  assert.equal(await page.locator("#toolbar #t-new").count(), 1, "new Rabbithole button should live in the toolbar");
+  assert.equal(await page.locator("#taskbar #t-rail").count(), 1, "rail toggle should live in the toolbar");
+  assert.equal(await page.locator("#taskbar #t-new").count(), 1, "new Rabbithole button should live in the toolbar");
   assert.equal(await page.locator(".composer-path").count(), 3, "new Rabbithole should present three clear starting paths");
   await page.click("#t-settings");
   const keyLinkCount = await page.locator(`a[href="${"https://openrouter.ai/keys"}"]`).count();

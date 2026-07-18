@@ -308,8 +308,8 @@ async function verifyLandingAndComposer() {
   await page.waitForSelector("#composer-modal:not([hidden])");
   assert.equal(await page.locator("body").evaluate((body) => body.classList.contains("rail-open")), false, "the sidebar should start closed");
   assert.equal(await page.locator(".web-home").count(), 0, "form-based home page must be gone");
-  assert.equal(await page.locator("#toolbar .toolbar-brand").count(), 1, "browser toolbar should carry the Rabbithole mark");
-  const toolbarConformance = await page.locator("#reader-top button, #toolbar button").evaluateAll((buttons) => buttons.map((button) => ({
+  assert.equal(await page.locator("#tb-tools .toolbar-brand").count(), 1, "browser toolbar should carry the Rabbithole mark");
+  const toolbarConformance = await page.locator("#taskbar button").evaluateAll((buttons) => buttons.map((button) => ({
     id: button.id,
     type: button.getAttribute("type"),
     name: button.getAttribute("aria-label") || button.textContent.trim(),
@@ -317,7 +317,7 @@ async function verifyLandingAndComposer() {
   assert(toolbarConformance.length > 0, "reader and canvas toolbars should render buttons");
   assert(toolbarConformance.every(({ type }) => type === "button"), `every toolbar button should declare type=button (${JSON.stringify(toolbarConformance)})`);
   assert(toolbarConformance.every(({ name }) => name.length > 0), `every toolbar button should have an accessible name (${JSON.stringify(toolbarConformance)})`);
-  const toolbarIconSystem = await page.locator("#toolbar .tool-icon svg").evaluateAll((icons) => icons.map((icon) => ({ width: icon.getAttribute("width"), height: icon.getAttribute("height") })));
+  const toolbarIconSystem = await page.locator("#taskbar .tool-icon svg").evaluateAll((icons) => icons.map((icon) => ({ width: icon.getAttribute("width"), height: icon.getAttribute("height") })));
   assert(toolbarIconSystem.length >= 8, "toolbar actions should use the shared SVG icon system");
   assert(toolbarIconSystem.every(({ width, height }) => width === "16" && height === "16"), `toolbar glyph boxes should stay 16×16: ${JSON.stringify(toolbarIconSystem)}`);
   assert.equal(await page.locator("#t-new svg path").count(), 2, "New Rabbithole should use a compose silhouette with no plus glyph");
@@ -788,7 +788,7 @@ async function verifyAskKeyUxAndRail() {
   assert.equal(railPadding.top, railPadding.bottom, "sidebar content should have balanced top and bottom breathing room");
   assert.equal(railPadding.top, "12px", "sidebar content should not crowd the top edge");
   const railDetailGeometry = await page.evaluate(() => {
-    const toolbar = document.getElementById("toolbar").getBoundingClientRect();
+    const toolbar = document.getElementById("tb-tools").getBoundingClientRect();
     const rail = document.getElementById("web-rail").getBoundingClientRect();
     const button = document.querySelector(".rail-row.current .rail-open");
     const title = button.querySelector(".rail-title");
@@ -889,7 +889,7 @@ async function verifyAskKeyUxAndRail() {
   const rawJson = JSON.stringify(hole);
   assert(!rawJson.includes(MOCK_KEY), "IndexedDB hole record must not contain provider key");
 
-  await page.click("#r-canvas");
+  await page.click("#t-canvas");
   await page.waitForFunction(() => document.body.classList.contains("mode-canvas"));
   await page.click("#t-settings");
   await page.waitForSelector("#web-settings-popover");
