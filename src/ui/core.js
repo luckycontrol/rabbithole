@@ -8,7 +8,7 @@ import {
 } from "../core/model.js";
 import { wireNotice } from "./primitives/notice.js";
 import { escapeHtml } from "../core/utils.js";
-import { BUNNY_MARK_SVG } from "../core/html/bunny-markup.js";
+import { BUNNY_MARK_SVG } from "../core/html/icons.js";
 import { createCleanupScope } from "./lifecycle.js";
 import { mountVisuals } from "./visuals.js";
 import {
@@ -51,7 +51,6 @@ var loadingTimers = new Set();
 
 // refs
 export var readerMain = null;
-export var sideEl = null;
 export var breadcrumbEl = null;
 export var viewport = null;
 export var world = null;
@@ -67,11 +66,6 @@ export var bannerNotice = null;
 export var composerInner = null;
 export var composerText = null;
 export var composerSend = null;
-var actReader = null;
-var actCanvas = null;
-var actSep = null;
-var sinceEl = null;
-var sinceMsg = null;
 export var paletteEl = null;
 export var palText = null;
 export var palResults = null;
@@ -121,12 +115,13 @@ export function initCore(inputHydration) {
   viewAdjusted = false;
   orderCounter = 0;
   loadingTimers.clear();
-  sinceDismissed = false;
-  sinceArmed = false;
-
   readerMain = document.getElementById("reader-main");
-  sideEl = document.getElementById("reader-side");
-  breadcrumbEl = document.getElementById("breadcrumb");
+  // The lineage trail is owned by the UI, not the shell: it lives inside the
+  // reader column (hosts may clear that container between holes), so each
+  // init builds a fresh nav and the reader renders it into the document flow.
+  breadcrumbEl = document.createElement("nav");
+  breadcrumbEl.id = "breadcrumb";
+  breadcrumbEl.setAttribute("aria-label", "Breadcrumb");
   viewport = document.getElementById("viewport");
   world = document.getElementById("world");
   edgesSvg = document.getElementById("edges");
@@ -141,11 +136,6 @@ export function initCore(inputHydration) {
   composerInner = document.getElementById("composer-inner");
   composerText = document.getElementById("composer-text");
   composerSend = document.getElementById("composer-send");
-  actReader = document.getElementById("act-reader");
-  actCanvas = document.getElementById("act-canvas");
-  actSep = document.getElementById("act-sep");
-  sinceEl = document.getElementById("since");
-  sinceMsg = document.getElementById("since-msg");
   paletteEl = document.getElementById("palette");
   palText = document.getElementById("pal-text");
   palResults = document.getElementById("pal-results");
@@ -153,16 +143,10 @@ export function initCore(inputHydration) {
   confirmEl = document.getElementById("confirm");
 
   initReduceMotion(coreScope);
-  coreScope.listen(actReader, "click", onActivityClick);
-  coreScope.listen(actCanvas, "click", onActivityClick);
-  coreScope.listen(document.getElementById("since-show"), "click", function(e){
-    var un = unreadNodes();
-    if (un.length) goToNode(un[0], motionSourceFromEvent(e));
-  });
-  coreScope.listen(document.getElementById("since-x"), "click", function(){
-    sinceDismissed = true;
-    sinceEl.classList.remove("visible");
-  });
+  // Session-level chrome is wired once here — it lives in the shared taskbar
+  // and stays put whichever mode is up.
+  coreScope.listen(document.getElementById("tb-done"), "click", function(){ if (!closed) coreHooks.post({ type: "done" }); });
+  coreScope.listen(document.getElementById("t-theme"), "click", toggleTheme);
   coreScope.interval(updateLoadingTimers, 1000);
   coreScope.addCleanup(function(){
     hintNotice?.hide();
@@ -202,15 +186,12 @@ function resetCoreState(){
   viewAdjusted = false;
   orderCounter = 0;
   loadingTimers.clear();
-  readerMain = sideEl = breadcrumbEl = viewport = world = edgesSvg = null;
+  readerMain = breadcrumbEl = viewport = world = edgesSvg = null;
   ask = askText = askGo = zoomLabel = hintEl = bannerEl = null;
   hintNotice = bannerNotice = null;
   composerInner = composerText = composerSend = null;
-  actReader = actCanvas = actSep = null;
-  sinceEl = sinceMsg = paletteEl = palText = palResults = null;
+  paletteEl = palText = palResults = null;
   shareMenu = confirmEl = null;
-  sinceDismissed = false;
-  sinceArmed = false;
   reduceMotion = false;
   reduceMotionMql = null;
   coreHooks = defaultCoreHooks();
@@ -228,8 +209,6 @@ export function setCanvasBuilt(value){ canvasBuilt = !!value; }
 export function setCanvasFramed(value){ canvasFramed = !!value; }
 export function setViewAdjusted(value){ viewAdjusted = !!value; }
 export function nextOrder(){ return orderCounter++; }
-export function armSince(){ sinceArmed = true; }
-
   // ---------- helpers ----------
 export function uuid() {
     if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -308,7 +287,6 @@ export function shiftBounds(b, dx, dy){
 export function boundsOverlap(a,b){
     return sharedBoundsOverlap(a, b);
   }
-function agentDown(){ return closed || connLost || !agentAttached; }
 export function sessionPhase(){
     if (frozen) return "frozen";
     if (closed) return "closed";
@@ -355,31 +333,6 @@ export function setSurfaceOrigin(el, anchorRect){
     el.style.transformOrigin = Math.round(ox) + "px " + Math.round(oy) + "px";
   }
 
-  // ---------- read / unread ----------
-  // Fresh answers stay "unread" (dot on the card and the sidebar item) until
-  // the human actually opens them. The flag persists,
-  // so answers that land while you're away are waiting with a dot on re-entry.
-export function isUnread(n){ return n.status === "answered" && !n.read && n.id !== rootId; }
-export function markRead(node){
-    if (!node || node.read) return;
-    node.read = true;
-    if (!frozen && !closed) coreHooks.post({ type: "node_update", node_id: node.id, read: true });
-    if (node.el) node.el.classList.remove("unread");
-    refreshAmbient();
-    updateSince();
-  }
-export function unreadNodes(){
-    var out = [];
-    for (var k in nodes) if (isUnread(nodes[k])) out.push(nodes[k]);
-    out.sort(function(a,b){ return (a._order||0) - (b._order||0); });
-    return out;
-  }
-function pendingNodes(){
-    var out = [];
-    for (var k in nodes) if (nodes[k].status === "pending") out.push(nodes[k]);
-    out.sort(function(a,b){ return (a._order||0) - (b._order||0); });
-    return out;
-  }
   // Bring a node to the human in whichever view they're in: the reader opens it
   // (streaming answers render live), the canvas dives to the card and flashes it.
 export function goToNode(node, source){
@@ -388,49 +341,9 @@ export function goToNode(node, source){
       coreHooks.ensureCanvasBuilt();
       coreHooks.diveToNode(node, source);
       if (node.el) playLandingCue(node.el, "flash");
-      if (node.status === "answered") markRead(node);
     } else {
       coreHooks.openNode(node.id);
     }
-  }
-  // The ambient chip only tracks answers currently being written.
-export function refreshAmbient(){
-    var writing = pendingNodes().length;
-    var label = "", cls = "activity on";
-    if (writing > 0 && !agentDown()){ label = writing + " writing…"; cls += " writing"; }
-    else cls = "activity";
-    var chips = [actReader, actCanvas];
-    for (var i = 0; i < chips.length; i++){
-      chips[i].className = cls;
-      var dot = chips[i].querySelector(".act-dot");
-      var text = chips[i].querySelector(".act-label");
-      if (!dot || !text) {
-        dot = document.createElement("span"); dot.className = "act-dot";
-        text = document.createElement("span"); text.className = "act-label";
-        chips[i].replaceChildren(dot, text);
-      }
-      text.textContent = label;
-      chips[i].title = "Watch it being written";
-    }
-    if (actSep) actSep.style.display = label ? "" : "none";
-  }
-  function onActivityClick(e){
-    var source = motionSourceFromEvent(e);
-    var pend = pendingNodes();
-    if (pend.length) goToNode(pend[pend.length - 1], source);
-  }
-  // "Since you left" strip — a re-entry announcement only: armed at load when
-  // unread answers were waiting, cleared as they're opened (or on dismiss).
-  // Answers landing live mid-session never resurrect it.
-  var sinceDismissed = false, sinceArmed = false;
-export function updateSince(){
-    if (!sinceArmed || sinceDismissed || frozen){ sinceEl.classList.remove("visible"); return; }
-    var n = unreadNodes().length;
-    if (!n){ sinceArmed = false; sinceEl.classList.remove("visible"); return; }
-    sinceMsg.textContent = n === 1
-      ? "An answer arrived while you were away"
-      : n + " answers arrived while you were away";
-    sinceEl.classList.add("visible");
   }
 export function lensLabel(key){ return sharedLensLabel(key); }
 export function lensBadgeHtml(key){ return '<span class="lens-badge">' + escapeHtml(lensLabel(key)) + '</span>'; }

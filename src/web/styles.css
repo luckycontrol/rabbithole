@@ -31,14 +31,16 @@ body.web-blank-canvas #palette,
 body.web-blank-canvas #sharemenu,
 body.web-blank-canvas #confirm,
 body.web-blank-canvas #banner,
-body.web-blank-canvas #since,
 body.web-blank-canvas #t-reader,
-body.web-blank-canvas #t-reader + .sep,
+body.web-blank-canvas #t-canvas,
+body.web-blank-canvas .tb-group > .sep,
 body.web-blank-canvas #t-tidy,
-body.web-blank-canvas #t-tidy + .sep,
-body.web-blank-canvas #t-share,
-body.web-blank-canvas #act-sep,
-body.web-blank-canvas #act-canvas {
+body.web-blank-canvas #t-share {
+  display: none !important;
+}
+
+/* Done ends an agent session; the web app has no session to end. */
+#tb-done-pill {
   display: none !important;
 }
 
@@ -46,14 +48,6 @@ body.web-blank-canvas #act-canvas {
 #t-new,
 #t-settings {
   flex: 0 0 auto;
-}
-
-#toolbar > .tool-icon {
-  width: var(--control-h-xs);
-  height: var(--control-h-xs);
-  margin: 0;
-  padding: 0;
-  align-self: center;
 }
 
 #t-rail.rail-on {
@@ -652,6 +646,11 @@ body.blank-dragging #viewport::after {
   min-height: 44px;
   resize: none;
   font: var(--text-base)/var(--leading-ui) var(--font-ui);
+}
+
+.composer-card[data-path="paste"] #composer-input {
+  min-height: 220px;
+  max-height: min(45vh, 360px);
 }
 
 .composer-entry-actions {
@@ -1907,6 +1906,11 @@ body.blank-dragging .composer-card {
   .settings-advanced summary::after {
     animation: none;
     transition: none;
+  }
+
+  .composer-card {
+    opacity: 1;
+    transform: none;
   }
 
   .ollama-recovery-modal,

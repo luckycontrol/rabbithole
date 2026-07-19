@@ -23,7 +23,6 @@ import {
   nodes,
   readerMain,
   registerNode,
-  refreshAmbient,
   shouldReduceMotion,
   sessionPhase,
   truncate,
@@ -45,7 +44,7 @@ import {
 import {
   buildThreadItem,
   ensureThread,
-  renderSidebar
+  renderMarginNotes
 } from "./reader.js";
 import { charOffset, mountPdfRectMark, wrapInContainer } from "./text-marks.js";
 import { easeOutMotion } from "./easing.js";
@@ -326,15 +325,14 @@ export function disposeAskFollowups(){
         if (mode === "reader") mountPdfRectMark(readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"]'), anchor, childId, "rh-pdf-mark mark-pending");
         if (parent.bodyEl) mountPdfRectMark(parent.bodyEl.querySelector(".doc-content"), anchor, childId, "rh-pdf-mark mark-pending");
         scheduleEdges();
-        if (mode === "reader" && currentNodeId === parent.id) renderSidebar();
+        if (mode === "reader" && currentNodeId === parent.id) renderMarginNotes();
       } else if (mode === "reader"){
         var rdc = readerMain.querySelector('.doc-content[data-node-id="' + parent.id + '"]');
         wrapInContainer(rdc, anchor, childId, "hl mark-pending");
-        if (currentNodeId === parent.id) renderSidebar();
+        if (currentNodeId === parent.id) renderMarginNotes();
       }
       if (parent.bodyEl && !isPdfRegion){ wrapInContainer(parent.bodyEl.querySelector(".doc-content"), anchor, childId, "hl mark-pending"); scheduleEdges(); }
       revealNode(node, source);
-      refreshAmbient();
     }
 
     var sel = window.getSelection(); if (sel) sel.removeAllRanges();
@@ -394,7 +392,7 @@ export function sendFollowup(parent, question, lens, synthesis){
     retirePdfConversionAction(parent);
     if (canvasBuilt){ createNodeEl(node, true); renderVisibility(); drawEdges(); }
     if (currentNodeId === parent.id && mode === "reader"){
-      if (synthesis) renderSidebar();
+      if (synthesis) renderMarginNotes();
       else {
         var t = ensureThread();
         if (t) t.appendChild(buildThreadItem(node));
@@ -406,7 +404,6 @@ export function sendFollowup(parent, question, lens, synthesis){
            position: { x: node.x, y: node.y }, size: { w: node.w, h: node.h } };
     if (synthesis) payload.synthesis = true;
     askLifecycle.hooks.post(payload).then(function(res){ if (!res || !res.ok) rollbackBranch(node); });
-    refreshAmbient();
     return node;
   }
 
@@ -471,8 +468,7 @@ function rollbackBranch(node){
     if (!live || live.status === "answered") return;
     teardownNode(node.id);
     if (canvasBuilt) drawEdges();
-    if (mode === "reader" && currentNodeId === node.parent_id) renderSidebar();
-    refreshAmbient();
+    if (mode === "reader" && currentNodeId === node.parent_id) renderMarginNotes();
     flashHint("Couldn't reach the agent — that ask was undone.");
   }
 

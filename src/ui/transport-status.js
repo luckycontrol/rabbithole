@@ -13,29 +13,24 @@ import {
   hydration,
   incrementSseFails,
   isFollowup,
-  isUnread,
-  markRead,
   mode,
   nextOrder,
   nodes,
   readerMain,
   registerNode,
-  refreshAmbient,
   resetSseFails,
   setAgentAttached,
   setAgentReason,
   setClosedState,
   setConnLost,
   sessionPhase,
-  sideEl,
-  updateSince,
   view,
   viewAdjusted
 } from "./core.js";
 import {
   renderBreadcrumb,
   renderReaderBody,
-  renderSidebar,
+  renderMarginNotes,
   updateThreadItem
 } from "./reader.js";
 import { upgradeMarks, wrapInContainer } from "./text-marks.js";
@@ -275,12 +270,12 @@ function renderStreamSurfaces(node, firstChunk){
     } else if (currentNodeId === node.parent_id){
       if (isFollowup(node)){ updateThreadItem(node); readerMain.scrollTop = keep; }
       else {
-        // The branch streams live inside its sidebar tile: the first chunk
-        // rebuilds the tile (Thinking… → Writing… + the live pane), later
+        // The branch streams live inside its margin note: the first chunk
+        // rebuilds the note (Thinking… → Writing… + the live pane), later
         // chunks just repaint the pane.
-	        var live = sideEl.querySelector('.side-item[data-child="' + node.id + '"] .si-live .md');
-	        if (live && !firstChunk) live.innerHTML = node.html || "";
-        else renderSidebar();
+        var live = readerMain.querySelector('#margin-notes .side-item[data-child="' + node.id + '"] .si-live .md');
+        if (live && !firstChunk) live.innerHTML = node.html || "";
+        else renderMarginNotes();
       }
     }
   }
@@ -323,23 +318,20 @@ function handleServer(msg){
       updateCardComposer(node);
       if (mode === "reader"){
         // The answered node itself may be open (e.g. opened pending from canvas).
-        if (currentNodeId === node.id){ renderBreadcrumb(); renderReaderBody(); renderSidebar(); updateComposerState(); markRead(node); }
+        if (currentNodeId === node.id){ renderBreadcrumb(); renderReaderBody(); renderMarginNotes(); updateComposerState(); }
         else {
           // The parent doc may be on screen as the main document OR as a
           // follow-up answer in the thread — upgrade marks wherever they are.
           upgradeMarks(readerMain, node.id);
           if (currentNodeId === node.parent_id){
-            if (isFollowup(node)){ updateThreadItem(node); markRead(node); } // you watched it land
-            else renderSidebar();
+            if (isFollowup(node)) updateThreadItem(node);
+            else renderMarginNotes();
           }
         }
       }
       // Upgrade the inline mark inside the parent's canvas card too.
       var p = nodes[node.parent_id];
       if (p && p.bodyEl) upgradeMarks(p.bodyEl, node.id);
-      if (isUnread(node) && node.el) node.el.classList.add("unread");
-      refreshAmbient();
-      updateSince();
     } else if (msg.type === "node_deleted"){
       // Another surface (or a replayed event) removed a branch — mirror it.
       removeNodesLocal(msg.node_ids || [], null);
@@ -390,10 +382,9 @@ function handleServer(msg){
           if (currentNodeId === en.id){ renderReaderBody(); updateComposerState(); }
           else if (currentNodeId === en.parent_id){
             if (isFollowup(en)) updateThreadItem(en);
-            else renderSidebar();
+            else renderMarginNotes();
           }
         }
-        refreshAmbient();
       }
     } else if (msg.type === "agent_status"){
       setAgentAttached(!!msg.attached);
@@ -458,7 +449,7 @@ export function refreshStatus(){
       clearBanner();
       bannerDismissed = {};
     }
-    if (mode === "reader") renderSidebar();
+    if (mode === "reader") renderMarginNotes();
     updateComposerState();
     if (canvasBuilt) for (var cid in nodes) updateCardComposer(nodes[cid]);
   }

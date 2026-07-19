@@ -35,17 +35,6 @@ body {
 .tool-btn:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 .tool-btn svg { display: block; width: 16px; height: 16px; flex-shrink: 0; }
 
-/* ---------- ambient activity chip ----------
-   One quiet pill in each view's bar while answers are being written. Clicking
-   it opens the latest pending answer so live work is easy to find. */
-.activity { display: none; align-items: center; gap: var(--control-gap); font-family: var(--font-ui); font-size: var(--text-ui); font-weight: var(--weight-medium);
-  color: var(--fg-dim); background: none; border: 1px solid transparent; border-radius: var(--radius-pill); padding: var(--space-1) var(--space-6); cursor: pointer; white-space: nowrap;
-  transition: var(--transition-color); }
-.activity.on { display: inline-flex; }
-.activity .act-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
-.activity.writing .act-dot { animation: caret-breathe 1.15s ease-in-out infinite; }
-.activity:hover { color: var(--fg-bold); background: var(--hl); }
-body.agent-down .activity.writing { display: none; }
 /* One send button everywhere a question leaves the page: neutral while there's
    nothing to send, accent the moment there is. */
 .send-btn { width: var(--control-h-sm); height: var(--control-h-sm); border-radius: var(--radius-pill); border: none; flex-shrink: 0; padding: 0; display: flex; align-items: center; justify-content: center; cursor: pointer;
@@ -140,7 +129,7 @@ html[data-theme="dark"] .rh-lightbox-img { padding: 8px; background: #f4f4f1; bo
 .doc-content mark.mark-ready { border-bottom: 2px solid color-mix(in srgb, var(--accent) 60%, transparent); }
 .doc-content mark.mark-ready:hover, .doc-content mark.mark-pending:hover, .doc-content mark.mark-focus { background: var(--hl-strong); border-bottom-color: var(--accent); }
 .doc-content mark.hl:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
-/* Landing flash when a jump (FROM strip, ⌘K, activity chip) brings you to a mark. */
+/* Landing flash when a jump (FROM strip, ⌘K) brings you to a mark. */
 .doc-content mark.mark-flash::after { opacity: 1; }
 
 /* ---------- loading (pending answers) ---------- */
@@ -179,7 +168,7 @@ body.agent-down .stream-caret, body.session-over .stream-caret { animation: none
 .stream-status { display: flex; align-items: baseline; gap: 9px; font-family: var(--font-ui); font-size: 12px; margin-top: 1em; }
 
 @media (prefers-reduced-motion: reduce) {
-  .loading-bunny, .stream-caret, .activity .act-dot { animation: none; }
+  .loading-bunny, .stream-caret { animation: none; }
   .math-pending::after, .viz-pending::after { animation: none; }
   .send-btn, .doc-content mark.hl::after, .composer-inner, .node-act-divider, .tool-icon, .node-btn.danger, .node-font-btn,
   .node${""}::after, .node.node-enter, .nc-handle, .nc-inner, #ask, #sharemenu, #confirm { transition: none !important; }
@@ -188,28 +177,18 @@ body.agent-down .stream-caret, body.session-over .stream-caret { animation: none
 }
 
 /* ---------- READER ---------- */
-#reader { position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--bg); z-index: 5; }
+/* The taskbar floats above; the reader clears it with top padding. */
+#reader { position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--bg); z-index: 5; padding-top: var(--taskbar-clear); }
 body.mode-canvas #reader { display: none; }
-#reader-top { display: flex; align-items: center; gap: 6px; padding: 9px 16px; border-bottom: 1px solid var(--border); background: var(--bar-bg); flex-shrink: 0; }
-#breadcrumb { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; font-size: 12.5px; }
+/* The lineage trail lives at the top of the document column and scrolls with it. */
+#breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-family: var(--font-ui); font-size: 12.5px; margin-bottom: 22px; }
+#breadcrumb:has(.crumb:only-child) { display: none; }
 .crumb { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; color: var(--fg-dim); cursor: pointer; }
 .crumb:hover { color: var(--fg-bold); }
 .crumb.current { color: var(--fg-bold); font-weight: 600; cursor: default; }
 .crumb-sep { color: var(--fg-faint); flex-shrink: 0; }
-/* "Since you left" — shown once on re-entry when answers arrived while away. */
-#since { display: none; align-items: center; gap: 10px; padding: 7px 16px; font-family: var(--font-ui); font-size: 12px;
-  color: var(--fg); border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--accent) 5%, var(--bar-bg)); flex-shrink: 0; }
-#since.visible { display: flex; }
-#since .since-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
-#since .since-msg { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#since .tool-btn { font-size: 12px; color: var(--accent); font-weight: 500; }
-#since .tool-btn:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); }
-#since-x { background: none; border: none; color: var(--fg-faint); cursor: pointer; font-size: 13px; line-height: 1; padding: 2px 4px; border-radius: 4px; }
-#since-x:hover { color: var(--fg-bold); }
-#reader-cols { flex: 1; display: flex; min-height: 0; }
-#reader-center { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-#reader-main { flex: 1; overflow: auto; padding: 40px 48px 28px; overscroll-behavior: contain; scrollbar-gutter: stable; }
-.reader-col { max-width: 680px; margin: 0 auto; }
+#reader-main { flex: 1; min-height: 0; overflow: auto; padding: 40px 48px 28px; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.reader-col { position: relative; max-width: var(--reader-column); margin: 0 auto; }
 .reader-context { font-family: var(--font-ui); font-size: 12.5px; color: var(--fg-dim); border-left: 2px solid var(--border-focus); padding: 2px 0 2px 12px; margin-bottom: 26px; line-height: 1.55; }
 .reader-context .rc-label { color: var(--fg-faint); text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; margin-right: 6px; }
 /* The FROM strip is a live link back to the exact spot this branch grew from. */
@@ -217,18 +196,27 @@ body.mode-canvas #reader { display: none; }
 .reader-context.linked:hover { border-left-color: var(--accent); color: var(--fg); }
 .reader-context.linked:hover .rc-go { color: var(--accent); }
 .reader-context .rc-go { display: inline-block; color: var(--fg-faint); margin-left: 7px; transition: color 0.15s; }
-#reader-side { width: 300px; flex-shrink: 0; border-left: 1px solid var(--border); overflow: auto; overscroll-behavior: contain; padding: 16px 14px 50px; background: var(--bar-bg); }
-#reader-side h3 { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--fg-faint); margin-bottom: 12px; font-weight: 600; }
-.side-empty { font-size: 12px; color: var(--fg-faint); line-height: 1.7; }
-.side-item { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 9px; cursor: pointer; background: var(--node-bg); }
-.side-item:hover { border-color: var(--border-focus); }
-.side-item .si-q { font-size: 12.5px; color: var(--fg-bold); line-height: 1.45; display: flex; gap: 7px; }
-.si-num { color: var(--accent); font-weight: 600; flex-shrink: 0; font-variant-numeric: tabular-nums; }
-.si-quote { font-size: 10.5px; color: var(--fg-faint); font-style: italic; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ---------- margin notes ----------
+   Branches sit beside the text like document comments: each card hangs in the
+   right margin, top-aligned with the highlight it grew from (stacked apart when
+   they'd collide). No sidebar, no toggling — the margin appears whenever the
+   window is wide enough, and the inline marks carry narrow screens. */
+#margin-notes { display: none; position: absolute; top: 0; left: calc(100% + 36px);
+  width: min(250px, calc((100vw - var(--reader-column)) / 2 - 72px)); }
+@media (min-width: 1180px) { #margin-notes { display: block; } }
+.side-item { position: absolute; left: 0; width: 100%; border: 1px solid var(--border); border-radius: 10px;
+  padding: 9px 12px; cursor: pointer; background: var(--node-bg); font-family: var(--font-ui);
+  transition: border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard); }
+#margin-notes.settled .side-item { transition: border-color var(--duration-fast) var(--ease-standard),
+  box-shadow var(--duration-fast) var(--ease-standard), top var(--duration-enter) var(--ease-standard); }
+.side-item:hover { border-color: var(--border-focus); box-shadow: var(--shadow); }
+.side-item .si-q { font-size: 12px; color: var(--fg-bold); line-height: 1.45; }
+/* The highlight sits right beside the card, so the quote only appears on cards
+   that have no inline mark to point at (region branches, unmatched anchors). */
+.si-quote { display: none; font-size: 10.5px; color: var(--fg-faint); font-style: italic; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-item.unanchored .si-quote { display: block; }
 .si-status { font-size: 10.5px; color: var(--fg-dim); margin-top: 6px; }
 .si-muted { color: var(--fg-faint); }
-.si-new { color: var(--accent); font-weight: 600; }
-.si-new::before { content: ""; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); margin-right: 5px; vertical-align: 1px; }
 /* A pending branch streams its last lines live inside its sidebar tile — the
    answer is watchable from the moment the first words arrive. Bottom-aligned
    (the newest text) with the older text fading out at the top. */
@@ -260,6 +248,25 @@ body.mode-canvas #reader { display: none; }
 .composer-inner.disabled { opacity: 0.6; }
 #composer textarea { flex: 1; border: none; outline: none; resize: none; background: transparent; color: var(--fg); font-family: var(--font-ui); font-size: 13.5px; line-height: 1.5; max-height: 140px; padding: 4px 0; }
 #composer textarea::placeholder { color: var(--fg-faint); }
+
+/* Phones get a reader designed around one vertical reading surface: the inline
+   marks are the branch affordance, and the thread carries follow-ups. */
+@media (hover: none), (pointer: coarse), (max-width: 760px) {
+  #reader { height: 100dvh; min-height: -webkit-fill-available; overflow: hidden; }
+  .crumb { max-width: min(72vw, 280px); }
+  #reader-main { min-width: 0; overflow-x: hidden; overflow-y: auto; padding: 24px max(18px, env(safe-area-inset-right)) 28px max(18px, env(safe-area-inset-left));
+    overscroll-behavior-y: contain; scrollbar-gutter: auto; touch-action: pan-y pinch-zoom; -webkit-overflow-scrolling: touch; }
+  .reader-col { width: 100%; max-width: none; }
+  #margin-notes { display: none; }
+  .reader-context { margin-bottom: 20px; overflow-wrap: anywhere; }
+  .turn-q > span { max-width: 92%; }
+  .rh-origin-crop { max-width: 100%; }
+  #composer { padding: 8px max(12px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+    overflow: hidden; scrollbar-gutter: auto; }
+  .composer-inner { width: 100%; padding: 6px 6px 6px 12px; }
+  #composer textarea { min-height: 32px; font-size: 16px; line-height: 1.4; }
+  #composer .send-btn { width: 44px; height: 44px; }
+}
 
 /* ---------- CANVAS ---------- */
 #viewport { position: fixed; inset: 0; overflow: hidden; cursor: grab; display: none; touch-action: none;
@@ -309,9 +316,7 @@ body.mode-canvas #viewport { display: block; }
 .node.collapsed .node-body, .node.collapsed .node-resize, .node.collapsed .node-composer { display: none; }
 .node.collapsed { height: auto !important; }
 .node.collapsed .node-head { border-radius: var(--radius-card); border-bottom: none; }
-/* Unread answers wear a small accent dot until first opened. */
-.node.unread .node-title::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-right: 6px; vertical-align: 1px; }
-/* Landing flash when ⌘K / the activity chip jumps the canvas to a card. */
+/* Landing flash when ⌘K jumps the canvas to a card. */
 .node.flash::after { opacity: 1; }
 
 /* Follow-ups live in a drawer tucked under each card. Hovering the card makes a
@@ -360,22 +365,49 @@ body.mode-canvas #viewport { display: block; }
 .rh-origin-crop-reader { margin-bottom: 24px; }
 .rh-origin-crop-reader img { max-height: 260px; }
 
-#toolbar { position: fixed; top: 14px; left: 14px; z-index: 50; display: none; align-items: center; gap: var(--space-3); background: var(--bar-bg); border: 1px solid var(--border); border-radius: 10px; padding: 7px 10px; box-shadow: var(--shadow); }
-body.mode-canvas #toolbar { display: flex; }
-#toolbar .sep { width: 1px; height: 18px; background: var(--border); }
+/* ---------- taskbar — the one persistent chrome row shared by both modes ----
+   Floating pills on a pass-through row: tools on the left; share · theme ·
+   settings and a separate Done pill pinned top right. Each mode's group leads
+   with the button that takes you to the other mode, so the switch reads as an
+   action ("Canvas" / "Reader"), never as state. */
+:root { --taskbar-clear: 62px; }
+#taskbar { position: fixed; top: 14px; left: 14px; right: 14px; z-index: 50; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; pointer-events: none; }
+#tb-session { display: flex; align-items: flex-start; gap: 10px; }
+.tb-pill { display: flex; align-items: center; gap: var(--space-3); pointer-events: auto; background: var(--bar-bg); border: 1px solid var(--border); border-radius: 10px; padding: 7px 10px; box-shadow: var(--shadow); }
+/* One control height for everything in the bar — icon or text, every button
+   sits on the same 24px line, so the pills all read as one height. */
+.tb-pill .tool-btn { height: var(--control-h-xs); padding-block: 0; font-size: var(--text-ui); }
+.tb-pill .tool-icon { width: var(--control-h-xs); padding: 0; }
+/* Done sits alone in its pill, so the pill is the button: hover reads on the
+   pill edge, never as a highlight box inside a box. */
+#tb-done-pill { transition: border-color var(--duration-fast) var(--ease-standard); }
+#tb-done-pill:hover { border-color: var(--border-focus); }
+#tb-done-pill .tool-btn:hover { background: none; }
+.tb-pill .sep { width: 1px; height: 18px; background: var(--border); flex-shrink: 0; }
+.tb-group { display: contents; }
+body.mode-canvas .tb-group[data-mode="reader"] { display: none; }
+body:not(.mode-canvas) .tb-group[data-mode="canvas"] { display: none; }
 .zoom-controls { display: inline-flex; align-items: center; gap: 1px; margin-inline: -2px; }
 .zoom-controls .tool-icon { width: var(--control-h-xs); height: var(--control-h-xs); }
 #t-new svg { transform: scale(1.08); }
 #zoom-label { height: 24px; min-width: 40px; padding: 0 4px; font-size: 11px; color: var(--fg-faint); text-align: center; font-variant-numeric: tabular-nums; }
 @media (hover: none), (pointer: coarse), (max-width: 760px) {
-  #toolbar { top: max(8px, env(safe-area-inset-top));
-    left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); max-width: none;
-    gap: 2px; padding: 5px 6px; overflow-x: auto; overscroll-behavior-x: contain;
+  :root { --taskbar-clear: calc(max(8px, env(safe-area-inset-top)) + 62px); }
+  /* The row collapses into a single scrollable bar; the session cluster stays
+     sticky at the right edge so Done never scrolls out of reach. */
+  #taskbar { top: max(8px, env(safe-area-inset-top));
+    left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right));
+    gap: 2px; align-items: center; justify-content: flex-start; pointer-events: auto;
+    background: var(--bar-bg); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: var(--shadow); padding: 5px 6px; overflow-x: auto; overscroll-behavior-x: contain;
     touch-action: pan-x; scrollbar-width: none; }
-  #toolbar::-webkit-scrollbar { display: none; }
-  #toolbar > .tool-icon, .zoom-controls .tool-icon { width: 44px; height: 44px; }
+  #taskbar::-webkit-scrollbar { display: none; }
+  .tb-pill { background: none; border: none; box-shadow: none; padding: 0; border-radius: 0; gap: 2px; flex: 0 0 auto; }
+  #tb-session { position: sticky; right: 0; margin-left: auto; align-items: center; gap: 2px; background: var(--bar-bg); padding-left: 4px; }
+  .tb-pill .tool-icon, .zoom-controls .tool-icon { width: 44px; height: 44px; }
+  .tb-pill .tool-btn { min-width: 44px; min-height: 44px; flex: 0 0 auto; }
   #zoom-label { height: 44px; min-width: 52px; padding-inline: 6px; font-size: 12px; }
-  #toolbar .sep { height: 24px; flex: 0 0 1px; }
+  .tb-pill .sep { height: 24px; flex: 0 0 1px; }
 }
 
 /* ---------- ask popup — a small command palette for the selection ----------
@@ -444,7 +476,6 @@ body.mode-canvas #toolbar { display: flex; }
 .pal-t { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; color: var(--fg-bold); min-width: 0; }
 .pal-t .pal-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .pal-kbd { margin-left: auto; line-height: 1.4; flex-shrink: 0; }
-.pal-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
 .pal-t .lens-badge { flex-shrink: 0; }
 .pal-t .pal-writing { flex-shrink: 0; font-size: 10.5px; color: var(--accent); font-weight: 500; }
 .pal-s { font-size: 11.5px; color: var(--fg-dim); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -480,7 +511,7 @@ body.mode-canvas #toolbar { display: flex; }
 #confirm button.cf-remove:hover { filter: brightness(1.08); color: var(--accent-contrast); }
 
 /* ---------- frozen (exported snapshot) ---------- */
-body.frozen #r-done, body.frozen .activity, body.frozen .nc-handle, body.frozen #since, body.frozen .node-btn.danger { display: none !important; }
+body.frozen #tb-done-pill, body.frozen .nc-handle, body.frozen .node-btn.danger { display: none !important; }
 body.frozen .ll-closed { display: none !important; }
 body.frozen.session-over .ll-frozen { display: inline; }
 .ll-frozen { display: none; color: var(--fg-faint); font-weight: 500; }

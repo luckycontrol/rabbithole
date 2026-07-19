@@ -15,7 +15,7 @@ import { syncPdfTranscriptionControls } from "../ui/pdf-view.js";
 import { openDialog } from "../ui/primitives/dialog.js";
 import { openPopover } from "../ui/primitives/popover.js";
 import { buttonMarkup, iconButtonMarkup } from "../core/html/button-markup.js";
-import { BUNNY_MARK_SVG } from "../core/html/bunny-markup.js";
+import { BUNNY_MARK_SVG, iconSvg } from "../core/html/icons.js";
 import { escapeHtml } from "../core/utils.js";
 import { wireNotice } from "../ui/primitives/notice.js";
 import { setSnapshotHooks, buildSnapshotProjection, buildSnapshotHtml } from "../ui/snapshot.js";
@@ -25,12 +25,13 @@ import { isSubmitEnter } from "../ui/input-intent.js";
 import { openUrlToStoredHole } from "./ingest/url.js";
 import { buildRabbitholeExport, downloadRabbitholeExport, importRabbitholeFile, importSnapshotFile, rabbitholeFilename } from "./portable.js";
 import { createWhimsicalHoleId, holeIdFromPathname, pathnameForHole } from "./hole-id.js";
+import { getMermaidSource, loadMermaidRuntime } from "./mermaid-runtime.js";
 
 const LAST_HOLE_KEY = "rh-last-hole";
 const GITHUB_REPO_API_URL = "https://api.github.com/repos/shlokkhemani/rabbithole";
 const GITHUB_STARS_CACHE_KEY = "rh-github-stars-v1";
 const GITHUB_STARS_CACHE_TTL = 6 * 60 * 60 * 1000;
-const TOOLBAR_BUNNY_MARK_SVG = BUNNY_MARK_SVG.replace("<svg ", '<svg width="16" height="16" ');
+const TOOLBAR_BUNNY_MARK_SVG = iconSvg("bunny", { size: 16 });
 
 const store = new IdbStore();
 let currentHost = null;
@@ -99,18 +100,23 @@ function renderShell() {
           </header>
           <div class="composer-paths" role="group" aria-label="Choose how to begin">
             <button class="composer-path" id="composer-path-ask" type="button" data-path="ask">
-              <span class="composer-path-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 18 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M5.25 6.6A3.75 3.75 0 0 1 9 3a3.5 3.5 0 0 1 3.75 3.35c0 2.25-2.35 2.65-3.2 4.05-.25.4-.3.75-.3 1.1"/><path d="M9.25 14.5h.01"/></svg></span>
-              <span class="composer-path-copy"><strong>Ask a question</strong><small>Start with something you want to understand.</small></span>
+              <span class="composer-path-icon" aria-hidden="true">${iconSvg("question")}</span>
+              <span class="composer-path-copy"><strong>Ask a question</strong><small>Begin with something you want to understand.</small></span>
               <span class="composer-path-arrow" aria-hidden="true">→</span>
             </button>
             <button class="composer-path" id="composer-path-file" type="button" data-path="file">
-              <span class="composer-path-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 18 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M5 2.75h5l3 3v9.5H5z"/><path d="M10 2.75v3h3"/><path d="M7.25 9h3.5M7.25 11.75h3.5"/></svg></span>
-              <span class="composer-path-copy"><strong>Open PDF or Markdown</strong><small>Bring in a document from your device.</small></span>
+              <span class="composer-path-icon" aria-hidden="true">${iconSvg("file")}</span>
+              <span class="composer-path-copy"><strong>Open a document</strong><small>Bring in a PDF or Markdown file from your device.</small></span>
+              <span class="composer-path-arrow" aria-hidden="true">→</span>
+            </button>
+            <button class="composer-path" id="composer-path-paste" type="button" data-path="paste">
+              <span class="composer-path-icon" aria-hidden="true">${iconSvg("paste")}</span>
+              <span class="composer-path-copy"><strong>Paste text or Markdown</strong><small>Start from your clipboard.</small></span>
               <span class="composer-path-arrow" aria-hidden="true">→</span>
             </button>
             <button class="composer-path" id="composer-path-url" type="button" data-path="url">
-              <span class="composer-path-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 18 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="m7.15 10.85 3.7-3.7"/><path d="M6.05 12.95 4.9 14.1a2.85 2.85 0 0 1-4-4L3.8 7.2a2.85 2.85 0 0 1 4 0" transform="translate(2 0)"/><path d="m9.95 5.05 1.15-1.15a2.85 2.85 0 0 1 4 4l-2.9 2.9a2.85 2.85 0 0 1-4 0"/></svg></span>
-              <span class="composer-path-copy"><strong>Add a link</strong><small>Open an article or paper from the web.</small></span>
+              <span class="composer-path-icon" aria-hidden="true">${iconSvg("link")}</span>
+              <span class="composer-path-copy"><strong>Open a link</strong><small>Start from an article, paper, or webpage.</small></span>
               <span class="composer-path-arrow" aria-hidden="true">→</span>
             </button>
           </div>
@@ -132,7 +138,7 @@ function renderShell() {
     </div>
     <div id="blank-start" class="blank-start" hidden>
       <span id="blank-start-new-wrap" class="blank-start-new-wrap">
-        ${buttonMarkup({ bare: true, id: "blank-start-new", className: "blank-start-new", label: "New Rabbithole", kbdHint: "N", svgIconHtml: '<svg width="14" height="14" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none" aria-hidden="true"><path d="M8 3.25v9.5"/><path d="M3.25 8h9.5"/></svg>' })}
+        ${buttonMarkup({ bare: true, id: "blank-start-new", className: "blank-start-new", label: "New Rabbithole", kbdHint: "N", svgIconHtml: iconSvg("plus") })}
         <span id="blank-start-status" class="blank-start-tooltip" role="tooltip">Set up AI before starting a Rabbithole.</span>
       </span>
       ${buttonMarkup({ bare: true, id: "blank-start-setup", className: "blank-start-setup", label: "Set up AI" })}
@@ -148,7 +154,7 @@ function renderShell() {
     </nav>
     <div id="web-toast" class="web-toast"><span data-notice-message></span>${buttonMarkup({ bare: true, label: "Action", hidden: true, dataAttrs: { noticeAction: "" } })}</div>`;
   toastNotice = wireNotice(document.getElementById("web-toast"), { variant: "toast" });
-  document.getElementById("toolbar")?.insertAdjacentHTML("afterbegin",
+  document.getElementById("tb-tools")?.insertAdjacentHTML("afterbegin",
     `${iconButtonMarkup({ className: "toolbar-brand", id: "t-project", title: "About Rabbithole and project links", ariaLabel: "Rabbithole project menu", ariaHaspopup: "menu", ariaControls: "project-menu", ariaExpanded: "false", svgIconHtml: TOOLBAR_BUNNY_MARK_SVG })}<span class="sep toolbar-brand-sep"></span>`);
   railOpen = false;
   applyRailState();
@@ -217,7 +223,12 @@ function initAppChrome() {
     validateKey: validateKeyForPreset,
     openOllamaRecovery: ({ settings, trigger }) => ollamaRecoveryController.open({ settings, trigger }),
   });
-  settingsTrigger?.addEventListener("click", () => settingsController.open());
+  // The gear toggles: the layer stack ignores pointerdown on its own trigger,
+  // so a second click reaches us with the popover still open — close it.
+  settingsTrigger?.addEventListener("click", () => {
+    if (settingsController.isOpen()) settingsController.close();
+    else settingsController.open();
+  });
   document.getElementById("blank-start-new")?.addEventListener("click", (event) => requestNewRabbithole({ source: "button", trigger: event.currentTarget }));
   document.getElementById("blank-start-setup")?.addEventListener("click", (event) => openModelSetup({ trigger: event.currentTarget }));
   syncGenerationSetupUi();
@@ -375,10 +386,11 @@ function initComposer() {
   const fileInput = document.getElementById("file-md");
 
   input.addEventListener("input", () => {
-    autoGrowTextarea(input, 240);
+    autoGrowTextarea(input, composerInputMaxHeight());
   });
   input.addEventListener("keydown", (event) => {
-    if (isSubmitEnter(event)) {
+    const submitPaste = composerPath === "paste" && isSubmitEnter(event) && (event.metaKey || event.ctrlKey);
+    if (submitPaste || (composerPath !== "paste" && isSubmitEnter(event))) {
       event.preventDefault();
       runComposer();
     }
@@ -386,6 +398,7 @@ function initComposer() {
   primary.addEventListener("click", runComposer);
   document.getElementById("composer-back").addEventListener("click", showComposerStart);
   document.getElementById("composer-path-ask").addEventListener("click", () => selectComposerPath("ask"));
+  document.getElementById("composer-path-paste").addEventListener("click", () => selectComposerPath("paste"));
   document.getElementById("composer-path-url").addEventListener("click", () => selectComposerPath("url"));
   document.getElementById("composer-path-file").addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", async () => {
@@ -482,10 +495,11 @@ function openComposer({ source = "button", value = "", trigger } = {}) {
 
   composerPath = "";
   setIngestStatus("");
+  card.removeAttribute("data-path");
   document.getElementById("composer-start").hidden = false;
   document.getElementById("composer-entry").hidden = true;
   input.value = value;
-  autoGrowTextarea(input, 240);
+  autoGrowTextarea(input, composerInputMaxHeight());
   document.getElementById("blank-start").hidden = true;
   if (value) selectComposerPath(isSingleHttpUrl(value) ? "url" : "ask", { value });
   composerDialog?.close("programmatic", { restoreFocus: false });
@@ -510,23 +524,42 @@ function finishClosingComposer() {
 }
 
 function selectComposerPath(path, { value = "" } = {}) {
-  if (path !== "ask" && path !== "url") return;
+  const config = {
+    ask: {
+      title: "Ask a question",
+      copy: "What would you like to understand?",
+      placeholder: "Ask anything…",
+      primary: "Start exploring",
+    },
+    paste: {
+      title: "Paste text or Markdown",
+      copy: "Paste anything you want to explore. We’ll keep the Markdown intact.",
+      placeholder: "Paste text or Markdown here…",
+      primary: "Open in Rabbithole",
+    },
+    url: {
+      title: "Open a link",
+      copy: "Paste a link to an article, paper, or webpage. arXiv works especially well.",
+      placeholder: "https://…",
+      primary: "Open in Rabbithole",
+    },
+  }[path];
+  if (!config) return;
   composerPath = path;
   const input = document.getElementById("composer-input");
-  const isAsk = path === "ask";
   document.getElementById("composer-start").hidden = true;
   document.getElementById("composer-entry").hidden = false;
   document.getElementById("composer-card").dataset.path = path;
-  document.getElementById("composer-entry-title").textContent = isAsk ? "Ask a question" : "Add a link";
-  document.getElementById("composer-entry-copy").textContent = isAsk
-    ? "What would you like to understand?"
-    : "Paste a link to a paper or article. arXiv links work best.";
-  input.placeholder = isAsk ? "Type your question…" : "https://…";
-  input.spellcheck = isAsk;
+  document.getElementById("composer-entry-title").textContent = config.title;
+  document.getElementById("composer-entry-copy").textContent = config.copy;
+  input.placeholder = config.placeholder;
+  input.spellcheck = path !== "url";
   input.value = value;
-  document.getElementById("composer-primary").textContent = isAsk ? "Start exploring" : "Open link";
-  document.getElementById("composer-primary").title = "Submit (Enter) · New line (Shift+Enter)";
-  autoGrowTextarea(input, 240);
+  document.getElementById("composer-primary").textContent = config.primary;
+  document.getElementById("composer-primary").title = path === "paste"
+    ? "Create (Ctrl/⌘+Enter)"
+    : "Submit (Enter) · New line (Shift+Enter)";
+  autoGrowTextarea(input, composerInputMaxHeight());
   input.focus({ preventScroll: true });
 }
 
@@ -545,10 +578,11 @@ async function runComposer() {
   const value = input.value.trim();
   if (composerPath === "url") return createFromUrl(value);
   if (composerPath === "ask") return createFromAsk(value);
+  if (composerPath === "paste") return createFromComposerDocument(input.value);
 }
 
 async function createFromComposerDocument(markdown, { improveStructure = false } = {}) {
-  if (!markdown) {
+  if (!String(markdown || "").trim()) {
     setIngestStatus("Paste a document first.", "error");
     return;
   }
@@ -747,6 +781,7 @@ async function mountHole(hole, { replace = false } = {}) {
     },
     getFrozenClientSource: () => window.__RABBITHOLE_FROZEN_CLIENT__ || "",
     getDompurifySource: () => window.__RABBITHOLE_DOMPURIFY_SOURCE__ || "",
+    getMermaidSource,
     getStylesheetText: () => window.__RABBITHOLE_FROZEN_STYLES__ || "",
   });
 
@@ -783,9 +818,10 @@ async function mountHole(hole, { replace = false } = {}) {
     currentUi = startRabbithole(hydration, {
       transport: host.adapter(),
       exportPortable: exportCurrentRabbithole,
+      loadMermaid: loadMermaidRuntime,
       getPdfTranscriptionCapability: () => currentPdfTranscriptionCapability,
     });
-    document.getElementById("r-canvas")?.click();
+    document.getElementById("t-canvas")?.click();
     const isNewRailItem = !railSummaries?.some((summary) => summary.hole_id === hole.hole_id);
     await renderRail({ refresh: isNewRailItem, firstHoleId: isNewRailItem ? hole.hole_id : null });
     host.startRootAnswer();
@@ -829,7 +865,6 @@ function resetHoleSurface() {
     world.style.transform = "";
   }
   document.getElementById("reader-main")?.replaceChildren();
-  document.getElementById("reader-side")?.replaceChildren();
   document.getElementById("breadcrumb")?.replaceChildren();
 }
 
@@ -891,13 +926,10 @@ async function renderRail({ refresh = true, firstHoleId = null } = {}) {
   applyRailState();
 }
 
-function createRailIconButton(className, label, paths) {
+function createRailIconButton(className, label, iconName) {
   const button = document.createElement("button");
   button.className = `rail-icon ${className}`; button.type = "button"; button.setAttribute("aria-label", label);
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  for (const [name, value] of Object.entries({ width: "16", height: "16", viewBox: "0 0 16 16", stroke: "currentColor", "stroke-width": "1.5", "stroke-linecap": "round", "stroke-linejoin": "round", fill: "none", "aria-hidden": "true" })) svg.setAttribute(name, value);
-  for (const d of paths) { const path = document.createElementNS(svg.namespaceURI, "path"); path.setAttribute("d", d); svg.appendChild(path); }
-  button.appendChild(svg);
+  button.innerHTML = iconSvg(iconName);
   return button;
 }
 
@@ -907,7 +939,7 @@ function createRailRow(holeId) {
   const copy = document.createElement("span"); copy.className = "rail-row-copy";
   const title = document.createElement("span"); title.className = "rail-title"; copy.appendChild(title); open.appendChild(copy);
   const actions = document.createElement("span"); actions.className = "rail-actions";
-  actions.append(createRailIconButton("rail-delete", "Delete", ["M3.25 4.5h9.5", "M6.25 2.75h3.5", "M4.75 4.5l.6 8h5.3l.6-8"]));
+  actions.append(createRailIconButton("rail-delete", "Delete", "delete"));
   row.append(open, actions);
   return row;
 }
@@ -966,7 +998,7 @@ function toggleRail() {
 
 function syncRailPosition() {
   const rail = document.getElementById("web-rail");
-  const toolbar = document.getElementById("toolbar");
+  const toolbar = document.getElementById("tb-tools");
   if (!rail || !toolbar) return;
   rail.style.setProperty("--rail-top", `${toolbar.getBoundingClientRect().bottom + 14}px`);
 }
@@ -989,9 +1021,7 @@ function applyRailState() {
 }
 
 function eyeSvg(open) {
-  return open
-    ? `<svg width="14" height="14" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M1.9 8S4.2 3.8 8 3.8 14.1 8 14.1 8 11.8 12.2 8 12.2 1.9 8 1.9 8Z"/><circle cx="8" cy="8" r="1.9"/><path d="m3.2 2.6 9.6 10.8"/></svg>`
-    : `<svg width="14" height="14" viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><path d="M1.9 8S4.2 3.8 8 3.8 14.1 8 14.1 8 11.8 12.2 8 12.2 1.9 8 1.9 8Z"/><circle cx="8" cy="8" r="1.9"/></svg>`;
+  return iconSvg(open ? "eye-off" : "eye");
 }
 
 function refreshCurrentBrain(settings = loadSettings()) {
@@ -1192,6 +1222,10 @@ function autoGrowTextarea(textarea, maxHeight) {
   textarea.style.height = "auto";
   textarea.style.height = `${Math.min(maxHeight, textarea.scrollHeight)}px`;
   textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
+}
+
+function composerInputMaxHeight() {
+  return composerPath === "paste" ? 360 : 240;
 }
 
 function isEditableTarget(target) {

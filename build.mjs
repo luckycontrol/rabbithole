@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
 import { CANVAS_STYLES } from "./src/core/html/styles.js";
-import { BUNNY_MARK_SHAPES } from "./src/core/html/bunny-markup.js";
+import { faviconSvg } from "./src/core/html/icons.js";
 
 const require = createRequire(import.meta.url);
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
@@ -58,6 +58,7 @@ await esbuild.build({
 
 await fs.writeFile(path.join(absOutdir, "katex.css"), await buildKatexCss(), "utf8");
 await fs.writeFile(path.join(absOutdir, "dompurify.js"), await buildDompurifyScript(), "utf8");
+await fs.writeFile(path.join(absOutdir, "mermaid.js"), await buildMermaidScript(), "utf8");
 
 if (!parsed.explicit) {
   await buildWebApp(absOutdir);
@@ -80,6 +81,13 @@ async function buildKatexCss() {
 async function buildDompurifyScript() {
   const scriptPath = require.resolve("dompurify/dist/purify.min.js");
   return (await fs.readFile(scriptPath, "utf8")).replace(/<\/script/gi, "<\\/script");
+}
+
+async function buildMermaidScript() {
+  const scriptPath = require.resolve("@mermaid-js/tiny/dist/mermaid.tiny.js");
+  return (await fs.readFile(scriptPath, "utf8"))
+    .replace(/[ \t]+$/gm, "")
+    .replace(/<\/script/gi, "<\\/script");
 }
 
 async function replaceAsync(source, regex, replacer) {
@@ -125,9 +133,10 @@ async function buildWebApp(assetDir) {
     logLevel: "silent"
   });
 
-  const [katexCss, dompurify, frozenClient, webCss] = await Promise.all([
+  const [katexCss, dompurify, mermaid, frozenClient, webCss] = await Promise.all([
     fs.readFile(path.join(assetDir, "katex.css"), "utf8"),
     fs.readFile(path.join(assetDir, "dompurify.js"), "utf8"),
+    fs.readFile(path.join(assetDir, "mermaid.js"), "utf8"),
     fs.readFile(path.join(assetDir, "frozen-client.js"), "utf8"),
     fs.readFile(path.join(rootDir, "src/web/styles.css"), "utf8"),
   ]);
@@ -135,7 +144,8 @@ async function buildWebApp(assetDir) {
 
   await fs.writeFile(path.join(webDist, "styles.css"), `${frozenStyles}\n${webCss}`, "utf8");
   await fs.writeFile(path.join(webDist, "dompurify.js"), dompurify, "utf8");
-  await fs.writeFile(path.join(webDist, "favicon.svg"), buildFaviconSvg(), "utf8");
+  await fs.writeFile(path.join(webDist, "mermaid.js"), mermaid, "utf8");
+  await fs.writeFile(path.join(webDist, "favicon.svg"), faviconSvg(), "utf8");
   await copyPdfAssets(webDist);
   await fs.writeFile(
     path.join(webDist, "frozen-source.js"),
@@ -235,14 +245,6 @@ function buildWebIndexHtml({ proxyOrigin = "" } = {}, assetVersion = "") {
 <script type="module" src="./app.js${assetQuery}"></script>
 </body>
 </html>`;
-}
-
-function buildFaviconSvg() {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#1a1918"/>
-  <g fill="#efece5">${BUNNY_MARK_SHAPES}
-  </g>
-</svg>`;
 }
 
 function safeJsString(value) {

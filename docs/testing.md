@@ -46,6 +46,9 @@ These tests should be fast and should avoid host orchestration.
 - `base-url.test.mjs` protects link and image URL resolution, unsafe URL rejection,
   GitHub image rewriting, frontmatter inference and precedence, child inheritance,
   and MCP `base_url` validation.
+- `icons.test.mjs` protects the canonical icon renderer, accessibility defaults,
+  size overrides, favicon generation, and the repository boundary that forbids
+  product-owned inline SVG geometry outside `src/core/html/icons.js`.
 - `reducer.test.mjs` is the shared document-engine conformance suite. Its reviewable
   cases live in `test/fixtures/reducer-goldens/cases.json` and run in Node and a
   browser. They cover branch creation, streaming ordering and retries, completion,
@@ -99,6 +102,9 @@ host adapters without owning the broad product journey.
 - `image-experience.test.mjs` covers Markdown image behavior, shared image controls
   and styles, and the real MCP Share action producing a canonical, portable,
   referenced-assets-only snapshot.
+- `mermaid-rendering.test.mjs` covers lazy hosted-app loading, self-contained MCP
+  rendering, strict sanitization, invalid-source fallback, theme-aware rerendering,
+  conditional runtime embedding, and zero-network offline snapshots.
 - `mcp-rearm.test.mjs` protects the keep-listening response, grace period, live
   reattachment, waiter cleanup, and exactly-once requeue of a saved pending ask.
 - `web-ingestion.test.mjs` protects local browser PDF ingestion, arXiv proxy
@@ -184,7 +190,7 @@ Keep the unsupported-input failure mode as carefully tested as the happy path.
 ## Fixtures and test support
 
 - `test/fixtures/corpus/` contains curated portable files for empty, math-heavy,
-  visual-block, asset-bearing, deep and wide, pending, Unicode, RTL,
+  visual-block, Mermaid, asset-bearing, deep and wide, pending, Unicode, RTL,
   code-fence, base-URL, view-state, origin, and mixed-status documents. Its README
   records the purpose of each fixture.
 - `test/fixtures/reducer-goldens/cases.json` is the reviewable state/effect corpus
