@@ -231,6 +231,9 @@ body.mode-canvas #reader { display: none; }
 .reader-context.linked:hover { border-left-color: var(--accent); color: var(--fg); }
 .reader-context.linked:hover .rc-go { color: var(--accent); }
 .reader-context .rc-go { display: inline-block; color: var(--fg-faint); margin-left: 7px; transition: color 0.15s; }
+.crumb.current:has(.reader-answer-title-input) { display: inline-flex; max-width: min(100%, 520px); }
+.reader-answer-title-input { width: min(100%, 520px); min-width: 0; padding: 1px 3px 3px; color: inherit; background: transparent; border: 0; border-bottom: 1px solid var(--accent); border-radius: 0; outline: none; font: inherit; font-weight: inherit; }
+.reader-answer-title-input:focus { box-shadow: 0 2px 0 var(--accent); }
 .reader-answer-actions { display: flex; justify-content: flex-end; margin: -6px 0 14px; }
 .reader-answer-edit { appearance: none; display: inline-flex; min-height: 30px; align-items: center; justify-content: center; gap: 5px; padding: 0 9px;
   color: var(--fg-dim); background: transparent; border: 1px solid transparent; border-radius: var(--radius-control); cursor: pointer;
@@ -239,11 +242,11 @@ body.mode-canvas #reader { display: none; }
 .reader-answer-edit:hover { color: var(--fg-bold); background: var(--hl); border-color: color-mix(in srgb, var(--fg) 10%, transparent); }
 .reader-answer-edit:focus { outline: none; }
 .reader-answer-edit:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
-.reader-answer-editor { display: flex; min-height: min(460px, calc(100dvh - 210px)); flex-direction: column; overflow: hidden; border: 1px solid var(--accent); border-radius: var(--radius-card); background: var(--node-bg); box-shadow: var(--focus-field-shadow), var(--shadow-card); }
-.reader-answer-editor-head { flex: 0 0 auto; padding: 10px 14px; color: var(--fg-dim); background: var(--node-head); border-bottom: var(--border-default); font-family: var(--font-ui); font-size: 12px; font-weight: var(--weight-medium); }
-.reader-answer-editor-content { display: block; width: 100%; min-width: 0; min-height: 0; flex: 1 1 auto; box-sizing: border-box; padding: 14px 16px; resize: vertical; color: var(--fg); background: transparent; border: none; outline: none; font-family: var(--font-doc); font-size: var(--doc-size-reader); line-height: 1.6; }
+.reader-answer-editor { display: flex; min-height: 0; flex-direction: column; gap: 14px; }
+.reader-answer-editor-content { display: block; width: 100%; min-width: 0; min-height: min(460px, calc(100dvh - 210px)); box-sizing: border-box; padding: 0 0 12px; resize: vertical; color: var(--fg); background: transparent; border: 0; border-bottom: 1px solid var(--border); outline: none; font-family: var(--font-doc); font-size: var(--doc-size-reader); line-height: 1.6; }
 .reader-answer-editor-content::placeholder { color: var(--fg-faint); }
-.reader-answer-editor-actions { display: flex; flex: 0 0 auto; justify-content: flex-end; gap: 6px; padding: 8px 10px; background: var(--node-head); border-top: var(--border-default); }
+.reader-answer-editor-content:focus { border-bottom-color: var(--accent); }
+.reader-answer-editor-actions { display: flex; flex: 0 0 auto; justify-content: flex-start; gap: 6px; }
 .reader-answer-editor-button { display: inline-flex; min-height: 30px; align-items: center; justify-content: center; gap: 5px; padding: 0 11px; color: var(--fg-dim); background: transparent; border: 1px solid transparent; border-radius: var(--radius-control); cursor: pointer; font-family: var(--font-ui); font-size: 11px; }
 .reader-answer-editor-button:hover { color: var(--fg-bold); background: var(--hl); }
 .reader-answer-editor-button.primary { color: var(--accent-contrast); background: var(--accent); }
@@ -310,6 +313,8 @@ body.mode-canvas #reader { display: none; }
   #reader-rail, #margin-notes { display: none; }
   .reader-context { margin-bottom: 20px; overflow-wrap: anywhere; }
   .reader-answer-edit { min-width: 44px; min-height: 44px; padding-inline: 12px; }
+  .crumb.current:has(.reader-answer-title-input) { max-width: 100%; }
+  .reader-answer-title-input { width: 100%; max-width: none; font-size: 16px; }
   .reader-answer-editor { min-height: min(420px, calc(100dvh - 190px)); }
   .reader-answer-editor-content { font-size: 16px; }
   .reader-answer-editor-button { min-height: 44px; padding-inline: 15px; }

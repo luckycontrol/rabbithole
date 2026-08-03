@@ -106,9 +106,10 @@ export interface CanvasNodeContentEvent extends NodeTarget {
   title?: unknown;
   markdown?: unknown;
 }
-/** User-authored Markdown replacement for a settled branch answer. */
+/** User-authored title and Markdown replacement for a settled branch answer. */
 export interface AnswerNodeContentEvent extends NodeTarget {
   type: "answer_node_content";
+  title?: unknown;
   markdown?: unknown;
 }
 export interface DeleteNodeEvent extends NodeTarget {

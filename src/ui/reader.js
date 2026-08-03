@@ -123,7 +123,6 @@ export function renderBreadcrumb(){
         breadcrumbNodes[n.id] = crumb;
       }
       var cur = i === path.length - 1;
-      crumb.textContent = n.title || "Untitled";
       crumb.classList.toggle("current", cur);
       if (cur){
         crumb.removeAttribute("role");
@@ -133,6 +132,25 @@ export function renderBreadcrumb(){
         crumb.setAttribute("role", "link");
         crumb.tabIndex = 0;
         crumb.removeAttribute("aria-current");
+      }
+      if (cur && readerDraft && readerDraft.nodeId === n.id) {
+        var titleInput = crumb._titleInput;
+        if (!titleInput) {
+          titleInput = document.createElement("input");
+          titleInput.type = "text";
+          titleInput.className = "reader-answer-title-input";
+          titleInput.setAttribute("aria-label", "Card title");
+          titleInput.autocomplete = "off";
+          titleInput.addEventListener("input", function(){
+            if (readerDraft && readerDraft.nodeId === n.id) readerDraft.title = titleInput.value;
+          });
+          crumb._titleInput = titleInput;
+        }
+        titleInput.value = readerDraft.title ?? n.title ?? "";
+        crumb.replaceChildren(titleInput);
+        readerDraft.titleInput = titleInput;
+      } else {
+        crumb.textContent = n.title || "Untitled";
       }
       if (i > 0) fragment.appendChild(crumb._sep);
       fragment.appendChild(crumb);
@@ -158,6 +176,7 @@ export function initReader(){
     readerScope.listen(readerMain, "scroll", onReaderScroll, { passive: true });
     readerScope.listen(readerMain, "click", onMarkClick);
     readerScope.listen(readerMain, "keydown", onMarkKeydown);
+    readerScope.listen(readerMain, "dblclick", onReaderDoubleClick);
     readerScope.listen(readerMain, "mouseover", function(e){ transitionMarkGroups(e, true, "mark-hover"); });
     readerScope.listen(readerMain, "mouseout", function(e){ transitionMarkGroups(e, false, "mark-hover"); });
     readerScope.listen(readerMain, "focusin", function(e){ transitionMarkGroups(e, true, "mark-dom-focus"); });
@@ -268,10 +287,27 @@ function buildReaderAnswerActions(node){
   return actions;
 }
 
+function onReaderDoubleClick(e){
+  var node = nodes[currentNodeId];
+  if (!isAnswerNodeEditable(node) || readerDraft) return;
+  if (e.target.closest("a, button, input, textarea, select, [contenteditable='true']")) return;
+  if (!e.target.closest(".doc-content, .crumb.current")) return;
+  e.preventDefault();
+  openReaderAnswerDraft(node);
+}
+
 function openReaderAnswerDraft(node){
   if (!isAnswerNodeEditable(node) || readerDraft) return;
   node._scrollTop = readerMain.scrollTop;
-  readerDraft = { nodeId: node.id, scrollTop: node._scrollTop, textarea: null };
+  readerDraft = {
+    nodeId: node.id,
+    scrollTop: node._scrollTop,
+    title: node.title || "",
+    markdown: node.md || "",
+    titleInput: null,
+    textarea: null,
+  };
+  renderBreadcrumb();
   renderReaderBody();
 }
 
@@ -279,14 +315,15 @@ function buildReaderAnswerEditor(node){
   var form = document.createElement("form");
   form.className = "reader-answer-editor";
   form.setAttribute("aria-label", "Edit answer");
-  var head = document.createElement("div");
-  head.className = "reader-answer-editor-head";
-  head.textContent = "Edit answer";
   var textarea = document.createElement("textarea");
   textarea.className = "reader-answer-editor-content";
   textarea.setAttribute("aria-label", "Answer content");
   textarea.placeholder = "Write Markdown…";
-  textarea.value = node.md || "";
+  var draft = readerDraft;
+  textarea.value = draft?.markdown ?? node.md ?? "";
+  textarea.addEventListener("input", function(){
+    if (readerDraft === draft) draft.markdown = textarea.value;
+  });
   var actions = document.createElement("div");
   actions.className = "reader-answer-editor-actions";
   actions.innerHTML =
@@ -294,8 +331,7 @@ function buildReaderAnswerEditor(node){
     buttonMarkup({ bare: true, className: "reader-answer-editor-button primary", label: "Save answer", svgIconHtml: iconSvg("check") });
   var cancel = actions.querySelector("button");
   var save = actions.querySelector(".primary");
-  form.append(head, textarea, actions);
-  var draft = readerDraft;
+  form.append(textarea, actions);
   if (draft) draft.textarea = textarea;
   cancel.addEventListener("click", function(){ closeReaderAnswerDraft(true); });
   save.addEventListener("click", function(){ form.requestSubmit(); });
@@ -305,7 +341,9 @@ function buildReaderAnswerEditor(node){
     else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); form.requestSubmit(); }
   });
   requestAnimationFrame(function(){
-    if (readerDraft === draft && textarea.isConnected) textarea.focus({ preventScroll: true });
+    if (readerDraft !== draft) return;
+    var target = draft.titleInput || textarea;
+    if (target && target.isConnected) target.focus({ preventScroll: true });
   });
   return form;
 }
@@ -317,6 +355,7 @@ function closeReaderAnswerDraft(restoreFocus){
   var node = nodes[draft.nodeId];
   if (!node || mode !== "reader" || currentNodeId !== node.id) return;
   node._scrollTop = draft.scrollTop;
+  renderBreadcrumb();
   renderReaderBody();
   if (restoreFocus) requestAnimationFrame(function(){
     readerMain.querySelector(".reader-answer-edit")?.focus({ preventScroll: true });
@@ -328,31 +367,44 @@ function saveReaderAnswerDraft(){
   var node = draft && nodes[draft.nodeId];
   if (!draft || !node) return;
   if (!isAnswerNodeEditable(node)) { closeReaderAnswerDraft(true); return; }
-  var markdown = draft.textarea.value.trim();
+  var title = String(draft.title ?? node.title ?? "").trim() || "Untitled";
+  var markdown = String(draft.markdown ?? draft.textarea?.value ?? "").trim();
   readerDraft = null;
   node._scrollTop = draft.scrollTop;
-  updateReaderAnswerContent(node, markdown);
+  updateReaderAnswerContent(node, title, markdown);
 }
 
-function updateReaderAnswerContent(node, markdown){
-  var previous = node.md;
+function updateReaderAnswerContent(node, title, markdown){
+  var previous = { title: node.title, markdown: node.md };
+  node.title = title;
   node.md = markdown;
   refreshNodeHtml(node);
   refreshCanvasNodeContent(node);
-  if (mode === "reader" && currentNodeId === node.id) renderReaderBody();
-  var payload = { type: "answer_node_content", node_id: node.id, markdown: markdown };
+  if (node.titleEl){ node.titleEl.textContent = title; node.titleEl.title = title; }
+  if (mode === "reader" && currentNodeId === node.id){
+    renderBreadcrumb();
+    renderReaderBody();
+    renderMarginNotes();
+  }
+  var payload = { type: "answer_node_content", node_id: node.id, title: title, markdown: markdown };
   Promise.resolve(readerLifecycle.hooks.post(payload)).then(function(result){
     if (result && result.ok !== false) return;
-    restoreReaderAnswerContent(node, previous, markdown);
-  }, function(){ restoreReaderAnswerContent(node, previous, markdown); });
+    restoreReaderAnswerContent(node, previous, title, markdown);
+  }, function(){ restoreReaderAnswerContent(node, previous, title, markdown); });
 }
 
-function restoreReaderAnswerContent(node, previous, expectedMarkdown){
-  if (nodes[node.id] !== node || node.md !== expectedMarkdown) return;
-  node.md = previous;
+function restoreReaderAnswerContent(node, previous, expectedTitle, expectedMarkdown){
+  if (nodes[node.id] !== node || node.title !== expectedTitle || node.md !== expectedMarkdown) return;
+  node.title = previous.title;
+  node.md = previous.markdown;
   refreshNodeHtml(node);
   refreshCanvasNodeContent(node);
-  if (mode === "reader" && currentNodeId === node.id) renderReaderBody();
+  if (node.titleEl){ node.titleEl.textContent = node.title; node.titleEl.title = node.title; }
+  if (mode === "reader" && currentNodeId === node.id){
+    renderBreadcrumb();
+    renderReaderBody();
+    renderMarginNotes();
+  }
   flashHint("Couldn't save the answer.");
 }
   // Open the parent and land on the exact origin when this branch is anchored.

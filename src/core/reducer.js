@@ -180,6 +180,7 @@ function reduceAnswerNodeContent(state, event, options) {
   const nodes = cloneNodes(state, options);
   nodes.set(nodeId, {
     ...node,
+    title: String(event.title ?? node.title ?? "Untitled").trim() || "Untitled",
     markdown: normalizeBlockIds(String(event.markdown ?? node.markdown ?? ""), { idFactory: options.idFactory }).markdown,
   });
   return withState({ ...state, nodes }, { node_id: nodeId });
