@@ -42,10 +42,14 @@ const INLINE_DOLLAR = "$";
 const DISPLAY_DOLLARS = "$$";
 const BACKSLASH_OPEN_INLINE = "\\(";
 const BACKSLASH_CLOSE_INLINE = "\\)";
-const BACKSLASH_OPEN_DISPLAY = "\\[";
 const BACKSLASH_CLOSE_DISPLAY = "\\]";
 const TRAILING_NEWLINE = /\n$/;
 const BLOCK_MATH_START = /(?:^|\n) {0,3}(?:\$\$(?!\$)|\\\[)/;
+// GFM accepts either one or two tildes for deletion. A lone tilde is far more
+// commonly approximation notation in pasted technical prose (`~77%`,
+// `~1,000`) and can otherwise pair with a distant tilde to delete whole
+// paragraphs. Rabbithole deliberately requires the unambiguous `~~text~~`
+// spelling while retaining the rest of the GFM grammar.
 /** @typedef {{ baseUrl: string | null, assetNames: Set<string> | null, resolveAssetUrl: (name: string) => string | null }} RenderContext */
 /** @typedef {{ name: string, level: "block" | "inline", start(src: string): number | undefined, tokenizer(src: string): any, renderer(token: any): string }} RabbitholeExtension */
 
@@ -420,6 +424,18 @@ export function createMarkdownRenderer({ encodeBase64 = defaultEncodeBase64, res
     };
   }
 
+  /** @returns {import("marked").TokenizerObject} */
+  function buildTokenizer() {
+    return {
+      del(src) {
+        // Marked tokenizer overrides fall back to the native tokenizer only
+        // when they return false. Delegate double tildes so Marked remains the
+        // authority for delimiter edge cases; consume no single-tilde token.
+        return src.startsWith("~~") ? false : undefined;
+      },
+    };
+  }
+
   /** @param {unknown} markdown @param {{ baseUrl?: string | null, assetNames?: Set<string> | null, resolveAssetUrl?: ((name: string) => string | null) | null }} [options] */
   function renderMarkdownToHtml(markdown, { baseUrl = null, assetNames = null, resolveAssetUrl: perCallResolver = null } = {}) {
     const context = {
@@ -429,7 +445,7 @@ export function createMarkdownRenderer({ encodeBase64 = defaultEncodeBase64, res
     };
     /** @type {any} */
     const marked = new Marked({ gfm: true, breaks: false });
-    marked.use({ extensions: buildExtensions(), renderer: buildRenderer(context) });
+    marked.use({ extensions: buildExtensions(), renderer: buildRenderer(context), tokenizer: buildTokenizer() });
     const html = marked.parse(String(markdown ?? ""));
     return html.replace(/>\n+</g, "><").replace(/\n<\/code>/g, "</code>");
   }

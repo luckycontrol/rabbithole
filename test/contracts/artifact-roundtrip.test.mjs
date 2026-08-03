@@ -137,7 +137,7 @@ console.log("ok artifact round trip: portable and snapshot import collisions min
   source.hole.nodes.push({
     id: "clip", parent_id: source.hole.root_id, title: "Clip", markdown: "Clean answer body",
     base_url: null, base_url_source: null,
-    origin: { selected_text: "", question: "What is shown?", lens: null, synthesis: false, anchor: null, branch_type: "followup", crop_asset: "crop-clip.jpg" },
+    origin: { selected_text: "", question: "What is shown?", lens: null, anchor: null, branch_type: "followup", crop_asset: "crop-clip.jpg" },
     position: { x: 400, y: 0 }, size: null, font_scale: 1, collapsed: false,
     status: "answered", read: false, created_at: "2026-07-13T00:00:00.000Z", extensions: {},
   });

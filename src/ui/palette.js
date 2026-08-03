@@ -1,14 +1,13 @@
 import {
   goToNode,
-  lensLabel,
   mode,
   motionSourceFromEvent,
   nodes,
   palResults,
   palText,
-  paletteEl,
-  truncate
+  paletteEl
 } from "./core.js";
+import { lensLabel, truncate } from "../core/model.js";
 import { escapeHtml } from "../core/utils.js";
 import { frameAll, tidy } from "./canvas-view.js";
 import { openDialog } from "./primitives/dialog.js";
@@ -176,8 +175,8 @@ function closePalette(settings){
       if (!n) return;
       row._title.textContent = n.title || "Untitled";
       if (n.status === "pending"){ row._flag.className = "pal-writing"; row._flag.textContent = "writing…"; }
-      if (n.origin && (n.origin.synthesis || n.origin.lens)){
-        row._badge.textContent = n.origin.synthesis ? "✦ Synthesis" : lensLabel(n.origin.lens);
+      if (n.origin && n.origin.lens){
+        row._badge.textContent = lensLabel(n.origin.lens);
         row._badge.hidden = false;
       }
       row._snippet.innerHTML = palSnippet(n, tokens);

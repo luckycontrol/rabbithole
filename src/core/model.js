@@ -83,21 +83,48 @@ export function normalizeSize(size) {
 /** @param {unknown} value */
 export function normalizePdfAnchor(value) {
   if (!value || typeof value !== "object") return null;
-  const page = Math.floor(Number(/** @type {{ page?: unknown }} */ (value).page));
-  const rect = /** @type {{ rect?: unknown }} */ (value).rect;
-  if (!(page > 0) || !rect || typeof rect !== "object") return null;
-  const clamp = (/** @type {unknown} */ input) => Math.min(1, Math.max(0, Number(input) || 0));
-  const x = clamp(/** @type {{ x?: unknown }} */ (rect).x);
-  const y = clamp(/** @type {{ y?: unknown }} */ (rect).y);
-  return {
-    page,
-    rect: {
-      x,
-      y,
-      w: Math.min(clamp(/** @type {{ w?: unknown }} */ (rect).w), 1 - x),
-      h: Math.min(clamp(/** @type {{ h?: unknown }} */ (rect).h), 1 - y),
-    },
-  };
+  const raw = /** @type {Record<string, any>} */ (value);
+  if (raw.version !== 2 || !["text", "region"].includes(raw.kind) || !Array.isArray(raw.fragments)) return null;
+  const sourceSha256 = String(raw.source_sha256 || "").toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(sourceSha256) || raw.fragments.length < 1 || raw.fragments.length > 100) return null;
+  const fragments = [];
+  let quadCount = 0;
+  for (const fragment of raw.fragments) {
+    const page = Math.floor(Number(fragment?.page));
+    if (!(page > 0) || !Array.isArray(fragment?.quads) || !fragment.quads.length) return null;
+    const quads = [];
+    for (const rawQuad of fragment.quads) {
+      if (!Array.isArray(rawQuad) || rawQuad.length !== 4) return null;
+      const quad = [];
+      for (const point of rawQuad) {
+        if (!Array.isArray(point) || point.length !== 2) return null;
+        const x = Number(point[0]), y = Number(point[1]);
+        if (!Number.isFinite(x) || !Number.isFinite(y) || Math.abs(x) > 1e7 || Math.abs(y) > 1e7) return null;
+        quad.push([roundPdfCoordinate(x), roundPdfCoordinate(y)]);
+      }
+      if (Math.abs(quadArea(quad)) < 1e-8) return null;
+      quads.push(quad);
+      quadCount++;
+      if (quadCount > 5000) return null;
+    }
+    fragments.push({ page, quads });
+  }
+  return { version: 2, source_sha256: sourceSha256, kind: raw.kind, fragments };
+}
+
+/** @param {number} value */
+function roundPdfCoordinate(value) {
+  return Math.round(value * 10000) / 10000;
+}
+
+/** @param {number[][]} quad */
+function quadArea(quad) {
+  let area = 0;
+  for (let index = 0; index < quad.length; index++) {
+    const current = quad[index], next = quad[(index + 1) % quad.length];
+    area += current[0] * next[1] - next[0] * current[1];
+  }
+  return area / 2;
 }
 
 /** @param {unknown} anchor */
@@ -105,7 +132,7 @@ export function normalizeAnchor(anchor) {
   if (!anchor) return null;
   const start = Math.max(0, Number(/** @type {{ offset_start?: unknown }} */ (anchor).offset_start) || 0);
   const end = Math.max(start, Number(/** @type {{ offset_end?: unknown }} */ (anchor).offset_end) || start);
-  /** @type {{ offset_start: number, offset_end: number, pdf?: { page: number, rect: { x: number, y: number, w: number, h: number } } }} */
+  /** @type {{ offset_start: number, offset_end: number, pdf?: any }} */
   const out = { offset_start: start, offset_end: end };
   const pdf = normalizePdfAnchor(/** @type {{ pdf?: unknown }} */ (anchor).pdf);
   if (pdf) out.pdf = pdf;
@@ -136,7 +163,6 @@ export function createPendingBranchNode(payload, parent, { now = new Date().toIS
   const selectedText = String(payload.selected_text ?? "").trim();
   const question = String(payload.question ?? "").trim();
   const lens = normalizeLens(payload.lens);
-  const synthesis = payload.synthesis === true;
   const anchor = normalizeAnchor(payload.anchor);
   const branchType = normalizeBranchType(payload.branch_type, selectedText);
   const inheritedBase = inheritedNodeBaseUrl(parent);
@@ -147,7 +173,7 @@ export function createPendingBranchNode(payload, parent, { now = new Date().toIS
   return /** @type {ModelHoleNode} */ ({
     id: nodeId,
     parent_id: String(payload.parent_id || ""),
-    title: synthesis ? "Synthesis" : lens ? lensLabel(lens) : question ? truncate(question, 48) : "…",
+    title: lens ? lensLabel(lens) : question ? truncate(question, 48) : "…",
     markdown: "",
     base_url: inheritedBase.base_url,
     base_url_source: inheritedBase.base_url_source,
@@ -155,7 +181,6 @@ export function createPendingBranchNode(payload, parent, { now = new Date().toIS
       selected_text: selectedText,
       question,
       lens,
-      synthesis,
       anchor,
       branch_type: branchType,
       ...(cropAsset ? { crop_asset: cropAsset } : {}),

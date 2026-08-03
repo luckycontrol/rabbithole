@@ -1,4 +1,4 @@
-import { registerLayer } from "../overlay/layer-stack.js";
+import { focusElement, registerLayer } from "../overlay/layer-stack.js";
 
 var FOCUSABLE = [
   "a[href]",
@@ -8,12 +8,6 @@ var FOCUSABLE = [
   "select:not([disabled])",
   "[tabindex]:not([tabindex='-1'])"
 ].join(",");
-
-function focus(element) {
-  if (!element || !element.isConnected || typeof element.focus !== "function") return false;
-  try { element.focus({ preventScroll: true }); } catch (error) { try { element.focus(); } catch (_error) { return false; } }
-  return true;
-}
 
 function visibleFocusables(dialog) {
   return Array.prototype.slice.call(dialog.querySelectorAll(FOCUSABLE)).filter(function(element) {
@@ -53,16 +47,16 @@ export function openDialog(options) {
     var items = visibleFocusables(dialog);
     if (!items.length) {
       event.preventDefault();
-      focus(dialog);
+      focusElement(dialog);
       return;
     }
     var first = items[0], last = items[items.length - 1];
     if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
       event.preventDefault();
-      focus(last);
+      focusElement(last);
     } else if (!event.shiftKey && document.activeElement === last) {
       event.preventDefault();
-      focus(first);
+      focusElement(first);
     }
   }
   dialog.addEventListener("keydown", onKeydown);
@@ -93,7 +87,7 @@ export function openDialog(options) {
 
   initialTimer = setTimeout(function() {
     initialTimer = null;
-    if (!closed) focus(resolveInitialFocus(dialog, options.initialFocus));
+    if (!closed) focusElement(resolveInitialFocus(dialog, options.initialFocus));
   }, 0);
 
   return { close: close, dispose: dispose };

@@ -96,22 +96,6 @@ export function applyPersistedBrowserEvent(payload, { dispatch, scheduleSave }) 
  */
 export function dispatchBrowserEvent(payload, { handlers, unsupported }) {
   const type = String(/** @type {any} */ (payload)?.type ?? "");
-  switch (type) {
-    case "branch_request":
-    case "retry_branch":
-    case "node_update":
-    case "nodes_update":
-    case "block_state":
-    case "node_extensions_patch":
-    case "convert_pdf":
-    case "convert_cancel":
-    case "delete_node":
-    case "view_state":
-    case "done": {
-      const handler = handlers[type];
-      return handler ? handler(payload) : unsupported(type);
-    }
-    default:
-      return unsupported(type);
-  }
+  const handler = handlers[type];
+  return handler ? handler(payload) : unsupported(type);
 }

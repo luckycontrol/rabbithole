@@ -17,6 +17,7 @@ const absOutdir = path.resolve(rootDir, outdir);
 const PUBLIC_FETCH_PROXY_URL = "https://rabbithole-fetch-proxy.khemanishlok.workers.dev";
 const proxyConfig = readProxyConfig(process.env.RABBITHOLE_PROXY_URL ?? PUBLIC_FETCH_PROXY_URL);
 
+const CANONICAL_HOST_SCRIPT = `if(location.hostname==="www.rabbithole.ing")location.replace("https://rabbithole.ing"+location.pathname+location.search+location.hash);`;
 // This runs in the parser-blocking head, before the external stylesheet or app
 // module can produce a frame. Keep it tiny: its hash is pinned in the CSP below.
 const INITIAL_THEME_SCRIPT = `(function(){var theme="";try{theme=localStorage.getItem("rh-theme")||"";}catch(error){}if(theme!=="dark"&&theme!=="light"){theme=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}document.documentElement.setAttribute("data-theme",theme);})();`;
@@ -35,12 +36,17 @@ await esbuild.build({
   format: "iife",
   globalName: "RabbitholeClient",
   target: "es2018",
-  minify: false,
+  minify: true,
   sourcemap: false,
   tsconfigRaw: {},
   legalComments: "none",
+  external: ["pdfjs-dist/build/pdf.mjs"],
   logLevel: "silent"
 });
+
+const pdfPackageRoot = path.dirname(require.resolve("pdfjs-dist/package.json"));
+await fs.copyFile(path.join(pdfPackageRoot, "build/pdf.worker.min.mjs"), path.join(absOutdir, "pdf.worker.mjs"));
+await fs.copyFile(path.join(pdfPackageRoot, "build/pdf.min.mjs"), path.join(absOutdir, "pdf.mjs"));
 
 await esbuild.build({
   entryPoints: [path.join(rootDir, "src/ui/frozen-entry.js")],
@@ -49,10 +55,11 @@ await esbuild.build({
   format: "iife",
   globalName: "RabbitholeFrozenClient",
   target: "es2018",
-  minify: false,
+  minify: true,
   sourcemap: false,
   tsconfigRaw: {},
   legalComments: "none",
+  external: ["pdfjs-dist/build/pdf.mjs"],
   logLevel: "silent"
 });
 
@@ -117,7 +124,7 @@ async function buildWebApp(assetDir) {
     target: "es2022",
     entryNames: "[name]",
     chunkNames: "chunks/[name]-[hash]",
-    minify: false,
+    minify: true,
     sourcemap: false,
     // PDF.js imports `canvas` only inside its Node path. Native optional
     // dependencies are installed on some operating systems and omitted on
@@ -133,12 +140,14 @@ async function buildWebApp(assetDir) {
     logLevel: "silent"
   });
 
-  const [katexCss, dompurify, mermaid, frozenClient, webCss] = await Promise.all([
+  const [katexCss, dompurify, mermaid, frozenClient, webCss, pdfWorker, pdfJs] = await Promise.all([
     fs.readFile(path.join(assetDir, "katex.css"), "utf8"),
     fs.readFile(path.join(assetDir, "dompurify.js"), "utf8"),
     fs.readFile(path.join(assetDir, "mermaid.js"), "utf8"),
     fs.readFile(path.join(assetDir, "frozen-client.js"), "utf8"),
     fs.readFile(path.join(rootDir, "src/web/styles.css"), "utf8"),
+    fs.readFile(path.join(assetDir, "pdf.worker.mjs"), "utf8"),
+    fs.readFile(path.join(assetDir, "pdf.mjs"), "utf8"),
   ]);
   const frozenStyles = `${CANVAS_STYLES}\n${katexCss}`;
 
@@ -151,6 +160,8 @@ async function buildWebApp(assetDir) {
     path.join(webDist, "frozen-source.js"),
     `window.__RABBITHOLE_FROZEN_CLIENT__=${safeJsString(frozenClient)};\n` +
       `window.__RABBITHOLE_DOMPURIFY_SOURCE__=${safeJsString(dompurify)};\n` +
+      `window.__RABBITHOLE_FROZEN_PDF_WORKER_SOURCE__=${safeJsString(pdfWorker)};\n` +
+      `window.__RABBITHOLE_FROZEN_PDFJS_SOURCE__=${safeJsString(pdfJs)};\n` +
       `window.__RABBITHOLE_FROZEN_STYLES__=${safeJsString(frozenStyles)};\n`,
     "utf8"
   );
@@ -171,7 +182,8 @@ async function hashWebEntryAssets(webDist) {
 
 async function copyPdfAssets(webDist) {
   const packageRoot = path.dirname(require.resolve("pdfjs-dist/package.json"));
-  await fs.copyFile(path.join(packageRoot, "build/pdf.worker.mjs"), path.join(webDist, "pdf.worker.mjs"));
+  await fs.copyFile(path.join(packageRoot, "build/pdf.min.mjs"), path.join(webDist, "pdf.mjs"));
+  await fs.copyFile(path.join(packageRoot, "build/pdf.worker.min.mjs"), path.join(webDist, "pdf.worker.mjs"));
   await fs.cp(path.join(packageRoot, "standard_fonts"), path.join(webDist, "standard_fonts"), { recursive: true });
   await copyPackedCMaps(path.join(packageRoot, "cmaps"), path.join(webDist, "cmaps"));
 }
@@ -190,6 +202,15 @@ function buildWebIndexHtml({ proxyOrigin = "" } = {}, assetVersion = "") {
   const assetQuery = `?v=${assetVersion}`;
   const connectSrc = [
     "'self'",
+    "blob:",
+    // A custom endpoint is any host the person running this owns, so it cannot be
+    // enumerated here. script-src stays locked to 'self', which is what keeps an
+    // injection from using this. http: cannot be narrowed to the private ranges — CSP
+    // has no pattern for them — but it widens little: from an https page the browser
+    // blocks plain http anyway, except on this machine and, behind a permission prompt,
+    // the local network. Those two are exactly the endpoints worth reaching.
+    "https:",
+    "http:",
     "https://openrouter.ai",
     "https://api.github.com",
     "https://arxiv.org",
@@ -204,10 +225,11 @@ function buildWebIndexHtml({ proxyOrigin = "" } = {}, assetVersion = "") {
   if (proxyOrigin && !connectSrc.includes(proxyOrigin)) {
     connectSrc.push(proxyOrigin);
   }
+  const canonicalHostHash = createHash("sha256").update(CANONICAL_HOST_SCRIPT).digest("base64");
   const initialThemeHash = createHash("sha256").update(INITIAL_THEME_SCRIPT).digest("base64");
   const csp = [
     "default-src 'self'",
-    `script-src 'self' 'sha256-${initialThemeHash}'`,
+    `script-src 'self' 'sha256-${canonicalHostHash}' 'sha256-${initialThemeHash}'`,
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self' data:",
     "img-src 'self' blob: data: https:",
@@ -219,6 +241,7 @@ function buildWebIndexHtml({ proxyOrigin = "" } = {}, assetVersion = "") {
   return `<!doctype html>
 <html lang="en">
 <head>
+<script id="canonical-host-script">${CANONICAL_HOST_SCRIPT}</script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="${csp}">

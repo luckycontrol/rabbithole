@@ -30,9 +30,10 @@ export const CANVAS_SHELL = `
       ${iconButtonMarkup({ id: "t-tidy", title: "Tidy up layout · T", ariaLabel: "Tidy up layout · T", svgIconHtml: iconSvg("tidy") })}
     </span>
   </div>
+  <div id="tb-document" aria-label="Document controls"></div>
   <div id="tb-session">
     <div class="tb-pill">
-    ${iconButtonMarkup({ id: "t-share", title: "Share, export, synthesize", ariaLabel: "Share, export, synthesize", ariaHaspopup: "menu", ariaControls: "sharemenu", ariaExpanded: "false", svgIconHtml: iconSvg("share") })}
+    ${iconButtonMarkup({ id: "t-share", title: "Share and export", ariaLabel: "Share and export", ariaHaspopup: "menu", ariaControls: "sharemenu", ariaExpanded: "false", svgIconHtml: iconSvg("share") })}
     ${iconButtonMarkup({ id: "t-theme", title: "Toggle theme", ariaLabel: "Toggle theme", svgIconHtml: iconSvg("theme") })}
     ${iconButtonMarkup({ id: "t-settings", title: "Model settings", ariaLabel: "Model settings", ariaExpanded: "false", svgIconHtml: iconSvg("settings") })}
     </div>
@@ -43,16 +44,24 @@ export const CANVAS_SHELL = `
 </div>
 
 <div id="reader">
-  <div id="reader-main"></div>
-  <div id="composer">
-    <div class="composer-inner" id="composer-inner">
-      <textarea id="composer-text" rows="1" placeholder="Ask a follow-up about this document…"></textarea>
-      <button id="composer-send" class="send-btn" title="Send (Enter) · New line (Shift+Enter)" aria-label="Send follow-up" disabled>${iconSvg("send")}</button>
+  <div id="reader-workspace">
+    <div id="reader-document">
+      <div id="reader-main"></div>
+      <div id="composer">
+        <div class="composer-inner" id="composer-inner">
+          <textarea id="composer-text" rows="1" placeholder="Ask a follow-up about this document…"></textarea>
+          <button id="composer-send" class="send-btn" title="Send (Enter) · New line (Shift+Enter)" aria-label="Send follow-up" disabled>${iconSvg("send")}</button>
+        </div>
+      </div>
     </div>
+    <aside id="reader-rail" aria-labelledby="reader-rail-title">
+      <div class="reader-rail-head"><span id="reader-rail-title">Branches</span><span id="reader-rail-count">0</span></div>
+      <div id="margin-notes"></div>
+    </aside>
   </div>
 </div>
 
-<div id="viewport"><div id="world"><svg id="edges"></svg></div></div>
+<div id="viewport"><div id="canvas-gesture-plane" aria-hidden="true"></div><div id="world"><svg id="edges"></svg></div></div>
 
 <div id="ask">
   <div class="ask-input">
@@ -82,8 +91,6 @@ export const CANVAS_SHELL = `
   <div class="sm-sep"></div>
   ${buttonMarkup({ bare: true, className: "sm-item", id: "sm-export", role: "menuitem", tabIndex: -1, label: "Download snapshot (.html)", svgIconHtml: '<span class="sm-ic">⇩</span>' })}
   ${buttonMarkup({ bare: true, className: "sm-item", id: "sm-portable", role: "menuitem", tabIndex: -1, label: "Export Rabbithole (.rabbithole)", svgIconHtml: '<span class="sm-ic">⇣</span>' })}
-  <div class="sm-sep" id="sm-sep2"></div>
-  ${buttonMarkup({ bare: true, className: "sm-item", id: "sm-synth", role: "menuitem", tabIndex: -1, label: "Synthesize this journey", svgIconHtml: '<span class="sm-ic">✦</span>' })}
 </div>
 
 <div id="confirm">

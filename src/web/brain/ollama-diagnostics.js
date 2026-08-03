@@ -115,7 +115,7 @@ export function ollamaUrls(baseUrl) {
   };
 }
 
-export async function queryLoopbackPermission() {
+async function queryLoopbackPermission() {
   if (!globalThis.navigator?.permissions?.query) return "unsupported";
   for (const name of ["loopback-network", "local-network-access"]) {
     try {

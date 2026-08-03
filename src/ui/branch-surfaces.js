@@ -6,25 +6,19 @@ import {
   flashHint,
   frozen,
   closed,
-  goToNode,
-  lensLabel,
-  lineageNodes,
   mode,
-  motionSourceFromEvent,
   nodes,
   readerMain,
   rootId,
   setCurrentNodeId,
   setSurfaceOrigin,
-  shareMenu,
-  truncate
+  shareMenu
 } from "./core.js";
-import { sendFollowup } from "./ask-followups.js";
+import { lensLabel, lineageNodesFromMap, truncate } from "../core/model.js";
 import {
   clearEdgeHighlight,
   drawEdges,
-  renderVisibility,
-  revealNode
+  renderVisibility
 } from "./canvas-view.js";
 import {
   openNode,
@@ -63,10 +57,6 @@ export function initBranchSurfaces(){
   branchScope.listen(document.getElementById("sm-trail"), "click", onCopyTrail);
   branchScope.listen(document.getElementById("sm-export"), "click", onExportSnapshot);
   branchScope.listen(document.getElementById("sm-portable"), "click", onExportPortable);
-  branchScope.listen(document.getElementById("sm-synth"), "click", function(e){
-    closeShare();
-    synthesize(motionSourceFromEvent(e));
-  });
   branchScope.listen(document.getElementById("cf-keep"), "click", hideConfirm);
   branchScope.listen(document.getElementById("cf-remove"), "click", function(){
     var node = confirmFor && nodes[confirmFor];
@@ -95,7 +85,7 @@ function disposeBranchSurfaceResources(resetHooks){
 
 
   // ===========================================================================
-  // SHARE — export, copy as Markdown, synthesize
+  // SHARE — export and copy as Markdown
   // ===========================================================================
   var shareOpen = false, shareAnchor = null, sharePopover = null;
   function visibleShareItems(){
@@ -129,12 +119,9 @@ function disposeBranchSurfaceResources(resetHooks){
   }
 function toggleShare(anchor, openedByKeyboard){
     if (shareOpen){ closeShare(); return; }
-    // A frozen snapshot can't export (it IS the export) or reach an agent.
-    var noAgent = frozen || closed;
+    // A frozen snapshot can't export because it is the export.
     document.getElementById("sm-export").style.display = frozen ? "none" : "";
     document.getElementById("sm-portable").style.display = (!frozen && typeof branchLifecycle.hooks.exportPortable === "function") ? "" : "none";
-    document.getElementById("sm-sep2").style.display = noAgent ? "none" : "";
-    document.getElementById("sm-synth").style.display = noAgent ? "none" : "";
     var items = visibleShareItems();
     items.forEach(function(item, index){ item.tabIndex = index === 0 ? 0 : -1; });
     shareAnchor = anchor;
@@ -173,7 +160,6 @@ export function closeShare(settings){
   // Markdown reconstructions — the raw source rides in hydration/broadcasts.
   function originLine(n){
     if (!n.origin) return "";
-    if (n.origin.synthesis) return "> ✦ Synthesis of the whole Rabbithole\n\n";
     var ask = n.origin.lens ? lensLabel(n.origin.lens) : (n.origin.question || "");
     if (n.origin.selected_text) return "> Asked about: “" + n.origin.selected_text + "”" + (ask ? " — " + ask : "") + "\n\n";
     return ask ? "> Follow-up — " + ask + "\n\n" : "";
@@ -185,7 +171,7 @@ export function closeShare(settings){
     return h + " " + (n.title || "Untitled") + "\n\n" + originLine(n) + body + "\n";
   }
   function trailMarkdown(id){
-    var path = lineageNodes(id), parts = [];
+    var path = lineageNodesFromMap(nodes, id), parts = [];
     for (var i = 0; i < path.length; i++) parts.push(docMarkdown(path[i], i));
     return parts.join("\n---\n\n");
   }
@@ -197,7 +183,7 @@ export function closeShare(settings){
   }
   function onCopyTrail(){
     closeShare();
-    var path = lineageNodes(currentNodeId);
+    var path = lineageNodesFromMap(nodes, currentNodeId);
     copyText(trailMarkdown(currentNodeId), path.length === 1
       ? "Copied this document as Markdown"
       : "Copied the trail — " + path.length + " documents");
@@ -231,24 +217,6 @@ export function closeShare(settings){
         flashHint("Couldn't prepare the Rabbithole export.");
       });
   }
-function synthesize(source){
-    if (closed){ flashHint("Session ended — reopen this Rabbithole from your terminal first."); return; }
-    var root = nodes[rootId];
-    if (!root) return;
-    for (var k in nodes){
-      var n = nodes[k];
-      if (n.status === "pending" && n.origin && n.origin.synthesis){
-        flashHint("A synthesis is already being written…");
-        goToNode(n, source);
-        return;
-      }
-    }
-    var q = "Step back and write the synthesis of this whole Rabbithole so far: the key ideas we explored, how they connect, and the takeaways worth keeping. Make it a standalone summary of the journey.";
-    var kid = sendFollowup(root, q, null, true);
-    if (mode === "canvas") revealNode(kid, source);
-    flashHint("✦ Synthesizing this journey — it will branch from where this Rabbithole began.");
-  }
-
   // ===========================================================================
   // DELETE — remove a branch (and its subtree) after an inline confirm
   // ===========================================================================

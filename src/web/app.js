@@ -1,11 +1,12 @@
 import { CANVAS_SHELL } from "../core/html/shell.js";
-import { createBrain, providerFor } from "./brain/index.js";
+import { createBrain } from "./brain/openai-compatible.js";
+import { providerFor } from "./brain/provider-registry.js";
 import { detectPdfTranscriptionCapability, pdfTranscriptionCapability } from "./brain/pdf-transcription.js";
+import { isHttpUrl } from "./brain/model-endpoint.js";
 import { loadSettings, saveSettings } from "./settings/preferences-store.js";
 import { getApiKey } from "./settings/credential-store.js";
 import { createSettingsPopover } from "./settings/settings-popover.js";
 import { createOllamaRecoveryDialog } from "./settings/ollama-recovery.js";
-import { setKeyStatus, validateKeyForPreset } from "./settings/key-validation.js";
 import { getGenerationSetupStatus, invalidateGenerationSetup } from "./settings/setup-readiness.js";
 import { installTestSeam } from "./test-seam.js";
 import { IdbStore } from "./store/idb-store.js";
@@ -23,6 +24,7 @@ import { flushPendingSaves } from "../ui/transport-status.js";
 import { registerRendererAssetName } from "../ui/renderer.js";
 import { isSubmitEnter } from "../ui/input-intent.js";
 import { openUrlToStoredHole } from "./ingest/url.js";
+import { describePdfImportFailure, ingestPdfToStoredHole } from "./ingest/pdf.js";
 import { buildRabbitholeExport, downloadRabbitholeExport, importRabbitholeFile, importSnapshotFile, rabbitholeFilename } from "./portable.js";
 import { createWhimsicalHoleId, holeIdFromPathname, pathnameForHole } from "./hole-id.js";
 import { getMermaidSource, loadMermaidRuntime } from "./mermaid-runtime.js";
@@ -218,9 +220,6 @@ function initAppChrome() {
       if (currentHoleNeedsPdfTranscription()) void refreshPdfTranscriptionCapability();
       else currentPdfTranscriptionCapability = pdfTranscriptionCapability(loadSettings());
     },
-    eyeSvg,
-    setKeyStatus,
-    validateKey: validateKeyForPreset,
     openOllamaRecovery: ({ settings, trigger }) => ollamaRecoveryController.open({ settings, trigger }),
   });
   // The gear toggles: the layer stack ignores pointerdown on its own trigger,
@@ -469,8 +468,6 @@ function openModelSetup({ trigger, status = "", onReady = null } = {}) {
 
 function syncGenerationSetupUi() {
   const setup = getGenerationSetupStatus();
-  const newButtons = [document.getElementById("blank-start-new"), document.getElementById("t-new")].filter(Boolean);
-  newButtons.forEach((button) => { button.disabled = !setup.ready; });
   const blankNew = document.getElementById("blank-start-new");
   const blankNewWrap = document.getElementById("blank-start-new-wrap");
   const setupButton = document.getElementById("blank-start-setup");
@@ -479,7 +476,7 @@ function syncGenerationSetupUi() {
     if (setup.ready) blankNew.removeAttribute("aria-describedby");
     else blankNew.setAttribute("aria-describedby", "blank-start-status");
   }
-  if (blankNewWrap) blankNewWrap.toggleAttribute("data-disabled", !setup.ready);
+  if (blankNewWrap) blankNewWrap.toggleAttribute("data-setup-required", !setup.ready);
   if (setupButton) setupButton.textContent = setup.ready ? "Model settings" : "Set up AI";
   if (status) status.hidden = setup.ready;
 }
@@ -707,8 +704,7 @@ async function createFromRabbitholeFile(file) {
 
 async function createFromPdfFile(file) {
   try {
-    const { ingestPdfToStoredHole } = await import("./ingest/pdf.js");
-    setIngestStatus("Loading PDF importer...", "busy");
+    setIngestStatus("Preparing PDF...", "busy");
     const { hole } = await ingestPdfToStoredHole({
       source: file,
       store,
@@ -720,7 +716,7 @@ async function createFromPdfFile(file) {
     setIngestStatus("");
     await startHole(await store.loadHole(hole.hole_id) || hole);
   } catch (err) {
-    setIngestStatus(`PDF import failed. ${err?.message || String(err)} Try a different PDF.`, "error");
+    setIngestStatus(describePdfImportFailure(err), "error");
   }
 }
 
@@ -781,16 +777,17 @@ async function mountHole(hole, { replace = false } = {}) {
     },
     getFrozenClientSource: () => window.__RABBITHOLE_FROZEN_CLIENT__ || "",
     getDompurifySource: () => window.__RABBITHOLE_DOMPURIFY_SOURCE__ || "",
+    getPdfWorkerSource: () => window.__RABBITHOLE_FROZEN_PDF_WORKER_SOURCE__ || "",
+    getPdfJsSource: () => window.__RABBITHOLE_FROZEN_PDFJS_SOURCE__ || "",
     getMermaidSource,
     getStylesheetText: () => window.__RABBITHOLE_FROZEN_STYLES__ || "",
   });
 
-  if (hole.nodes?.some((node) => node?.extensions?.pdf?.version === 1 && !node.extensions.pdf.converted)) {
+  if (hole.nodes?.some((node) => node?.extensions?.pdf?.version === 2 && !node.extensions.pdf.converted)) {
     await refreshPdfTranscriptionCapability();
   }
   const settings = loadSettings();
-  const key = getApiKey(settings);
-  const brain = key || !providerFor(settings.preset).requires_key ? createBrain(settings, key) : null;
+  const brain = brainForSettings(settings);
   const host = new DirectRabbitholeHost({
     store,
     hole,
@@ -1020,18 +1017,22 @@ function applyRailState() {
   }
 }
 
-function eyeSvg(open) {
-  return iconSvg(open ? "eye-off" : "eye");
-}
-
 function refreshCurrentBrain(settings = loadSettings()) {
   if (!currentHost) return;
+  currentHost.brain = brainForSettings(settings);
+}
+
+function brainForSettings(settings) {
+  const preset = providerFor(settings.preset);
   const key = getApiKey(settings);
-  currentHost.brain = key || !providerFor(settings.preset).requires_key ? createBrain(settings, key) : null;
+  if (preset.requires_key && !key) return null;
+  if (preset.requires_base_url && !isHttpUrl(settings.base_url)) return null;
+  if (!String(settings.model || preset.model || "").trim()) return null;
+  return createBrain(settings, key);
 }
 
 function currentHoleNeedsPdfTranscription() {
-  return !!currentHost && [...currentHost.state.nodes.values()].some((node) => node?.extensions?.pdf?.version === 1 && !node.extensions.pdf.converted);
+  return !!currentHost && [...currentHost.state.nodes.values()].some((node) => node?.extensions?.pdf?.version === 2 && !node.extensions.pdf.converted);
 }
 
 async function refreshPdfTranscriptionCapability(settings = loadSettings()) {
@@ -1060,17 +1061,13 @@ function handleBranchAuthRequired({ node, error, retry }) {
     purpose: "recovery",
     status: error?.message || "Reconnect your model to continue.",
     focusKey: providerFor(loadSettings().preset).requires_key,
-    onReady: async () => {
-      refreshCurrentBrain();
-      retry?.();
-      showToast({ message: `Retrying "${node?.title || "ask"}".` });
-    },
+    onReady: () => retryBranch(node, retry),
   });
 }
 
 function handleBranchProviderFailure({ node, error, retry }) {
   const settings = loadSettings();
-  if (providerFor(settings.preset).id !== "custom") return;
+  if (providerFor(settings.preset).id !== "local") return;
   showToast({
     message: error?.message || "Couldn't reach the local model.",
     actionLabel: "Troubleshoot",
@@ -1079,14 +1076,16 @@ function handleBranchProviderFailure({ node, error, retry }) {
       ollamaRecoveryController.open({
         settings: loadSettings(),
         trigger: document.getElementById("t-settings"),
-        onResolved: async () => {
-          refreshCurrentBrain();
-          retry?.();
-          showToast({ message: `Retrying "${node?.title || "ask"}".` });
-        },
+        onResolved: () => retryBranch(node, retry),
       });
     },
   });
+}
+
+function retryBranch(node, retry) {
+  refreshCurrentBrain();
+  retry?.();
+  showToast({ message: `Retrying "${node?.title || "ask"}".` });
 }
 
 async function createLiveAssetData(holeId) {

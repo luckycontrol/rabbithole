@@ -37,6 +37,7 @@ harness.
 These tests should be fast and should avoid host orchestration.
 
 - `markdown-renderer.test.mjs` protects math delimiters, code highlighting,
+  unambiguous double-tilde strikethrough, literal approximation tildes,
   Markdown composition, safe fallback for malformed or incomplete input, raw HTML
   escaping, and the live/export page assembly needed for offline rendering.
 - `content-blocks.test.mjs` protects durable visual-block identity, registered
@@ -167,7 +168,7 @@ in CI.
 
 `test/evals/run-eval.mjs` is an opt-in quality probe, not a deterministic contract
 suite. It uses live providers and heuristic scoring for math, diagrams, explanation
-lenses, code-aware answers, follow-ups, synthesis, long documents, title handling,
+lenses, code-aware answers, follow-ups, long documents, title handling,
 hostile selected text, and baseline factual responses. See
 `test/evals/README.md` for credentials and invocation details.
 

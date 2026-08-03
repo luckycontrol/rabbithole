@@ -1,4 +1,4 @@
-import { AUTHORING_VOCABULARY_V1 } from "./authoring-v1.js";
+import { AUTHORING_VOCABULARY_V1, normalizePromptText } from "./authoring-v1.js";
 
 const EXPLAINER_SYSTEM_PROMPT_V1 = [
   "You are the explainer Brain for Rabbithole, a branching-document canvas for learning.",
@@ -24,15 +24,10 @@ export function buildExplainerMessages({ question = "" } = {}) {
       role: "user",
       content: [
         "Question:",
-        clean(question) || "(empty)",
+        normalizePromptText(question) || "(empty)",
         "",
         "Write the root Rabbithole document.",
       ].join("\n"),
     },
   ];
-}
-
-/** @param {unknown} value */
-function clean(value) {
-  return String(value ?? "").replace(/\r\n?/g, "\n").trim();
 }

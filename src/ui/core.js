@@ -1,29 +1,8 @@
-import {
-  BRANCH_FOLLOWUP,
-  BRANCH_SELECTION,
-  LENSES,
-  branchTypeOfNode,
-  lensLabel as sharedLensLabel,
-  truncate as sharedTruncate
-} from "../core/model.js";
 import { wireNotice } from "./primitives/notice.js";
-import { escapeHtml } from "../core/utils.js";
 import { BUNNY_MARK_SVG } from "../core/html/icons.js";
 import { createCleanupScope } from "./lifecycle.js";
 import { mountVisuals } from "./visuals.js";
-import {
-  DEFAULT_CHILD,
-  DEFAULT_ROOT,
-  TREE_PARENT_GAP,
-  TREE_STACK_GAP,
-  boundsOverlap as sharedBoundsOverlap,
-  nodeBounds as sharedNodeBounds,
-  nodeOrder as sharedNodeOrder,
-  shiftBounds as sharedShiftBounds,
-  unionBounds as sharedUnionBounds
-} from "../core/layout.js";
-
-export { BRANCH_FOLLOWUP, BRANCH_SELECTION, DEFAULT_CHILD, DEFAULT_ROOT, LENSES, TREE_PARENT_GAP, TREE_STACK_GAP };
+import { mountCodeCopy } from "./code-copy.js";
 
 export var SVGNS = "http://www.w3.org/2000/svg";
 export var MIN_SCALE = 0.15, MAX_SCALE = 2.5;
@@ -80,8 +59,7 @@ function defaultCoreHooks(){
     openNode: function(){},
     ensureNodeHtml: function(){},
     mountDocImages: null,
-    mountPdfView: null,
-    effH: function(n){ return n.h; }
+    mountPdfView: null
   };
 }
 
@@ -214,7 +192,6 @@ export function uuid() {
     if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
     return "n-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
   }
-export function truncate(s, n){ return sharedTruncate(s, n); }
 export function registerNode(node) {
     if (!node) return node;
     var previous = nodes[node.id];
@@ -242,8 +219,6 @@ export function unregisterNode(id) {
     return node;
   }
 export function childrenOf(id) { return childrenByParent[id] ? childrenByParent[id].slice() : []; }
-export function anchorStart(n){ return (n.origin && n.origin.anchor) ? n.origin.anchor.offset_start : 1e9; }
-export function lineageNodes(id){ var arr=[], n=nodes[id], guard={}; while(n && !guard[n.id]){ guard[n.id]=1; arr.push(n); n = n.parent_id ? nodes[n.parent_id] : null; } return arr.reverse(); }
 export function isVisible(node, cache){
     if (cache && Object.prototype.hasOwnProperty.call(cache, node.id)) return cache[node.id];
     var trail = [], p = node.parent_id ? nodes[node.parent_id] : null, visible = true;
@@ -264,29 +239,6 @@ export function isVisible(node, cache){
     return visible;
   }
 export function fontPx(node, base){ return Math.round(base * (node.font_scale || 1)); }
-export function nodeOrder(a,b){
-    return sharedNodeOrder(a, b);
-  }
-function branchTypeOf(n){
-    return branchTypeOfNode(n);
-  }
-export function isSelectionBranch(n){ return branchTypeOf(n) === BRANCH_SELECTION; }
-export function isFollowup(n){ return branchTypeOf(n) === BRANCH_FOLLOWUP; }
-export function followupsOf(id){
-    return childrenOf(id).filter(isFollowup).sort(nodeOrder);
-  }
-export function nodeBounds(n){
-    return sharedNodeBounds(n, { effH: coreHooks.effH });
-  }
-export function unionBounds(a,b){
-    return sharedUnionBounds(a, b);
-  }
-export function shiftBounds(b, dx, dy){
-    return sharedShiftBounds(b, dx, dy);
-  }
-export function boundsOverlap(a,b){
-    return sharedBoundsOverlap(a, b);
-  }
 export function sessionPhase(){
     if (frozen) return "frozen";
     if (closed) return "closed";
@@ -345,8 +297,6 @@ export function goToNode(node, source){
       coreHooks.openNode(node.id);
     }
   }
-export function lensLabel(key){ return sharedLensLabel(key); }
-export function lensBadgeHtml(key){ return '<span class="lens-badge">' + escapeHtml(lensLabel(key)) + '</span>'; }
 
   // ---------- loading placeholder (pending answers) ----------
   var LOADING_BUNNY_HTML = '<span class="loading-bunny" aria-hidden="true">' + BUNNY_MARK_SVG + '</span>';
@@ -414,13 +364,14 @@ function buildConvertProgress(node, pdfExt, committed){
     }
     return wrap;
   }
-export function visualSurfaceKey(node, base){
+function visualSurfaceKey(node, base){
     return (base === CANVAS_BASE ? "canvas:" : "reader:") + ((node && node.id) || "unknown");
   }
   function mountDocMedia(dc, node, base){
     var surfaceKey = visualSurfaceKey(node, base);
     mountVisuals(dc, surfaceKey);
-    if (typeof coreHooks.mountDocImages === "function") coreHooks.mountDocImages(dc, node, base, surfaceKey);
+    if (typeof coreHooks.mountDocImages === "function") coreHooks.mountDocImages(dc, surfaceKey);
+    mountCodeCopy(dc);
   }
   // A pending node that has streamed content renders it live: the words so far,
   // a breathing caret at the end of the text, and a quiet status row beneath.
@@ -443,7 +394,8 @@ export function fillStreaming(dc, node, surfaceKey){
     dc.appendChild(st);
     surfaceKey = surfaceKey || ("stream:" + ((node && node.id) || "unknown"));
     mountVisuals(dc, surfaceKey);
-    if (typeof coreHooks.mountDocImages === "function") coreHooks.mountDocImages(dc, node, null, surfaceKey);
+    if (typeof coreHooks.mountDocImages === "function") coreHooks.mountDocImages(dc, surfaceKey);
+    mountCodeCopy(dc);
   }
   function formatElapsed(ms){
     var s = Math.floor(ms / 1000);
@@ -472,6 +424,7 @@ export function buildDocContent(node, base){
     var dc = document.createElement("div");
     dc.className = "doc-content md";
     dc.dataset.nodeId = node.id;
+    dc.dataset.surface = base === CANVAS_BASE ? "canvas" : "reader";
     dc.style.fontSize = fontPx(node, base) + "px";
     if (node.status === "pending"){
       if (node.html) fillStreaming(dc, node, visualSurfaceKey(node, base));
@@ -500,7 +453,7 @@ export function buildDocContent(node, base){
     return dc;
   }
 
-export function toggleTheme(){
+function toggleTheme(){
   var cur = document.documentElement.getAttribute("data-theme");
   var next = cur === "dark" ? "light" : "dark";
   document.documentElement.setAttribute("data-theme", next);

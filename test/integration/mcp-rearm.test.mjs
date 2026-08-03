@@ -7,7 +7,7 @@ process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_MAX_BLOCK_MS = "50";
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-mcp-rearm-"));
 
-const { openRabbithole, answerBranch } = await import("../../src/node/index.js");
+const { openRabbithole, answerBranch } = await import("../../src/node/rabbithole.js");
 const { closeAllSessions, getSession } = await import("../../src/node/sessions.js");
 const { defaultFsStore } = await import("../../src/node/fs-store.js");
 
@@ -118,7 +118,6 @@ async function runSavedAskRequeueFixture() {
       selected_text: "Root",
       question: "Saved while away?",
       lens: null,
-      synthesis: false,
       anchor: null,
       branch_type: "selection",
     },

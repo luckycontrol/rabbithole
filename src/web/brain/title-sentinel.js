@@ -49,7 +49,6 @@ export class TitleSentinelParser {
 
 export function fallbackTitleForNode(node) {
   const origin = node?.origin || {};
-  if (origin.synthesis) return "Synthesis";
   if (origin.lens) return origin.lens;
   return truncate(origin.question || node?.title || "Untitled", 72) || "Untitled";
 }

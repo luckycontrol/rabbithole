@@ -7,14 +7,14 @@
  */
 
 import { escapeHtml, serializeForInlineScript } from "../../core/utils.js";
-import { getClientBundle, getDompurifyScript, getFrozenClientBundle, getKatexCss, getMermaidScript } from "./built-assets.js";
+import { getDompurifyScript, getMermaidScript, getPdfJsScript, getPdfWorkerScript, getUiAssets } from "./built-assets.js";
 import { CANVAS_SHELL } from "../../core/html/shell.js";
-import { CANVAS_STYLES } from "../../core/html/styles.js";
 
 export function buildCanvasHtml(hydration) {
   const title = hydration?.title || "Rabbithole";
   const hydrationJson = serializeForInlineScript(hydration);
-  const liveSnapshotSource = `  window.__RABBITHOLE_FROZEN_CLIENT__ = ${serializeForInlineScript(getFrozenClientBundle())};\n`;
+  const { stylesheetText, clientSource, frozenClientSource } = getUiAssets();
+  const liveSnapshotSource = `  window.__RABBITHOLE_FROZEN_CLIENT__ = ${serializeForInlineScript(frozenClientSource)};\n`;
   const liveSnapshotHoleHook = `      getSnapshotHole: async function(){
         var response = await fetch("/snapshot-hole", { cache: "no-store" });
         if (!response.ok) throw new Error("Snapshot document is unavailable");
@@ -28,19 +28,20 @@ export function buildCanvasHtml(hydration) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(title)}</title>
 <style>
-${CANVAS_STYLES}
-${getKatexCss()}
+${stylesheetText}
 </style>
 </head>
 <body>
 ${CANVAS_SHELL}
 <script type="application/vnd.rabbithole+mermaid" id="rabbithole-mermaid-runtime">${getMermaidScript()}</script>
+<script type="application/vnd.rabbithole+pdfjs" id="rabbithole-pdfjs-runtime">${getPdfJsScript().replace(/<\/script/gi, "<\\/script")}</script>
+<script type="application/vnd.rabbithole+pdf-worker" id="rabbithole-pdf-worker-runtime">${getPdfWorkerScript().replace(/<\/script/gi, "<\\/script")}</script>
 <script>
 ${getDompurifyScript()}
 (function(){
 	  "use strict";
 	  var hydration = ${hydrationJson};
-	${liveSnapshotSource}${getClientBundle()}
+	${liveSnapshotSource}${clientSource}
 	  RabbitholeClient.startRabbithole(hydration, {
 	    snapshotHooks: {
 	${liveSnapshotHoleHook}      getFrozenClientSource: function(){ return window.__RABBITHOLE_FROZEN_CLIENT__ || ""; },

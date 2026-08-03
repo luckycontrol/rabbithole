@@ -10,8 +10,9 @@ revisitable.
 There are two ways in:
 
 - **The web app** — [rabbithole.ing](https://rabbithole.ing). Bring an
-  OpenRouter key or point it at a local model. Static site, no account, no
-  backend: your key stays in your browser, and so do your documents.
+  OpenRouter key, run a local model, or point it at your own endpoint. Static
+  site, no account, no backend: your key stays in your browser, and so do your
+  documents.
 - **The MCP server** — for terminal agents. Claude Code, Codex, or any MCP
   client does the answering; Rabbithole gives it a canvas in your browser.
   The server, storage, and canvas all run on your machine — your documents
@@ -24,16 +25,41 @@ drop in a PDF or Markdown file, paste a URL, import a `.rabbithole` or
 snapshot `.html` — or just ask a question and let the answer become your
 first document.
 
-Two ways to run a model:
+Three ways to run a model:
 
 - **OpenRouter** (recommended) — one key, every major model. The model picker
   pulls OpenRouter's live catalog.
-- **Local** — any OpenAI-compatible endpoint: Ollama, LM Studio, llama.cpp.
-  No key required.
+- **Local** — Ollama on your machine, with setup help and installed-model
+  discovery. No key required.
+- **Custom** — any other OpenAI-compatible endpoint: LM Studio, llama.cpp,
+  vLLM, LiteLLM, or a hosted API. Paste the base URL, add a key if it needs
+  one, and Rabbithole lists the models it offers. The endpoint has to allow
+  browser requests from rabbithole.ing (CORS).
 
 Keys never leave the browser: they're stored locally (or session-only, your
 choice) and sent exclusively to the provider origin you configure. Exports
 scrub anything credential-shaped.
+
+#### Pointing a phone at a model on your network
+
+The model doesn't have to run on the device you're reading on. Serve Ollama
+from a machine on your network and point **Custom** at it:
+
+```bash
+OLLAMA_HOST=0.0.0.0 OLLAMA_ORIGINS=https://rabbithole.ing ollama serve
+```
+
+Then open [rabbithole.ing](https://rabbithole.ing) on the phone and set the
+endpoint to `http://<that-machine's-lan-ip>:11434/v1` — for example
+`http://192.168.0.198:11434/v1`. The browser asks once whether the page may
+reach other devices on your local network; allow it. `OLLAMA_HOST=0.0.0.0` is
+what makes Ollama listen beyond its own machine, and `OLLAMA_ORIGINS` is what
+lets the page talk to it.
+
+This needs a browser that implements Local Network Access — Chrome 142 or
+newer, on desktop and Android. Safari has no equivalent, so on iOS run the
+browser version from that same machine over plain http instead (below), which
+sidesteps the question entirely.
 
 ### Run the browser version locally
 
@@ -48,7 +74,9 @@ npx -y serve web/dist
 ```
 
 Open **[http://localhost:3000](http://localhost:3000)** (or the URL printed by
-`serve`). The local browser build has the same OpenRouter and
+`serve`). `serve` also prints a network URL — open that one from a phone or
+tablet on the same network and both the page and your model are plain http, so
+nothing has to be allowed or tunneled. The local browser build has the same OpenRouter and
 OpenAI-compatible local-model options as [rabbithole.ing](https://rabbithole.ing),
 and its documents and provider settings stay in that browser's local storage.
 
@@ -202,8 +230,7 @@ links, prefer fetching the HTML version and opening that content with
   snapshot** produces a single self-contained `.html` — data, assets, and a
   read-only client in one file anyone can open; **Export Rabbithole** (web
   app) produces a `.rabbithole` backup for device transfer — MCP holes are
-  already plain JSON on disk; or ask the agent for a synthesis of the whole
-  journey.
+  already plain JSON on disk.
 - **Durable asks:** questions asked while the agent is away are saved and
   re-queued on resume — the agent answers them first thing.
 - **Persistence:** holes auto-save as JSON under `~/.rabbithole/`; resuming

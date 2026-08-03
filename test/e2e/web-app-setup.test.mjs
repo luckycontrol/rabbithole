@@ -89,9 +89,9 @@ async function verifySetupDefaultsToOpenRouterAndGatesLocalGuide() {
     assert.equal(await page.locator("#api-key").count(), 1, "default setup should immediately show the OpenRouter form");
     assert.equal(await page.locator("#local-model").count(), 0, "Local controls should stay hidden until Local is selected");
     assert.equal(await page.locator("#ollama-recovery-modal").count(), 0, "opening setup must not force OpenRouter users into Ollama setup");
-    assert.deepEqual(await page.locator(".provider-choice button").allTextContents(), ["OpenRouter", "Local"]);
+    assert.deepEqual(await page.locator(".provider-choice button").allTextContents(), ["OpenRouter", "Local", "Custom"]);
 
-    await page.click('[data-provider="custom"]');
+    await page.click('[data-provider="local"]');
     await page.waitForSelector("#local-model-setup");
     assert.equal(localModelRequests, 1, "choosing Local should start Local model discovery");
     assert.equal(await page.locator("#ollama-recovery-modal").count(), 0, "failed Local discovery should stay in the Local settings screen");
@@ -289,7 +289,7 @@ async function verifyLandingAndComposer() {
   await page.goto(baseUrl, { waitUntil: "networkidle" });
   await page.waitForSelector("#blank-start:not([hidden])");
   assert.equal(await page.locator("#composer-modal").isVisible(), false, "first load should wait for model setup instead of opening the composer");
-  assert.equal(await page.locator("#blank-start-new").isDisabled(), true, "New Rabbithole should be disabled before setup");
+  assert.equal(await page.locator("#blank-start-new").isDisabled(), false, "New Rabbithole should remain actionable before setup");
   assert.equal(await page.locator("#blank-start-setup").innerText(), "Set up AI");
   assert.equal(await page.locator(".blank-project-link").count(), 0, "the blank canvas should leave project links to the toolbar menu");
   assert.match(await page.getAttribute("#blank-start-new", "aria-describedby"), /blank-start-status/);
@@ -301,10 +301,10 @@ async function verifyLandingAndComposer() {
     visibility: getComputedStyle(tooltip).visibility,
     transitionDuration: getComputedStyle(tooltip).transitionDuration,
     transitionDelay: getComputedStyle(tooltip).transitionDelay,
-  })), { role: "tooltip", opacity: "1", visibility: "visible", transitionDuration: "0s", transitionDelay: "0s" }, "disabled New Rabbithole guidance should appear immediately as a tooltip");
-  await page.keyboard.press("N");
+  })), { role: "tooltip", opacity: "1", visibility: "visible", transitionDuration: "0s", transitionDelay: "0s" }, "New Rabbithole setup guidance should appear immediately as a tooltip");
+  await page.click("#blank-start-new");
   await page.waitForSelector("#web-settings-popover");
-  assert.deepEqual(await page.locator(".provider-choice button").allTextContents(), ["OpenRouter", "Local"]);
+  assert.deepEqual(await page.locator(".provider-choice button").allTextContents(), ["OpenRouter", "Local", "Custom"]);
   assert.equal(await page.getAttribute('[data-provider="openrouter"]', "aria-pressed"), "true", "setup should select OpenRouter by default");
   assert.equal(await page.locator("#api-key").count(), 1, "setup should open the full OpenRouter form immediately");
   assert.equal(await page.locator(".settings-info-trigger").count(), 1);
@@ -312,10 +312,10 @@ async function verifyLandingAndComposer() {
   await page.locator(".settings-info-trigger").focus();
   assert.equal(await page.locator("#transcribe-model-help").evaluate((tooltip) => getComputedStyle(tooltip).visibility), "visible", "PDF transcription help should appear immediately for keyboard focus");
   assert.equal(await page.getAttribute('[data-provider="openrouter"]', "aria-pressed"), "true");
-  assert.equal(await page.locator("#composer-modal").isVisible(), false, "N should open setup, not the composer, before readiness");
+  assert.equal(await page.locator("#composer-modal").isVisible(), false, "New Rabbithole should open setup, not the composer, before readiness");
   await page.fill("#api-key", MOCK_KEY);
   await page.waitForSelector("#api-key-status.valid");
-  assert.equal(await page.locator("#blank-start-new").isDisabled(), true, "a validated key should not bypass explicit setup completion");
+  assert.equal(await page.locator("#blank-start-new").isDisabled(), false, "New Rabbithole should stay actionable while setup awaits explicit completion");
   await page.click("#complete-model-setup");
   await page.waitForSelector("#web-settings-popover", { state: "detached" });
   assert.equal(await page.locator("#blank-start-new").isDisabled(), false);
@@ -635,15 +635,17 @@ async function verifySetupReadinessInvalidation() {
   assert.equal(await page.locator("#blank-start-new").isDisabled(), false, "matching setup fingerprint should unlock creation");
 
   await page.click("#blank-start-setup");
-  await page.click('[data-provider="custom"]');
-  assert.equal(await page.locator("#blank-start-new").isDisabled(), true, "changing provider should invalidate completed setup");
+  await page.click('[data-provider="local"]');
+  assert.equal(await page.locator("#blank-start-new").isDisabled(), false, "changing provider should keep New Rabbithole actionable");
+  assert.equal(await page.locator("#blank-start-setup").innerText(), "Set up AI", "changing provider should invalidate completed setup");
   await page.click('[data-provider="openrouter"]');
   assert.equal(await page.locator("#blank-start-new").isDisabled(), false, "returning to the completed provider fingerprint should restore readiness");
 
   await page.click("#model-select");
   await page.waitForSelector(".model-option[data-value='openai/gpt-5']");
   await page.click(".model-option[data-value='openai/gpt-5']");
-  assert.equal(await page.locator("#blank-start-new").isDisabled(), true, "changing model should invalidate completed setup");
+  assert.equal(await page.locator("#blank-start-new").isDisabled(), false, "changing model should keep New Rabbithole actionable");
+  assert.equal(await page.locator("#blank-start-setup").innerText(), "Set up AI", "changing model should invalidate completed setup");
   assert.equal(await page.locator("#complete-model-setup").count(), 1, "model invalidation should immediately offer setup completion");
   await page.click("#model-select");
   await page.waitForSelector(`.model-option[data-value='${MOCK_MODEL}']`);
@@ -670,7 +672,8 @@ async function verifySetupReadinessInvalidation() {
   await localPage.locator(".settings-advanced summary").click();
   await localPage.fill("#provider-base", "http://localhost:12345/v1");
   await localPage.press("#provider-base", "Tab");
-  assert.equal(await localPage.locator("#blank-start-new").isDisabled(), true, "changing endpoint should invalidate completed setup");
+  assert.equal(await localPage.locator("#blank-start-new").isDisabled(), false, "changing endpoint should keep New Rabbithole actionable");
+  assert.equal(await localPage.locator("#blank-start-setup").innerText(), "Set up AI", "changing endpoint should invalidate completed setup");
   await local.close();
 
   console.log("ok web app: provider, endpoint, and model changes invalidate completed setup fingerprints");
@@ -757,7 +760,7 @@ async function verifyLocalComboboxStates(openRouterFixture) {
   await absentPage.route(LOCAL_MODEL_URL, (route) => route.abort());
   await absentPage.route(LOCAL_VERSION_URL, (route) => route.abort());
   await openFreshSettings(absentPage);
-  await absentPage.click('[data-provider="custom"]');
+  await absentPage.click('[data-provider="local"]');
   await absentPage.waitForSelector("#local-model-setup");
   assert.equal(await absentPage.locator("#ollama-recovery-modal").count(), 0, "missing Ollama should first produce an inline setup action");
   await absentPage.click("#local-model-setup");
@@ -778,7 +781,7 @@ async function openFreshSettings(page) {
 }
 
 async function switchSettingsToLocal(page) {
-  await page.click('[data-provider="custom"]');
+  await page.click('[data-provider="local"]');
 }
 
 async function verifyAskKeyUxAndRail() {
@@ -903,6 +906,15 @@ async function verifyAskKeyUxAndRail() {
   const mutationPortable = await page.evaluate(() => window.__rabbitholeTest.exportPortable());
   assert.equal(mutationPortable.hole.nodes.find((node) => node.id === rootIdWhileLoading)?.font_scale, 1.1,
     `immediate portable export must flush the canonical document mutation (root=${rootIdWhileLoading}, nodes=${JSON.stringify(mutationPortable.hole.nodes)})`);
+  /* A second quick click on a card control also emits a dblclick, which the head reads as
+     "open this document" — so the fast way to nudge type size must not eject you to Reader. */
+  await page.dblclick('.node-btn[aria-label="Larger text"]');
+  assert.equal(await page.evaluate(() => document.body.classList.contains("mode-canvas")), true,
+    "double-clicking a card control must stay on the canvas");
+  const doubleClickedFontScale = (await page.evaluate(() => window.__rabbitholeTest.exportPortable()))
+    .hole.nodes.find((node) => node.id === rootIdWhileLoading)?.font_scale;
+  assert.equal(Number(doubleClickedFontScale.toFixed(2)), 1.3,
+    `both clicks of a double-click must still reach the control (got ${doubleClickedFontScale})`);
   const persistedViewBeforeLiveChange = await page.evaluate(async () => (await window.__rabbitholeTest.readStoredHole()).view_state);
   await page.dblclick(`.node[data-id="${rootIdWhileLoading}"] .node-head`);
   await page.waitForFunction(() => !document.body.classList.contains("mode-canvas"));
@@ -950,10 +962,10 @@ async function verifyAskKeyUxAndRail() {
   }, null, { timeout: 5000 });
   assert.equal(await page.locator("#save-settings, #web-settings-close").count(), 0, "settings should apply live without save or close buttons");
   assert.equal(await page.locator(".settings-section").first().getAttribute("class"), "settings-section provider-section", "provider should be the first settings decision");
-  assert.deepEqual(await page.locator(".provider-choice button").allTextContents(), ["OpenRouter", "Local"]);
+  assert.deepEqual(await page.locator(".provider-choice button").allTextContents(), ["OpenRouter", "Local", "Custom"]);
   assert.equal(await page.getAttribute('[data-provider="openrouter"]', "aria-pressed"), "true");
-  await page.click('[data-provider="custom"]');
-  assert.equal(await page.getAttribute('[data-provider="custom"]', "aria-pressed"), "true");
+  await page.click('[data-provider="local"]');
+  assert.equal(await page.getAttribute('[data-provider="local"]', "aria-pressed"), "true");
   await page.waitForSelector(".local-model-section .field-hint");
   await page.waitForFunction(() => document.querySelector(".local-model-section .field-hint")?.textContent.includes("installed models"));
   assert.equal(await page.locator("#provider-base").count(), 1, "Local endpoint should remain available in Connection settings");

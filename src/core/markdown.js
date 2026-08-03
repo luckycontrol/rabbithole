@@ -2,8 +2,6 @@
 import { defaultAssetUrlResolver } from "./assets.js";
 import { createMarkdownRenderer } from "./markdown-renderer.js";
 
-export { createMarkdownRenderer } from "./markdown-renderer.js";
-
 const BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 /** @param {unknown} value */
@@ -30,6 +28,6 @@ const nodeRenderer = createMarkdownRenderer({
 
 /** Renders markdown to safe HTML, collapsing inter-tag whitespace for compact embedding. */
 /** @param {unknown} markdown @param {{ baseUrl?: string | null, assetNames?: Set<string> | null, resolveAssetUrl?: ((name: string) => string | null) | null }} [options] */
-export async function renderMarkdownToHtml(markdown, options = {}) {
+export function renderMarkdownToHtml(markdown, options = {}) {
   return nodeRenderer.renderMarkdownToHtml(markdown, options);
 }

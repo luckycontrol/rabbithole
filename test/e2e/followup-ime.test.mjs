@@ -30,21 +30,22 @@ try {
 
   await page.click("#t-reader");
   await dispatchComposingEnter(page, "#composer-text", "트");
-  assert.equal(await page.locator("#thread .turn").count(), 0,
+  assert.equal(await page.locator("#margin-notes .side-item").count(), 0,
     "reader composing Enter must not create an intermediate follow-up branch");
   assert.equal(providerBodies.length, 0,
     "reader composing Enter must not make a follow-up request");
 
   await finishCompositionAndSubmit(page, "#composer-text", "테스트");
-  await page.waitForSelector("#thread .turn");
-  assert.equal(await page.locator("#thread .turn").count(), 1,
+  const readerBranch = page.locator("#margin-notes .side-item", { hasText: "테스트" });
+  await readerBranch.waitFor();
+  assert.equal(await page.locator("#margin-notes .side-item").count(), 1,
     "reader normal Enter after composition must create exactly one follow-up branch");
-  assert.equal(await page.locator("#thread .turn-q").innerText(), "테스트");
+  assert.match(await readerBranch.innerText(), /테스트/);
   await waitForRequestCount(page, providerBodies, 1);
   assert.match(JSON.stringify(providerBodies[0]), /테스트/,
     "reader follow-up request must contain the complete composed text");
 
-  await page.click("#r-canvas");
+  await page.click("#t-canvas");
   const cardSelector = ".node.root .nc-inner textarea";
   const nodeCountBefore = await page.locator(".node").count();
   await page.locator(".node.root .nc-handle").focus();

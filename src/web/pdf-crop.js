@@ -1,43 +1,43 @@
-import { PDF_CROP_IMAGE_QUALITY, planPdfCrop } from "../core/pdf-shared.js";
+import {
+  PDF_AGENT_CROP_MAX_LONG_EDGE,
+  expandPdfBounds,
+  normalizedRectToPdfBounds,
+  pdfAnchorBounds,
+  viewportBounds
+} from "../core/pdf-shared.js";
+import { acquirePdfDocument } from "../ui/pdf-runtime.js";
 
-export async function cropPdfAssetToDataUrl(blob, rect) {
-  const canvas = await cropToCanvas(blob, rect);
-  const result = await canvasToDataUrl(canvas);
-  releaseCanvas(canvas);
-  return result;
+export async function cropPdfSourceToDataUrl(blob, options) {
+  return blobToDataUrl(await cropPdfSourceToBlob(blob, options));
 }
 
-// Blob straight from the canvas — never fetch(data:), which the app's CSP blocks.
-export async function cropPdfAssetToBlob(blob, rect) {
-  const canvas = await cropToCanvas(blob, rect);
-  const result = await canvasToBlob(canvas);
-  releaseCanvas(canvas);
-  return result;
-}
-
-async function cropToCanvas(blob, rect) {
-  if (!blob) throw new Error("PDF page asset is missing.");
-  const image = await decodeImage(blob);
+export async function cropPdfSourceToBlob(blob, { sourceKey, pageNumber, anchor = null, normalizedRect = null, padding = 12, maxLongEdge = PDF_AGENT_CROP_MAX_LONG_EDGE } = {}) {
+  if (!blob) throw new Error("PDF source is missing.");
+  const lease = await acquirePdfDocument({ key: `crop:${sourceKey || `${blob.size}:${blob.type}`}`, blob });
+  let page = null;
   try {
-    const plan = planPdfCrop(rect, image.width, image.height);
-    if (!plan) throw new Error("PDF selection region is empty.");
-    const canvas = createCanvas(plan.width, plan.height);
+    page = await lease.document.getPage(pageNumber);
+    const baseViewport = page.getViewport({ scale: 1, rotation: page.rotate });
+    let bounds = anchor ? pdfAnchorBounds(anchor, pageNumber) : null;
+    if (!bounds && normalizedRect) bounds = normalizedRectToPdfBounds(baseViewport, normalizedRect);
+    bounds = expandPdfBounds(bounds, page.view, padding);
+    if (!bounds) throw new Error("PDF crop is outside the visible page box.");
+    const baseCrop = viewportBounds(baseViewport, bounds);
+    const longEdge = Math.max(baseCrop[2] - baseCrop[0], baseCrop[3] - baseCrop[1]);
+    const scale = Math.max(1, Math.min((300 / 72) * (Number(page.userUnit) || 1), maxLongEdge / Math.max(1, longEdge)));
+    const viewport = page.getViewport({ scale, rotation: page.rotate });
+    const crop = viewportBounds(viewport, bounds);
+    const width = Math.max(1, Math.ceil(crop[2] - crop[0])), height = Math.max(1, Math.ceil(crop[3] - crop[1]));
+    const canvas = createCanvas(width, height);
     const context = canvas.getContext("2d", { alpha: false });
-    context.fillStyle = "white"; context.fillRect(0, 0, plan.width, plan.height);
-    context.drawImage(image, plan.sx, plan.sy, plan.sw, plan.sh, 0, 0, plan.width, plan.height);
-    return canvas;
-  } finally { image.close?.(); }
-}
-
-async function decodeImage(blob) {
-  if (typeof createImageBitmap === "function") return createImageBitmap(blob);
-  const url = URL.createObjectURL(blob);
-  try {
-    const image = new Image();
-    image.decoding = "async"; image.src = url;
-    await image.decode();
-    return image;
-  } finally { URL.revokeObjectURL(url); }
+    context.fillStyle = "white"; context.fillRect(0, 0, width, height);
+    await page.render({ canvasContext: context, viewport, transform: [1, 0, 0, 1, -crop[0], -crop[1]] }).promise;
+    const result = await canvasToBlob(canvas);
+    releaseCanvas(canvas);
+    return result;
+  } finally {
+    page?.cleanup?.(); lease.release();
+  }
 }
 
 function createCanvas(width, height) {
@@ -50,15 +50,8 @@ function releaseCanvas(canvas) {
 }
 
 async function canvasToBlob(canvas) {
-  if (typeof canvas.convertToBlob === "function") return canvas.convertToBlob({ type: "image/jpeg", quality: PDF_CROP_IMAGE_QUALITY });
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => { if (blob) resolve(blob); else reject(new Error("Canvas could not be encoded as JPEG.")); }, "image/jpeg", PDF_CROP_IMAGE_QUALITY);
-  });
-}
-
-async function canvasToDataUrl(canvas) {
-  if (typeof canvas.convertToBlob === "function") return blobToDataUrl(await canvas.convertToBlob({ type: "image/jpeg", quality: PDF_CROP_IMAGE_QUALITY }));
-  return canvas.toDataURL("image/jpeg", PDF_CROP_IMAGE_QUALITY);
+  if (typeof canvas.convertToBlob === "function") return canvas.convertToBlob({ type: "image/png" });
+  return new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Canvas could not be encoded as PNG.")), "image/png"));
 }
 
 function blobToDataUrl(blob) {

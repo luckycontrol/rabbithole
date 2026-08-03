@@ -70,7 +70,6 @@ export interface BranchRequestEvent extends NodePresentationFields {
   selected_text?: unknown;
   question?: unknown;
   lens?: unknown;
-  synthesis?: unknown;
   anchor?: unknown;
   branch_type?: unknown;
   /** Optional durable crop asset prepared by a host for a PDF region ask. */

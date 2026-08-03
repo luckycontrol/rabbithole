@@ -4,6 +4,7 @@ import path from "node:path";
 import { webkit } from "playwright";
 import { extractSnapshotPayload } from "../../src/core/portable-import.js";
 import { serializeForInlineScript } from "../../src/core/utils.js";
+import { assertCodeCopy } from "../support/code-copy.mjs";
 import { MOCK_MODEL, corsHeaders, routeProvider, seedConfiguredOpenRouter } from "../support/provider-mock.mjs";
 import { ROOT, bootWebApp } from "../support/web-app-harness.mjs";
 
@@ -28,6 +29,7 @@ try {
   await verifyDesktopReaderLayout(browser);
   await verifyMobileSelectionSurface(browser, "chromium");
   await verifyMobileSelectionSurface(mobileWebKit, "webkit");
+  await verifyLogicalMarkGrouping();
   await verifyCanvasBranching();
   console.log("web app verification passed");
 } finally {
@@ -281,22 +283,34 @@ async function verifyDesktopReaderLayout(browserEngine) {
       const mainStyle = getComputedStyle(main);
       const column = document.querySelector(".reader-col").getBoundingClientRect();
       const notesRect = notes.getBoundingClientRect();
+      const rail = document.getElementById("reader-rail").getBoundingClientRect();
+      const workspaceStyle = getComputedStyle(document.getElementById("reader-workspace"));
       const bar = document.getElementById("taskbar").getBoundingClientRect();
       const session = document.getElementById("tb-session").getBoundingClientRect();
       const readerTop = document.getElementById("reader").getBoundingClientRect().top
         + parseFloat(getComputedStyle(document.getElementById("reader")).paddingTop);
-      return { notesDisplay: getComputedStyle(notes).display, notesLeft: notesRect.left, columnRight: column.right,
-        mainWidth: main.getBoundingClientRect().width,
+      return { notesDisplay: getComputedStyle(notes).display, notesLeft: notesRect.left, notesRight: notesRect.right, columnRight: column.right,
+        mainWidth: main.getBoundingClientRect().width, mainRight: main.getBoundingClientRect().right,
+        railLeft: rail.left, railRight: rail.right, railWidth: rail.width,
         viewportWidth: innerWidth, barHeight: bar.height, barBottom: bar.bottom, contentTop: readerTop,
+        workspaceBorderTopStyle: workspaceStyle.borderTopStyle,
+        workspaceBorderTopWidth: parseFloat(workspaceStyle.borderTopWidth),
         sessionRight: session.right,
         doneDisplay: getComputedStyle(document.getElementById("tb-done-pill")).display,
         mainPaddingLeft: parseFloat(mainStyle.paddingLeft) };
     });
-    assert.equal(desktop.notesDisplay, "block", `desktop: the margin-note layer must be live beside the text (${JSON.stringify(desktop)})`);
-    assert(desktop.notesLeft > desktop.columnRight, `desktop: margin notes hang in the right margin, outside the column (${JSON.stringify(desktop)})`);
-    assert(desktop.mainWidth >= desktop.viewportWidth - 1, `desktop: the document must own the full width (${JSON.stringify(desktop)})`);
+    assert.equal(desktop.notesDisplay, "flex", `desktop: the branch rail must be live beside the document (${JSON.stringify(desktop)})`);
+    assert(Math.abs(desktop.mainRight - desktop.railLeft) <= 1, `desktop: the document and branch rail must meet without a dead strip (${JSON.stringify(desktop)})`);
+    assert(desktop.notesLeft >= desktop.railLeft && desktop.notesRight <= desktop.railRight,
+      `desktop: branch cards must stay inside the right rail (${JSON.stringify(desktop)})`);
+    assert(desktop.columnRight < desktop.railLeft, `desktop: prose must stay inside the remaining document pane (${JSON.stringify(desktop)})`);
+    assert(Math.abs(desktop.mainWidth + desktop.railWidth - desktop.viewportWidth) <= 1,
+      `desktop: document plus branch rail must consume exactly the viewport (${JSON.stringify(desktop)})`);
+    assert(Math.abs(desktop.viewportWidth - desktop.railRight) <= 1, `desktop: the branch rail must hug the physical right edge (${JSON.stringify(desktop)})`);
     assert(desktop.barHeight < 52, `desktop: the shared taskbar must remain a single compact row (${JSON.stringify(desktop)})`);
     assert(desktop.contentTop >= desktop.barBottom, `desktop: reader content must clear the floating taskbar (${JSON.stringify(desktop)})`);
+    assert.equal(desktop.workspaceBorderTopStyle, "solid", `desktop: the Reader workspace must have a continuous top boundary (${JSON.stringify(desktop)})`);
+    assert(desktop.workspaceBorderTopWidth > 0, `desktop: the Reader workspace top boundary must remain visible (${JSON.stringify(desktop)})`);
     assert(desktop.viewportWidth - desktop.sessionRight <= 20, `desktop: the session cluster must hug the top-right corner (${JSON.stringify(desktop)})`);
     assert.equal(desktop.doneDisplay, "none", `desktop: Done ends an agent session — it must never render in the web app (${JSON.stringify(desktop)})`);
     assert.equal(desktop.mainPaddingLeft, 48, `desktop: the established reading gutter must stay at 48px`);
@@ -523,6 +537,249 @@ async function verifyMobileSelectionSurface(browserEngine, engineName) {
   }
 }
 
+async function verifyLogicalMarkGrouping() {
+  const context = await browser.newContext();
+  await seedConfiguredOpenRouter(context);
+  const page = await context.newPage();
+  let providerCalls = 0;
+  await routeProvider(page, {
+    keyStatus: () => 200,
+    onProviderCall: () => { providerCalls += 1; },
+    streams: [
+      ["TITLE: Grouped mark branch\n", "The answer reached from every fragment of the grouped mark."],
+      ["TITLE: Overlapping mark branch\n", "The nested answer proves overlapping mark discovery."],
+      ["TITLE: Unrelated mark branch\n", "A separate answer used to prove hover isolation."],
+    ],
+  });
+  try {
+    await page.goto(baseUrl, { waitUntil: "networkidle" });
+    await createDocument(page, [
+      "# Logical mark groups",
+      "",
+      "This paragraph begins before the grouped selection and continues through a distinctive phrase.",
+      "",
+      "- This list item carries the selection through its unmistakable ending.",
+      "",
+      "A separate paragraph contains an unrelated anchor for isolation.",
+    ].join("\n"));
+
+    await selectAcrossBlocks(page, "grouped selection", "unmistakable ending");
+    await page.waitForSelector("#ask.visible");
+    await page.fill("#ask-text", "Why should this whole range highlight?");
+    await page.click("#ask-go");
+    const groupedCanvasMark = page.locator('.node.root mark[aria-label="Open branch: Grouped mark branch"].mark-ready');
+    await groupedCanvasMark.first().waitFor();
+    const groupedId = await groupedCanvasMark.first().getAttribute("data-child");
+
+    await selectText(page, "distinctive phrase");
+    await page.waitForSelector("#ask.visible");
+    await page.fill("#ask-text", "How does this overlap the larger range?");
+    await page.click("#ask-go");
+    const overlappingCanvasMark = page.locator('.node.root mark[aria-label="Open branch: Overlapping mark branch"].mark-ready');
+    await overlappingCanvasMark.waitFor();
+    const overlappingId = await overlappingCanvasMark.getAttribute("data-child");
+
+    await selectText(page, "unrelated anchor");
+    await page.waitForSelector("#ask.visible");
+    await page.fill("#ask-text", "Why is this mark separate?");
+    await page.click("#ask-go");
+    const unrelatedCanvasMark = page.locator('.node.root mark[aria-label="Open branch: Unrelated mark branch"].mark-ready');
+    await unrelatedCanvasMark.waitFor();
+    const unrelatedId = await unrelatedCanvasMark.getAttribute("data-child");
+    assert.equal(providerCalls, 3, "the mark-group fixture should create its grouped, overlapping, and unrelated branches");
+
+    const blockCoverage = await groupedCanvasMark.evaluateAll((marks) => ({
+      count: marks.length,
+      blocks: [...new Set(marks.map((mark) => mark.closest("p, li")?.tagName).filter(Boolean))],
+    }));
+    assert(blockCoverage.count >= 2, `the cross-block selection must render at least two mark fragments: ${JSON.stringify(blockCoverage)}`);
+    assert(blockCoverage.blocks.includes("P") && blockCoverage.blocks.includes("LI"),
+      `the grouped mark must span paragraph and list-item ancestors: ${JSON.stringify(blockCoverage)}`);
+
+    assert.equal(await overlappingCanvasMark.evaluate((mark, parentId) => {
+      let ancestor = mark.parentElement;
+      while (ancestor && !ancestor.classList.contains("doc-content")) {
+        if (ancestor.matches("mark[data-child]") && ancestor.dataset.child === parentId) return true;
+        ancestor = ancestor.parentElement;
+      }
+      return false;
+    }, groupedId), true, "the overlapping fixture must render as a nested logical mark");
+    await exerciseOverlappingMarkHover(page, groupedId, overlappingId, unrelatedId);
+    await exerciseGroupedMarkHover(page, ".node.root .doc-content", groupedId, unrelatedId, true);
+
+    await page.click("#t-reader");
+    await page.waitForSelector("body:not(.mode-canvas) #reader-main");
+    await exerciseGroupedMarkHover(page, "#reader-main .doc-content", groupedId, unrelatedId, false);
+    const readerMarks = page.locator(`#reader-main mark[data-child="${groupedId}"]`);
+    await page.keyboard.press("Shift");
+    await readerMarks.nth(1).focus();
+    await assertStrongMarkGroup(page, "#reader-main .doc-content", groupedId, unrelatedId, "Reader DOM focus");
+    assert.equal(await readerMarks.evaluateAll((marks) => marks.every((mark) => mark.classList.contains("mark-dom-focus"))), true,
+      "Reader DOM focus must apply its state to every fragment in the logical group");
+    assert.notEqual(await readerMarks.nth(1).evaluate((mark) => getComputedStyle(mark).outlineStyle), "none",
+      "the actually focused Reader fragment must retain its visible focus ring");
+
+    await page.click("#t-canvas");
+    await page.waitForSelector("body.mode-canvas");
+    await verifyNonFirstFragmentCanvasNavigation(page, groupedId);
+
+    const frozenHtml = await page.evaluate(() => window.__rabbitholeTest.exportSnapshot());
+    const frozenPage = await context.newPage();
+    await frozenPage.setContent(frozenHtml, { waitUntil: "load" });
+    await frozenPage.waitForSelector(".node.root .doc-content");
+    if (!await frozenPage.evaluate(() => document.body.classList.contains("mode-canvas"))) await frozenPage.click("#t-canvas");
+    await exerciseGroupedMarkHover(frozenPage, ".node.root .doc-content", groupedId, unrelatedId, true);
+    await verifyNonFirstFragmentCanvasNavigation(frozenPage, groupedId);
+    await frozenPage.click("#t-reader");
+    await frozenPage.waitForSelector("body:not(.mode-canvas) #reader-main");
+    await exerciseGroupedMarkHover(frozenPage, "#reader-main .doc-content", groupedId, unrelatedId, false);
+    const frozenReaderMarks = frozenPage.locator(`#reader-main mark[data-child="${groupedId}"]`);
+    await frozenPage.keyboard.press("Shift");
+    await frozenReaderMarks.nth(1).focus();
+    await assertStrongMarkGroup(frozenPage, "#reader-main .doc-content", groupedId, unrelatedId, "frozen Reader DOM focus");
+    assert.notEqual(await frozenReaderMarks.nth(1).evaluate((mark) => getComputedStyle(mark).outlineStyle), "none",
+      "the focused frozen Reader fragment must retain its visible focus ring");
+    await frozenPage.close();
+  } finally {
+    await context.close();
+  }
+}
+
+async function exerciseOverlappingMarkHover(page, groupedId, overlappingId, unrelatedId) {
+  const overlapping = page.locator(`.node.root mark[data-child="${overlappingId}"]`).first();
+  await overlapping.hover();
+  await page.waitForFunction(({ groupedId, overlappingId }) => {
+    const marks = [...document.querySelectorAll(".node.root .doc-content mark[data-child]")];
+    const active = marks.filter((mark) => mark.dataset.child === groupedId || mark.dataset.child === overlappingId);
+    return active.length >= 3 && active.every((mark) => mark.classList.contains("mark-hover"));
+  }, { groupedId, overlappingId });
+  const state = await page.evaluate(({ groupedId, overlappingId, unrelatedId }) => {
+    const marks = [...document.querySelectorAll(".node.root .doc-content mark[data-child]")];
+    return {
+      grouped: marks.filter((mark) => mark.dataset.child === groupedId).every((mark) => mark.classList.contains("mark-hover")),
+      overlapping: marks.filter((mark) => mark.dataset.child === overlappingId).every((mark) => mark.classList.contains("mark-hover")),
+      unrelated: marks.filter((mark) => mark.dataset.child === unrelatedId).some((mark) => mark.classList.contains("mark-hover")),
+    };
+  }, { groupedId, overlappingId, unrelatedId });
+  assert.deepEqual(state, { grouped: true, overlapping: true, unrelated: false },
+    "hovering a nested mark must activate every represented logical group without affecting unrelated marks");
+  await page.locator("#t-theme").hover();
+  assert.equal(await page.locator(".node.root .doc-content mark.mark-hover").count(), 0,
+    "leaving nested marks must clear every represented logical group");
+}
+
+async function exerciseGroupedMarkHover(page, scope, groupedId, unrelatedId, expectEdge) {
+  const marks = page.locator(`${scope} mark[data-child="${groupedId}"]`);
+  const last = marks.nth((await marks.count()) - 1);
+  await marks.first().hover();
+  await assertStrongMarkGroup(page, scope, groupedId, unrelatedId, "mark hover");
+  assert.equal(await marks.evaluateAll((fragments) => fragments.every((mark) => mark.classList.contains("mark-hover"))), true,
+    "hovering one fragment must apply mark-hover to its whole logical group");
+  if (expectEdge) assert.equal(await edgeHighlightState(page, groupedId), true,
+    "Canvas mark hover must highlight the matching branch edge");
+
+  await marks.first().evaluate((first) => {
+    const root = first.closest(".doc-content");
+    const peers = [...root.querySelectorAll("mark[data-child]")].filter((mark) => mark.dataset.child === first.dataset.child);
+    first.dispatchEvent(new MouseEvent("mouseout", { bubbles: true, relatedTarget: peers[peers.length - 1] }));
+  });
+  assert.equal(await marks.evaluateAll((fragments) => fragments.every((mark) => mark.classList.contains("mark-hover"))), true,
+    "moving directly between fragments of one logical mark must preserve group hover state");
+  if (expectEdge) assert.equal(await edgeHighlightState(page, groupedId), true,
+    "moving within one logical mark must preserve its Canvas edge highlight");
+  await last.hover();
+  await assertStrongMarkGroup(page, scope, groupedId, unrelatedId, "mark hover after an intra-group move");
+
+  await page.locator("#t-theme").hover();
+  await page.waitForFunction(({ scope, groupedId, unrelatedId }) => {
+    const root = document.querySelector(scope);
+    const marks = [...root.querySelectorAll("mark[data-child]")];
+    const group = marks.filter((mark) => mark.dataset.child === groupedId)
+      .map((mark) => getComputedStyle(mark).backgroundColor);
+    const unrelated = marks.find((mark) => mark.dataset.child === unrelatedId);
+    const normal = unrelated && getComputedStyle(unrelated).backgroundColor;
+    return group.length > 0 && group.every((color) => color === normal);
+  }, { scope, groupedId, unrelatedId });
+  const cleared = await readMarkBackgrounds(page, scope, groupedId, unrelatedId);
+  assert.equal(cleared.group.every((color) => color === cleared.unrelated), true,
+    `leaving the logical mark must restore every fragment's normal background: ${JSON.stringify(cleared)}`);
+  assert.equal(await marks.evaluateAll((fragments) => fragments.every((mark) => !mark.classList.contains("mark-hover"))), true,
+    "leaving the logical mark must clear group hover state");
+  if (expectEdge) assert.equal(await edgeHighlightState(page, groupedId), false,
+    "leaving a Canvas logical mark must clear its branch edge highlight");
+}
+
+async function assertStrongMarkGroup(page, scope, groupedId, unrelatedId, label) {
+  await page.waitForFunction(({ scope, groupedId, unrelatedId }) => {
+    const root = document.querySelector(scope);
+    const marks = [...root.querySelectorAll("mark[data-child]")];
+    const group = marks.filter((mark) => mark.dataset.child === groupedId)
+      .map((mark) => getComputedStyle(mark).backgroundColor);
+    const unrelated = marks.find((mark) => mark.dataset.child === unrelatedId);
+    const normal = unrelated && getComputedStyle(unrelated).backgroundColor;
+    return group.length >= 2 && group.every((color) => color === group[0]) && group[0] !== normal;
+  }, { scope, groupedId, unrelatedId });
+  const state = await readMarkBackgrounds(page, scope, groupedId, unrelatedId);
+  assert(state.group.length >= 2, `${label}: the fixture must expose multiple fragments`);
+  assert.equal(state.group.every((color) => color === state.group[0]), true,
+    `${label}: every logical fragment must receive the same strong background: ${JSON.stringify(state)}`);
+  assert.notEqual(state.group[0], state.unrelated,
+    `${label}: an unrelated mark must retain its normal background: ${JSON.stringify(state)}`);
+}
+
+async function readMarkBackgrounds(page, scope, groupedId, unrelatedId) {
+  return page.evaluate(({ scope, groupedId, unrelatedId }) => {
+    const root = document.querySelector(scope);
+    const marks = [...root.querySelectorAll("mark[data-child]")];
+    const group = marks.filter((mark) => mark.dataset.child === groupedId)
+      .map((mark) => getComputedStyle(mark).backgroundColor);
+    const unrelated = marks.find((mark) => mark.dataset.child === unrelatedId);
+    return { group, unrelated: unrelated && getComputedStyle(unrelated).backgroundColor };
+  }, { scope, groupedId, unrelatedId });
+}
+
+async function edgeHighlightState(page, childId) {
+  return page.evaluate((id) => {
+    const edge = [...document.querySelectorAll("#edges path[data-child]")]
+      .find((path) => path.dataset.child === id);
+    return !!edge && edge.classList.contains("edge-hl");
+  }, childId);
+}
+
+async function verifyNonFirstFragmentCanvasNavigation(page, childId) {
+  const marks = page.locator(`.node.root mark[data-child="${childId}"]`);
+  const nonFirst = marks.nth((await marks.count()) - 1);
+  const armFlashProbe = () => page.evaluate(() => {
+    window.__logicalMarkDiveFlashed = false;
+    const observer = new MutationObserver(() => {
+      if (document.querySelector(".node:not(.root).flash")) {
+        window.__logicalMarkDiveFlashed = true;
+        observer.disconnect();
+      }
+    });
+    observer.observe(document.getElementById("world"), { subtree: true, attributes: true, attributeFilter: ["class"] });
+  });
+
+  await armFlashProbe();
+  await nonFirst.click();
+  await page.waitForFunction(() => window.__logicalMarkDiveFlashed === true);
+  assert.equal(await page.evaluate(() => document.body.classList.contains("mode-canvas")), true,
+    "clicking a non-first mark fragment must dive to the branch in Canvas");
+  await page.waitForTimeout(400);
+  await page.click("#t-frame");
+  await page.waitForTimeout(400);
+
+  await nonFirst.focus();
+  await armFlashProbe();
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => window.__logicalMarkDiveFlashed === true);
+  assert.equal(await page.evaluate(() => document.body.classList.contains("mode-canvas")), true,
+    "pressing Enter on a non-first mark fragment must dive to the branch in Canvas");
+  await page.waitForTimeout(400);
+  await page.click("#t-frame");
+  await page.waitForTimeout(400);
+}
+
 async function verifyCanvasBranching() {
   const context = await browser.newContext();
   await seedConfiguredOpenRouter(context);
@@ -699,13 +956,14 @@ async function verifyCanvasBranching() {
   await page.keyboard.press("Escape");
   await page.waitForSelector("#web-settings-popover", { state: "detached" });
 
+  const smokeCode = "console.log('math branch');";
   const markdown = [
     "# Web Smoke",
     "",
     "Euler identity $e^{i\\pi}+1=0$ ties exponentials to geometry.",
     "",
     "```js",
-    "console.log('math branch');",
+    smokeCode,
     "```",
     "",
     "```show",
@@ -723,6 +981,7 @@ async function verifyCanvasBranching() {
   await page.waitForSelector(".node .katex");
   await page.waitForSelector(".node .hljs");
   await page.waitForSelector(".node .viz-show");
+  await assertCodeCopy(page, { scope: ".node.root .doc-content", rawCode: smokeCode, label: "web Canvas" });
 
   const rootDrawer = page.locator(".node.root .nc-handle");
   const rootDrawerId = await rootDrawer.getAttribute("aria-controls");
@@ -800,6 +1059,7 @@ async function verifyCanvasBranching() {
   });
   assert.equal(readerReadingPosition.block, canvasReadingPosition.block, "canvas-to-reader should preserve the visible content block");
   assert(Math.abs(readerReadingPosition.offset - canvasReadingPosition.offset) < 0.2, `canvas-to-reader should preserve the position within the visible block: ${JSON.stringify({ canvasReadingPosition, readerReadingPosition })}`);
+  await assertCodeCopy(page, { scope: "#reader-main .doc-content", rawCode: smokeCode, hover: false, label: "web Reader" });
   await page.focus("#r-textup");
   await page.keyboard.press("Tab");
   assert.equal(await page.evaluate(() => document.activeElement?.id), "t-share", "reader tools should tab straight into the session cluster");
@@ -826,6 +1086,7 @@ async function verifyCanvasBranching() {
   });
   assert.equal(canvasReturnPosition.block, readerReturnPosition.block, "reader-to-canvas should preserve the visible content block");
   assert(Math.abs(canvasReturnPosition.offset - readerReturnPosition.offset) < 0.2, `reader-to-canvas should preserve the position within the visible block: ${JSON.stringify({ readerReturnPosition, canvasReturnPosition })}`);
+  await assertCodeCopy(page, { scope: ".node.root .doc-content", rawCode: smokeCode, hover: false, label: "web Canvas after Reader" });
   await page.focus("#t-new");
   await page.keyboard.press("Tab");
   assert.equal(await page.evaluate(() => document.activeElement?.id), "t-reader");
@@ -874,14 +1135,14 @@ async function verifyCanvasBranching() {
   assert.equal(shareStandard.itemPaddingTop, "8px");
   assert.equal(shareStandard.itemPaddingBottom, "8px");
   assert.equal(shareStandard.expanded, "true");
-  assert.equal(shareStandard.menuItems, 5);
-  assert.deepEqual(await page.locator('#sharemenu [role="menuitem"]').evaluateAll((items) => items.map((item) => item.tabIndex)), [0, -1, -1, -1, -1], "Share should expose one item in the Tab sequence");
+  assert.equal(shareStandard.menuItems, 4);
+  assert.deepEqual(await page.locator('#sharemenu [role="menuitem"]').evaluateAll((items) => items.map((item) => item.tabIndex)), [0, -1, -1, -1], "Share should expose one item in the Tab sequence");
   await page.keyboard.press("ArrowUp");
-  assert.equal(await page.evaluate(() => document.activeElement?.id), "sm-synth", "ArrowUp should wrap to the last visible Share item");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "sm-portable", "ArrowUp should wrap to the last visible Share item");
   await page.keyboard.press("ArrowDown");
   assert.equal(await page.evaluate(() => document.activeElement?.id), "sm-trail", "ArrowDown should wrap to the first visible Share item");
   await page.keyboard.press("End");
-  assert.equal(await page.evaluate(() => document.activeElement?.id), "sm-synth");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "sm-portable");
   await page.keyboard.press("Home");
   assert.equal(await page.evaluate(() => document.activeElement?.id), "sm-trail");
   await page.keyboard.press("ArrowDown");
@@ -909,6 +1170,7 @@ async function verifyCanvasBranching() {
   assert(!frozenHtml.includes(".web-rail"), "web-exported snapshots must exclude web-only rail styling");
   const frozenPage = await context.newPage();
   await frozenPage.setContent(frozenHtml, { waitUntil: "load" });
+  await assertCodeCopy(frozenPage, { scope: ".node.root .doc-content", rawCode: smokeCode, hover: false, label: "web frozen snapshot" });
   const frozenStyles = await frozenPage.evaluate(() => ({
     surfaceGap: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--surface-gap")),
     toolbarPosition: getComputedStyle(document.getElementById("taskbar")).position,
@@ -919,13 +1181,12 @@ async function verifyCanvasBranching() {
   await frozenPage.keyboard.press("Enter");
   await frozenPage.waitForSelector("#sharemenu.visible");
   await frozenPage.waitForFunction(() => document.activeElement?.id === "sm-trail");
-  assert.deepEqual(await frozenPage.locator('#sharemenu [role="menuitem"]:visible').evaluateAll((items) => items.map((item) => item.id)), ["sm-trail", "sm-doc"], "Frozen Share should suppress export, portable export, and synthesis");
+  assert.deepEqual(await frozenPage.locator('#sharemenu [role="menuitem"]:visible').evaluateAll((items) => items.map((item) => item.id)), ["sm-trail", "sm-doc"], "Frozen Share should suppress export and portable export");
   assert.deepEqual(await frozenPage.locator('#sharemenu [role="menuitem"]').evaluateAll((items) => items.map((item) => ({ id: item.id, tabIndex: item.tabIndex, visible: item.style.display !== "none" }))), [
     { id: "sm-trail", tabIndex: 0, visible: true },
     { id: "sm-doc", tabIndex: -1, visible: true },
     { id: "sm-export", tabIndex: -1, visible: false },
     { id: "sm-portable", tabIndex: -1, visible: false },
-    { id: "sm-synth", tabIndex: -1, visible: false },
   ], "Frozen roving tabindex should cover exactly the remaining items");
   await frozenPage.keyboard.press("ArrowDown");
   assert.equal(await frozenPage.evaluate(() => document.activeElement?.id), "sm-doc");
@@ -984,10 +1245,12 @@ async function verifyCanvasBranching() {
   const pendingAlignment = await page.evaluate((id) => {
     const tile = document.querySelector(`#margin-notes .side-item[data-child="${id}"]`);
     const mark = document.querySelector(`#reader-main mark[data-child="${id}"]`);
-    return { tileTop: Math.round(tile.getBoundingClientRect().top), markTop: mark ? Math.round(mark.getBoundingClientRect().top) : null };
+    const rail = document.getElementById("reader-rail").getBoundingClientRect();
+    const card = tile.getBoundingClientRect();
+    return { tileLeft: card.left, tileRight: card.right, railLeft: rail.left, railRight: rail.right, hasMark: !!mark };
   }, pendingSidebarContract.id);
-  assert(pendingAlignment.markTop !== null && Math.abs(pendingAlignment.tileTop - pendingAlignment.markTop) <= 2,
-    `margin notes must top-align with their highlight like a document comment (${JSON.stringify(pendingAlignment)})`);
+  assert(pendingAlignment.hasMark && pendingAlignment.tileLeft >= pendingAlignment.railLeft && pendingAlignment.tileRight <= pendingAlignment.railRight,
+    `anchored branches must retain their inline mark while their card stays in the persistent rail (${JSON.stringify(pendingAlignment)})`);
   const streamedSidebarTile = page.locator(`.side-item[data-child="${pendingSidebarContract.id}"][role="link"]`);
   await page.waitForFunction((id) => !document.querySelector(`.side-item[data-child="${id}"]`)?.classList.contains("pending"), pendingSidebarContract.id);
   assert.equal(await streamedSidebarTile.evaluate((tile) => tile.__s9Identity),
@@ -1167,6 +1430,9 @@ async function verifyCanvasBranching() {
   await page.click("#t-reader");
   await page.fill("#composer-text", "Go one layer deeper.");
   await page.click("#composer-send");
+  const followupRailCard = page.locator("#margin-notes .side-item", { hasText: "Go one layer deeper." });
+  await followupRailCard.waitFor();
+  await followupRailCard.click();
   await page.locator("#reader-main", { hasText: "Second branch explains the geometric view" }).waitFor();
   assert.equal(providerCalls, 3);
 
@@ -1236,4 +1502,28 @@ async function selectText(page, needle) {
     }
     throw new Error(`Text not found: ${text}`);
   }, needle);
+}
+
+async function selectAcrossBlocks(page, startNeedle, endNeedle) {
+  await page.evaluate(({ startNeedle, endNeedle }) => {
+    const root = document.querySelector(".node.root .doc-content[data-node-id]");
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let startNode, startOffset, endNode, endOffset, node;
+    while ((node = walker.nextNode())) {
+      if (!startNode) {
+        const index = node.nodeValue.indexOf(startNeedle);
+        if (index !== -1) { startNode = node; startOffset = index; }
+      }
+      const index = node.nodeValue.indexOf(endNeedle);
+      if (index !== -1) { endNode = node; endOffset = index + endNeedle.length; }
+    }
+    if (!startNode || !endNode) throw new Error(`Cross-block range not found: ${startNeedle} → ${endNeedle}`);
+    const range = document.createRange();
+    range.setStart(startNode, startOffset);
+    range.setEnd(endNode, endOffset);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: 160, clientY: 180 }));
+  }, { startNeedle, endNeedle });
 }

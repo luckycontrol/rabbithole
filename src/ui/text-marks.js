@@ -1,5 +1,54 @@
 import { childrenOf, nodes } from "./core.js";
 
+export var MARK_FRAGMENT_SELECTOR = "mark[data-child], .rh-pdf-mark[data-child]";
+
+function markGroupsAt(target){
+  var el = target && target.nodeType === 1 ? target : target && target.parentElement;
+  var groups = [];
+  while (el){
+    if (el.matches && el.matches(MARK_FRAGMENT_SELECTOR)){
+      var root = el.closest(".doc-content");
+      var childId = el.dataset.child;
+      var seen = false;
+      for (var i = 0; i < groups.length; i++){
+        if (groups[i].root === root && groups[i].childId === childId){ seen = true; break; }
+      }
+      if (root && childId != null && !seen) groups.push({ root: root, childId: childId, fragment: el });
+    }
+    if (el.classList && el.classList.contains("doc-content")) break;
+    el = el.parentElement;
+  }
+  return groups;
+}
+
+function sameMarkGroup(groups, group){
+  for (var i = 0; i < groups.length; i++){
+    if (groups[i].root === group.root && groups[i].childId === group.childId) return true;
+  }
+  return false;
+}
+
+export function toggleMarkGroup(fragment, stateClass, on){
+  if (!fragment || !fragment.matches || !fragment.matches(MARK_FRAGMENT_SELECTOR)) return;
+  var root = fragment.closest(".doc-content"), childId = fragment.dataset.child;
+  if (!root || childId == null) return;
+  var marks = root.querySelectorAll(MARK_FRAGMENT_SELECTOR);
+  for (var i = 0; i < marks.length; i++){
+    if (marks[i].dataset.child === childId) marks[i].classList.toggle(stateClass, on);
+  }
+}
+
+export function transitionMarkGroups(event, entering, stateClass, onTransition){
+  var active = markGroupsAt(event.target);
+  var related = markGroupsAt(event.relatedTarget);
+  for (var i = 0; i < active.length; i++){
+    var group = active[i];
+    if (sameMarkGroup(related, group)) continue;
+    toggleMarkGroup(group.fragment, stateClass, entering);
+    if (onTransition) onTransition(group.childId, entering);
+  }
+}
+
 export function applyChildHighlights(dc, node){
   if (dc && dc.classList.contains("rh-pdf")) return;
   var kids = childrenOf(node.id).filter(function(k){ return k.origin && k.origin.anchor; });
@@ -20,7 +69,7 @@ export function wrapInContainer(dc, anchor, childId, cls){
 
 export function upgradeMarks(root, childId){
   if (!root) return;
-  var marks = root.querySelectorAll('mark[data-child="' + childId + '"]');
+  var marks = root.querySelectorAll('[data-child="' + childId + '"]');
   var child = nodes[childId], label = "Open branch: " + ((child && child.title) || "Untitled");
   for (var i = 0; i < marks.length; i++){
     marks[i].classList.remove("mark-pending"); marks[i].classList.add("mark-ready");
@@ -30,9 +79,10 @@ export function upgradeMarks(root, childId){
 
 export function removeMarks(root, childId){
   if (!root) return;
-  var marks = root.querySelectorAll('mark[data-child="' + childId + '"]');
+  var marks = root.querySelectorAll('[data-child="' + childId + '"]');
   for (var i = 0; i < marks.length; i++){
     var m = marks[i], p = m.parentNode; if (!p) continue;
+    if (m.namespaceURI === "http://www.w3.org/2000/svg") { m.remove(); continue; }
     while (m.firstChild) p.insertBefore(m.firstChild, m);
     p.removeChild(m); p.normalize();
   }
@@ -68,8 +118,10 @@ function wrapTextNode(textNode, childId, cls){
 }
 
 function initializeMark(m, childId, cls){
-  m.className = cls; m.dataset.child = childId;
-  m.tabIndex = 0; m.setAttribute("role", "link");
+  if (m.namespaceURI === "http://www.w3.org/2000/svg") m.setAttribute("class", cls);
+  else m.className = cls;
+  m.dataset.child = childId;
+  m.setAttribute("tabindex", "0"); m.setAttribute("role", "link");
   var child = nodes[childId];
   m.setAttribute("aria-label", "Open branch: " + ((child && child.title) || "Untitled"));
   return m;
@@ -77,13 +129,26 @@ function initializeMark(m, childId, cls){
 
 export function mountPdfRectMark(container, anchor, childId, cls) {
   if (!container || !anchor || !anchor.pdf) return null;
-  var page = container.querySelector('.rh-pdf-page[data-page="' + Math.floor(Number(anchor.pdf.page)) + '"]');
-  if (!page) return null;
-  var layer = page.querySelector(".rh-pdf-marks"), r = anchor.pdf.rect || {}, clamp = function(v){ return Math.min(1, Math.max(0, Number(v) || 0)); };
-  var x = clamp(r.x), y = clamp(r.y), w = Math.min(clamp(r.w), 1-x), h = Math.min(clamp(r.h), 1-y);
-  var mark = initializeMark(document.createElement("mark"), childId, cls);
-  mark.style.left = (x*100) + "%"; mark.style.top = (y*100) + "%"; mark.style.width = (w*100) + "%"; mark.style.height = (h*100) + "%";
-  layer.appendChild(mark); return mark;
+  var first = null, fragments = anchor.pdf.fragments || [];
+  for (var f = 0; f < fragments.length; f++) {
+    var fragment = fragments[f];
+    var page = container.querySelector('.rh-pdf-page[data-page="' + Math.floor(Number(fragment.page)) + '"]');
+    var viewport = page && page._pdfViewport;
+    var layer = page && page.querySelector(".rh-pdf-marks");
+    if (!layer || !viewport) continue;
+    var group = initializeMark(document.createElementNS("http://www.w3.org/2000/svg", "g"), childId, cls);
+    for (var q = 0; q < fragment.quads.length; q++) {
+      var quad = fragment.quads[q], points = [];
+      for (var p = 0; p < quad.length; p++) {
+        var converted = viewport.convertToViewportPoint(Number(quad[p][0]), Number(quad[p][1]));
+        points.push(converted[0] + "," + converted[1]);
+      }
+      var polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+      polygon.setAttribute("points", points.join(" ")); group.appendChild(polygon);
+    }
+    layer.appendChild(group); if (!first) first = group;
+  }
+  return first;
 }
 
 function wrapRange(range, childId, cls){

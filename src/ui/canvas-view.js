@@ -6,9 +6,6 @@ import {
   MIN_SCALE,
   READER_BASE,
   SVGNS,
-  TREE_PARENT_GAP,
-  TREE_STACK_GAP,
-  boundsOverlap,
   buildDocContent,
   canvasBuilt,
   canvasFramed,
@@ -18,14 +15,9 @@ import {
   edgesSvg,
   fontPx,
   flashHint,
-  isFollowup,
-  isSelectionBranch,
   isVisible,
-  lensLabel,
   mode,
   motionSourceFromEvent,
-  nodeBounds,
-  nodeOrder,
   nodes,
   readerMain,
   registerCoreHooks,
@@ -34,17 +26,30 @@ import {
   setCanvasFramed,
   setModeValue,
   setViewAdjusted,
-  shiftBounds,
   shouldReduceMotion,
   sessionPhase,
-  unionBounds,
   view,
   viewport,
   world,
   zoomLabel
 } from "./core.js";
+import {
+  TREE_PARENT_GAP,
+  TREE_STACK_GAP,
+  boundsOverlap,
+  nodeBounds,
+  nodeOrder,
+  shiftBounds,
+  unionBounds
+} from "../core/layout.js";
+import {
+  BRANCH_FOLLOWUP,
+  BRANCH_SELECTION,
+  branchTypeOfNode,
+  lensLabel
+} from "../core/model.js";
 import { openNode } from "./reader.js";
-import { applyChildHighlights } from "./text-marks.js";
+import { applyChildHighlights, transitionMarkGroups } from "./text-marks.js";
 import { easeInOutMotion, easeOutMotion } from "./easing.js";
 import { buttonMarkup, iconButtonMarkup } from "../core/html/button-markup.js";
 import { buildOriginCrop } from "./origin-provenance.js";
@@ -53,6 +58,14 @@ import { createModuleLifecycle } from "./lifecycle.js";
 import { captureContentPosition, restoreContentPosition } from "./scroll-position.js";
 import { applyComposerState } from "./composer-state.js";
 import { ENTER_SEND_HINT, isSubmitEnter } from "./input-intent.js";
+
+function isSelectionBranch(node) {
+  return branchTypeOfNode(node) === BRANCH_SELECTION;
+}
+
+function isFollowup(node) {
+  return branchTypeOfNode(node) === BRANCH_FOLLOWUP;
+}
 
 function defaultCanvasHooks(){
   return {
@@ -80,8 +93,7 @@ export function initCanvasView(){
   if (typeof ResizeObserver === "function") cardResizeObserver = new ResizeObserver(scheduleEdges);
   registerCoreHooks({
     ensureCanvasBuilt: ensureCanvasBuilt,
-    diveToNode: diveToNode,
-    effH: effH
+    diveToNode: diveToNode
   });
   canvasScope.listen(world, "mouseover", onWorldMouseOver);
   canvasScope.listen(world, "mouseout", onWorldMouseOut);
@@ -125,8 +137,7 @@ function cleanupCanvasView(resetHooks){
   if (resetHooks) {
     registerCoreHooks({
       ensureCanvasBuilt: function(){},
-      diveToNode: function(){},
-      effH: function(n){ return n.h; }
+      diveToNode: function(){}
     });
   }
 }
@@ -229,7 +240,7 @@ export function createNodeEl(node, enter){
 
     enableDrag(node, head);
     enableResize(node, resize);
-    head.addEventListener("dblclick", function(){ openNode(node.id); });
+    head.addEventListener("dblclick", function(e){ if (onCardControl(e)) return; openNode(node.id); });
     openBtn.addEventListener("click", function(e){ e.stopPropagation(); openNode(node.id); });
     collapseBtn.addEventListener("click", function(e){ e.stopPropagation(); toggleCollapse(node, collapseBtn); });
     aDown.addEventListener("click", function(e){ e.stopPropagation(); setNodeFontScale(node, -0.1); });
@@ -391,11 +402,9 @@ function animateView(tx, ty, ts, opts){
 export function fillBody(node){
     var body = node.bodyEl; if (!body) return;
     var previous = body.querySelector(".doc-content"); if (previous && previous._rhDispose) previous._rhDispose();
+    body.classList.remove("pdf-body");
     body.innerHTML = "";
-    if (node.origin && node.origin.synthesis){
-      var sq = document.createElement("div"); sq.className = "origin-quote"; sq.textContent = "✦ Synthesis of this Rabbithole";
-      body.appendChild(sq);
-    } else if (node.origin && node.origin.selected_text){
+    if (node.origin && node.origin.selected_text){
       var q = document.createElement("div"); q.className = "origin-quote"; q.textContent = "“" + node.origin.selected_text + "”";
       body.appendChild(q);
     } else if (node.origin && (node.origin.question || node.origin.lens)){
@@ -407,6 +416,7 @@ export function fillBody(node){
     if (crop) body.appendChild(crop);
     var dc = buildDocContent(node, CANVAS_BASE);
     body.appendChild(dc);
+    body.classList.toggle("pdf-body", dc.classList.contains("rh-pdf"));
     applyChildHighlights(dc, node);
   }
   function setNodeFontScale(node, delta){
@@ -462,10 +472,14 @@ function layoutNode(node){
     if (scope) scope.listen(handle, "pointerdown", pointerDown);
     else handle.addEventListener("pointerdown", pointerDown);
   }
+  // The head carries the card's own gestures — drag it, double-click to open — but it also
+  // holds the controls, and a pointer that lands on one of those is operating the control,
+  // not the card. Every head gesture owes that distinction the same answer.
+  function onCardControl(e){ return !!e.target.closest(".node-btn"); }
   function enableDrag(node, handle){
     var sx, sy, ox, oy;
     onPointerGesture(handle,
-      function(e){ if (e.button !== 0 || e.target.closest(".node-btn")) return false; e.preventDefault(); canvasLifecycle.hooks.hideAsk(); sx=e.clientX; sy=e.clientY; ox=node.x; oy=node.y; return true; },
+      function(e){ if (e.button !== 0 || onCardControl(e)) return false; e.preventDefault(); canvasLifecycle.hooks.hideAsk(); sx=e.clientX; sy=e.clientY; ox=node.x; oy=node.y; return true; },
       function(ev){ node.x = ox + (ev.clientX - sx) / view.scale; node.y = oy + (ev.clientY - sy) / view.scale; layoutNode(node); scheduleEdges(); },
       function(){ drawEdges(); canvasLifecycle.hooks.persistNode(node); });
   }
@@ -638,18 +652,16 @@ function focusOrigin(node, on){
     setEdgeHighlight(node.id, on);
     var p = node.parent_id ? nodes[node.parent_id] : null;
     if (p && p.bodyEl){
-      var marks = p.bodyEl.querySelectorAll('mark[data-child="' + node.id + '"]');
+      var marks = p.bodyEl.querySelectorAll('[data-child="' + node.id + '"]');
       for (var i = 0; i < marks.length; i++) marks[i].classList.toggle("mark-focus", on);
     }
   }
   // Hovering the highlighted text lights up the edge to the branch it spawned.
   function onWorldMouseOver(e){
-    var m = e.target.closest && e.target.closest("mark[data-child]");
-    if (m) setEdgeHighlight(m.dataset.child, true);
+    transitionMarkGroups(e, true, "mark-hover", setEdgeHighlight);
   }
   function onWorldMouseOut(e){
-    var m = e.target.closest && e.target.closest("mark[data-child]");
-    if (m) setEdgeHighlight(m.dataset.child, false);
+    transitionMarkGroups(e, false, "mark-hover", setEdgeHighlight);
   }
 
   function initViewportPan(){
@@ -714,6 +726,9 @@ function focusOrigin(node, on){
     }
     function onTouchDown(event){
       if (event.pointerType !== "touch") return;
+      // A gesture that begins in a native PDF belongs to that PDF's local
+      // zoom/scroll state. The canvas must never join it when finger two lands.
+      if (event.target.closest && event.target.closest(".rh-pdf-scroll")) return;
       if (touches.size >= 2){ event.preventDefault(); event.stopPropagation(); return; }
       var point = touchPoint(event);
       touches.set(event.pointerId, point);
@@ -883,7 +898,7 @@ export function tidy(source){
     function place(node, x, y){
       visited[node.id] = true;
       node.x = x; node.y = y;
-      var bounds = nodeBounds(node);
+      var bounds = nodeBounds(node, { effH: effH });
       if (node.collapsed) return bounds;
 
       var kids = childrenOf(node.id).sort(nodeOrder);

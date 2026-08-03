@@ -3,19 +3,12 @@ import {
   MAX_FS,
   MIN_FS,
   READER_BASE,
-  anchorStart,
   breadcrumbEl,
   buildDocContent,
-  disposeNodeContent,
-  buildLoading,
   childrenOf,
   currentNodeId,
-  followupsOf,
   fontPx,
-  isFollowup,
   goToNode,
-  lensBadgeHtml,
-  lineageNodes,
   mode,
   motionSourceFromEvent,
   nodes,
@@ -23,16 +16,34 @@ import {
   readerMain,
   setCurrentNodeId,
   setModeValue,
-  truncate,
   world,
   sessionPhase
 } from "./core.js";
+import {
+  BRANCH_FOLLOWUP,
+  branchTypeOfNode,
+  lensLabel,
+  lineageNodesFromMap,
+  truncate
+} from "../core/model.js";
 import { escapeHtml } from "../core/utils.js";
 import { createModuleLifecycle } from "./lifecycle.js";
 import { captureContentPosition, restoreContentPosition } from "./scroll-position.js";
 import { mountVisuals } from "./visuals.js";
-import { applyChildHighlights } from "./text-marks.js";
+import { applyChildHighlights, transitionMarkGroups } from "./text-marks.js";
 import { buildOriginCrop } from "./origin-provenance.js";
+
+function anchorStart(node) {
+  return node.origin?.anchor?.offset_start ?? 1e9;
+}
+
+function isFollowup(node) {
+  return branchTypeOfNode(node) === BRANCH_FOLLOWUP;
+}
+
+function lensBadgeHtml(key) {
+  return '<span class="lens-badge">' + escapeHtml(lensLabel(key)) + "</span>";
+}
 
 function defaultReaderHooks(){
   return {
@@ -55,7 +66,8 @@ export function registerReaderHooks(hooks) {
 
 var breadcrumbNodes = {};
 var noteNodes = {};
-var marginObserver = null;
+
+function marginNotesLayer(){ return document.getElementById("margin-notes"); }
 
   // ===========================================================================
   // READER
@@ -88,7 +100,7 @@ export function openNode(id){
   }
 
 export function renderBreadcrumb(){
-    var path = lineageNodes(currentNodeId);
+    var path = lineageNodesFromMap(nodes, currentNodeId);
     var fragment = document.createDocumentFragment();
     path.forEach(function(n, i){
       var crumb = breadcrumbNodes[n.id];
@@ -137,14 +149,19 @@ export function initReader(){
     readerScope.listen(readerMain, "scroll", onReaderScroll, { passive: true });
     readerScope.listen(readerMain, "click", onMarkClick);
     readerScope.listen(readerMain, "keydown", onMarkKeydown);
+    readerScope.listen(readerMain, "mouseover", function(e){ transitionMarkGroups(e, true, "mark-hover"); });
+    readerScope.listen(readerMain, "mouseout", function(e){ transitionMarkGroups(e, false, "mark-hover"); });
+    readerScope.listen(readerMain, "focusin", function(e){ transitionMarkGroups(e, true, "mark-dom-focus"); });
+    readerScope.listen(readerMain, "focusout", function(e){ transitionMarkGroups(e, false, "mark-dom-focus"); });
     // Canvas marks dive to the answer card in place — never yank into the reader.
     readerScope.listen(world, "click", onCanvasMarkClick);
     readerScope.listen(world, "keydown", onCanvasMarkKeydown);
-    readerScope.listen(readerMain, "click", onNoteClick);
-    readerScope.listen(readerMain, "keydown", onNoteKeydown);
+    var notes = marginNotesLayer();
+    readerScope.listen(notes, "click", onNoteClick);
+    readerScope.listen(notes, "keydown", onNoteKeydown);
     // Hovering a margin note lights its highlight so the pair reads as one.
-    readerScope.listen(readerMain, "mouseover", function(e){ syncNoteHover(e, true); });
-    readerScope.listen(readerMain, "mouseout", function(e){ syncNoteHover(e, false); });
+    readerScope.listen(notes, "mouseover", function(e){ syncNoteHover(e, true); });
+    readerScope.listen(notes, "mouseout", function(e){ syncNoteHover(e, false); });
     readerScope.listen(document.getElementById("r-textdown"), "click", function(){ setReaderFontScale(-0.1); });
     readerScope.listen(document.getElementById("r-textup"), "click", function(){ setReaderFontScale(0.1); });
     readerScope.listen(document.getElementById("t-canvas"), "click", function(){ if (mode === "canvas") return; readerLifecycle.hooks.setMode("canvas"); });
@@ -161,7 +178,6 @@ export function disposeReader(){
 
 function disposeReaderResources(resetHooks){
     readerLifecycle.dispose(resetHooks);
-    if (marginObserver){ marginObserver.disconnect(); marginObserver = null; }
     breadcrumbNodes = {};
     noteNodes = {};
     kbdMarkIdx = -1;
@@ -179,9 +195,7 @@ export function renderReaderBody(){
     if (node.origin && (node.origin.selected_text || node.origin.question)){
       var ctx = document.createElement("div");
       ctx.className = "reader-context";
-      if (node.origin.synthesis){
-        ctx.innerHTML = '<span class="rc-label">Synthesis</span>The journey so far, distilled';
-      } else if (node.origin.selected_text){
+      if (node.origin.selected_text){
         var tail = node.origin.lens ? " — " + lensBadgeHtml(node.origin.lens)
           : (node.origin.question ? " — " + escapeHtml(node.origin.question) : "");
         ctx.innerHTML = '<span class="rc-label">From</span>“' + escapeHtml(truncate(node.origin.selected_text, 200)) + '”' + tail + '<span class="rc-go">→</span>';
@@ -191,7 +205,7 @@ export function renderReaderBody(){
       }
       // The strip is a live link: click it to land on the exact spot in the
       // parent this branch grew from (flashed so the eye finds it).
-      if (node.parent_id && nodes[node.parent_id] && !node.origin.synthesis){
+      if (node.parent_id && nodes[node.parent_id]){
         ctx.classList.add("linked");
         ctx.title = "See this in its original context";
         ctx.setAttribute("role", "link");
@@ -211,38 +225,33 @@ export function renderReaderBody(){
     var dc = buildDocContent(node, READER_BASE);
     col.appendChild(dc);
     applyChildHighlights(dc, node);
-    var fups = followupsOf(node.id);
-    if (fups.length){
-      var thread = document.createElement("div");
-      thread.id = "thread";
-      thread.appendChild(buildThreadRule());
-      fups.forEach(function(k){ thread.appendChild(buildThreadItem(k)); });
-      col.appendChild(thread);
-    }
-    // The margin-note layer hangs off the column's right edge; renderMarginNotes
-    // fills and positions it once the column is in the document.
-    var notes = document.createElement("div");
-    notes.id = "margin-notes";
-    col.appendChild(notes);
+    var isPdfReader = dc.classList.contains("rh-pdf");
+    var isPdfViewport = isPdfReader && !node.parent_id && !crop;
+    readerMain.classList.toggle("pdf-reader", isPdfReader);
+    readerMain.classList.toggle("pdf-reader-viewport", isPdfViewport);
+    col.classList.toggle("pdf-reader-col", isPdfReader);
+    col.classList.toggle("pdf-reader-viewport", isPdfViewport);
     readerMain.appendChild(col);
     // Each document remembers where you were; a first open starts at the top.
     readerMain.scrollTop = node._scrollTop || 0;
   }
-  // Open the parent and land on the exact origin: the inline mark for a
-  // selection branch, the thread turn for a follow-up.
+  // Open the parent and land on the exact origin when this branch is anchored.
 export function jumpToOrigin(node, source){
     var parent = nodes[node.parent_id];
     if (!parent) return;
     openNode(parent.id);
-    var target = readerMain.querySelector('mark[data-child="' + node.id + '"]') ||
-                 readerMain.querySelector('[data-turn="' + node.id + '"]');
+    var target = readerMain.querySelector('[data-child="' + node.id + '"].rh-pdf-mark, mark[data-child="' + node.id + '"]');
     if (!target) return;
-    var top = target.getBoundingClientRect().top - readerMain.getBoundingClientRect().top + readerMain.scrollTop;
-    readerLifecycle.hooks.animateScroll(readerMain, Math.max(0, top - readerMain.clientHeight * 0.38), source);
-    if (target.tagName === "MARK"){
-      var marks = readerMain.querySelectorAll('mark[data-child="' + node.id + '"]');
-      for (var i = 0; i < marks.length; i++) playLandingCue(marks[i], "mark-flash");
-    }
+    scrollMarkIntoView(target, 0.38, source);
+    var marks = readerMain.querySelectorAll('[data-child="' + node.id + '"].rh-pdf-mark, mark[data-child="' + node.id + '"]');
+    for (var i = 0; i < marks.length; i++) playLandingCue(marks[i], "mark-flash");
+  }
+
+function scrollMarkIntoView(mark, viewportRatio, source){
+    var scroller = mark.closest && mark.closest(".rh-pdf-scroll");
+    if (!scroller) scroller = readerMain;
+    var top = mark.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+    readerLifecycle.hooks.animateScroll(scroller, Math.max(0, top - scroller.clientHeight * viewportRatio), source);
   }
   function onReaderScroll(){
     var n = nodes[currentNodeId];
@@ -250,74 +259,8 @@ export function jumpToOrigin(node, source){
     readerLifecycle.hooks.scheduleViewSave();
   }
 
-  // ---------- follow-up thread ----------
-function buildThreadRule(){
-    var r = document.createElement("div");
-    r.className = "thread-rule";
-    r.textContent = "Conversation";
-    return r;
-  }
-export function buildThreadItem(k){
-    var item = document.createElement("div");
-    item.className = "turn";
-    item.dataset.turn = k.id;
-    var q = document.createElement("div");
-    q.className = "turn-q";
-    var qs = document.createElement("span");
-    if (k.origin && k.origin.lens) qs.innerHTML = lensBadgeHtml(k.origin.lens);
-    else qs.textContent = (k.origin && k.origin.question) || "";
-    q.appendChild(qs);
-    var a = document.createElement("div");
-    a.className = "turn-a";
-    fillTurnAnswer(a, k);
-    item.appendChild(q);
-    item.appendChild(a);
-    return item;
-  }
-function fillTurnAnswer(a, k){
-    a.innerHTML = "";
-    if (k.status === "pending" && !k.html){
-      a.appendChild(buildLoading(k));
-      return;
-    }
-    var dc = buildDocContent(k, READER_BASE);
-    // Thread answers are part of this window: they follow the parent's text zoom.
-    var host = nodes[currentNodeId];
-    if (host) dc.style.fontSize = fontPx(host, READER_BASE) + "px";
-    a.appendChild(dc);
-    // Marks only make sense on settled text — a streaming turn gets them when
-    // node_answered lands and the turn re-renders.
-    if (k.status === "answered") applyChildHighlights(dc, k);
-  }
-export function ensureThread(){
-    var t = readerMain.querySelector("#thread");
-    if (t) return t;
-    var col = readerMain.querySelector(".reader-col");
-    if (!col) return null;
-    t = document.createElement("div");
-    t.id = "thread";
-    t.appendChild(buildThreadRule());
-    col.appendChild(t);
-    return t;
-  }
-export function updateThreadItem(k){
-    var item = readerMain.querySelector('[data-turn="' + k.id + '"]');
-    if (!item){
-      var t = ensureThread();
-      if (t) t.appendChild(buildThreadItem(k));
-      return;
-    }
-    fillTurnAnswer(item.querySelector(".turn-a"), k);
-  }
-export function removeThreadItem(childId){
-    var item = readerMain.querySelector('[data-turn="' + childId + '"]');
-    if (item && item.parentNode) item.parentNode.removeChild(item);
-    var t = readerMain.querySelector("#thread");
-    if (t && !t.querySelector(".turn")) t.parentNode.removeChild(t);
-  }
-
   function onMarkClick(e){
-    var m = e.target.closest("mark[data-child]");
+    var m = e.target.closest("[data-child].rh-pdf-mark, mark[data-child]");
     if (!m) return;
     if (!window.getSelection().isCollapsed) return; // user was selecting, not clicking
     var k = nodes[m.dataset.child];
@@ -326,7 +269,7 @@ export function removeThreadItem(childId){
   }
   function onMarkKeydown(e){
     if (e.key !== "Enter") return;
-    var m = e.target.closest && e.target.closest("mark[data-child]");
+    var m = e.target.closest && e.target.closest("[data-child].rh-pdf-mark, mark[data-child]");
     if (!m) return;
     var k = nodes[m.dataset.child];
     if (!k) return;
@@ -349,22 +292,23 @@ export function removeThreadItem(childId){
     e.preventDefault();
     goToNode(k, motionSourceFromEvent(e));
   }
-  // Branches render as margin notes — comment cards hanging in the right
-  // margin, each top-aligned with the highlight it grew from. The layer lives
-  // inside .reader-col so the cards scroll with the text; CSS hides it when
-  // the window has no margin to spare (the inline marks carry those widths).
+  // Every direct branch has one stable card in the Reader rail. Anchored
+  // comments lead, in document order; general follow-ups follow in creation
+  // order. Keeping one surface for both is especially important for PDFs,
+  // whose own scroller cannot share an old absolute text margin.
 export function renderMarginNotes(){
-    var layer = readerMain && readerMain.querySelector("#margin-notes");
+    var layer = marginNotesLayer();
     if (!layer) return;
-    var kids = childrenOf(currentNodeId).filter(function(k){ return !isFollowup(k); }).sort(function(a,b){
-      return (anchorStart(a) - anchorStart(b)) || ((a._order||0) - (b._order||0));
+    var kids = childrenOf(currentNodeId).sort(function(a,b){
+      var aAnchored = !!(a.origin && a.origin.anchor), bAnchored = !!(b.origin && b.origin.anchor);
+      if (aAnchored !== bAnchored) return aAnchored ? -1 : 1;
+      return (aAnchored ? anchorStart(a) - anchorStart(b) : 0) || ((a._order||0) - (b._order||0));
     });
     var fragment = document.createDocumentFragment();
     var newLivePanes = [];
     kids.forEach(function(k){
       var pending = k.status !== "answered";
-      var qHtml = (k.origin && k.origin.synthesis) ? '<span class="lens-badge">✦ Synthesis</span>'
-        : (k.origin && k.origin.lens) ? lensBadgeHtml(k.origin.lens)
+      var qHtml = (k.origin && k.origin.lens) ? lensBadgeHtml(k.origin.lens)
         : escapeHtml((k.origin && k.origin.question) ? k.origin.question : (k.title || "Untitled"));
       var quote = (k.origin && k.origin.selected_text) ? k.origin.selected_text : "";
       var status = pending ? pendingStatusHtml(k) : 'open →';
@@ -382,12 +326,12 @@ export function renderMarginNotes(){
         noteNodes[k.id] = tile;
       }
       tile.classList.toggle("pending", pending);
+      tile.classList.toggle("followup", isFollowup(k));
       tile._question.innerHTML = qHtml;
       tile._quote.textContent = quote ? "“" + truncate(quote, 80) + "”" : "";
       tile._quote.hidden = !quote;
       tile._status.innerHTML = status;
-      var name = (k.origin && k.origin.synthesis) ? "Synthesis"
-        : ((k.origin && k.origin.question) || k.title || "Untitled");
+      var name = (k.origin && k.origin.question) || k.title || "Untitled";
       tile.setAttribute("aria-label", "Open branch: " + name + (pending ? ", pending" : ""));
       // A streaming answer is watchable right here: its last lines render live
       // inside the note (and the whole note opens the full streaming view).
@@ -407,41 +351,18 @@ export function renderMarginNotes(){
       }
       fragment.appendChild(tile);
     });
+    if (!kids.length){
+      var empty = document.createElement("div");
+      empty.className = "reader-rail-empty";
+      empty.textContent = "No branches yet";
+      fragment.appendChild(empty);
+    }
     layer.replaceChildren(fragment);
+    var count = document.getElementById("reader-rail-count");
+    if (count) count.textContent = String(kids.length);
+    var rail = document.getElementById("reader-rail");
+    if (rail) rail.classList.toggle("empty", !kids.length);
     mountNoteVisuals(newLivePanes);
-    layoutMarginNotes();
-  }
-  // Each note wants the y of its first mark; stacking resolves collisions in
-  // document order. Re-runs whenever the column or a note changes size (fonts,
-  // images, streaming text), so alignment holds without any scroll listener.
-export function layoutMarginNotes(){
-    var layer = readerMain && readerMain.querySelector("#margin-notes");
-    if (!layer) return;
-    if (!marginObserver && typeof ResizeObserver === "function"){
-      marginObserver = new ResizeObserver(function(){ positionNotes(); });
-    }
-    if (marginObserver){
-      marginObserver.disconnect();
-      marginObserver.observe(layer.parentNode);
-      for (var i = 0; i < layer.children.length; i++) marginObserver.observe(layer.children[i]);
-    }
-    positionNotes();
-  }
-function positionNotes(){
-    var layer = readerMain && readerMain.querySelector("#margin-notes");
-    if (!layer || !layer.clientWidth){ if (layer) layer.classList.remove("settled"); return; }
-    var layerTop = layer.getBoundingClientRect().top;
-    var cursor = 0;
-    for (var i = 0; i < layer.children.length; i++){
-      var tile = layer.children[i];
-      var mark = readerMain.querySelector('mark[data-child="' + tile.dataset.child + '"]');
-      tile.classList.toggle("unanchored", !mark);
-      var desired = mark ? Math.round(mark.getBoundingClientRect().top - layerTop) : cursor;
-      var top = Math.max(desired, cursor);
-      tile.style.top = top + "px";
-      cursor = top + tile.offsetHeight + 10;
-    }
-    layer.classList.add("settled");
   }
 function onNoteClick(e){
     var it = e.target.closest && e.target.closest("#margin-notes .side-item");
@@ -460,14 +381,14 @@ function syncNoteHover(e, on){
     if (!tile) return;
     var related = e.relatedTarget;
     if (related && tile.contains(related)) return;
-    var marks = readerMain.querySelectorAll('mark[data-child="' + tile.dataset.child + '"]');
+    var marks = readerMain.querySelectorAll('[data-child="' + tile.dataset.child + '"].rh-pdf-mark, mark[data-child="' + tile.dataset.child + '"]');
     for (var i = 0; i < marks.length; i++) marks[i].classList.toggle("mark-focus", on);
   }
 function mountNoteVisuals(panes){
     for (var i = 0; i < panes.length; i++){
       var key = "margin-notes:" + panes[i].node.id;
       mountVisuals(panes[i].pane, key);
-      if (typeof readerLifecycle.hooks.mountDocImages === "function") readerLifecycle.hooks.mountDocImages(panes[i].pane, panes[i].node, null, key);
+      if (typeof readerLifecycle.hooks.mountDocImages === "function") readerLifecycle.hooks.mountDocImages(panes[i].pane, key);
     }
   }
 function pendingStatusHtml(k){
@@ -488,9 +409,9 @@ function setReaderFontScale(delta){
     readerLifecycle.hooks.persistNode(node);
   }
 
-  // j/k focus ring over the current document's marks (doc order, thread included).
+  // j/k focus ring over the current document's anchored branches.
   var kbdMarkIdx = -1;
-function allMarks(){ return readerMain.querySelectorAll("mark[data-child]"); }
+function allMarks(){ return readerMain.querySelectorAll("[data-child].rh-pdf-mark, mark[data-child]"); }
 export function focusedMark(){
     var marks = allMarks();
     return (kbdMarkIdx >= 0 && kbdMarkIdx < marks.length) ? marks[kbdMarkIdx] : null;
@@ -504,6 +425,5 @@ export function stepMark(delta){
       : Math.max(0, Math.min(marks.length - 1, kbdMarkIdx + delta));
     var m = marks[kbdMarkIdx];
     m.classList.add("mark-focus");
-    var top = m.getBoundingClientRect().top - readerMain.getBoundingClientRect().top + readerMain.scrollTop;
-    readerLifecycle.hooks.animateScroll(readerMain, Math.max(0, top - readerMain.clientHeight * 0.42), "keyboard");
+    scrollMarkIntoView(m, 0.42, "keyboard");
   }

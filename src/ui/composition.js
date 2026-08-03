@@ -6,6 +6,7 @@ import {
   disposeCanvasView,
   initCanvasView,
   registerCanvasHooks,
+  scheduleEdges,
   setMode
 } from "./canvas-view.js";
 import {
@@ -58,13 +59,16 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
     own(function(){ setRendererAssetData(null); });
     own(disposeVisuals);
     own(disposeImageUx);
+    var mountImages = function(dc, surfaceKey) {
+      mountDocImages(dc, surfaceKey, { hideAsk: hideAsk, scheduleEdges: scheduleEdges });
+    };
 
     registerCoreHooks({
       post: post,
       openNode: openNode,
       ensureNodeHtml: ensureNodeHtml,
-      mountDocImages: mountDocImages
-      ,mountPdfView: capabilities.mountPdfView || null
+      mountDocImages: mountImages,
+      mountPdfView: capabilities.mountPdfView || null
     });
     registerReaderHooks({
       hideAsk: hideAsk,
@@ -72,7 +76,7 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
       scheduleViewSave: host.scheduleViewSave || noop,
       setMode: setMode,
       post: post,
-      mountDocImages: mountDocImages,
+      mountDocImages: mountImages,
       persistNode: host.persistNode || noop,
       animateScroll: animateScroll
     });
@@ -84,7 +88,7 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
       persistNodesBulk: host.persistNodesBulk || noop,
       scheduleViewSave: host.scheduleViewSave || noop
     });
-    registerAskHooks({ post: post, hideConfirm: hideConfirm });
+    registerAskHooks({ post: post });
     registerPaletteHooks({
       hideAsk: hideAsk,
       closeShare: closeShare,

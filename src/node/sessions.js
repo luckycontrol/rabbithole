@@ -40,10 +40,11 @@ export function closeSessionsForHole(holeId, reason = "superseded") {
  */
 export async function closeAllSessions(reason = "agent_exited") {
   const live = [...sessions.values()];
+  const saves = [];
   for (const session of live) {
     try {
-      session.close(reason);
+      saves.push(session.close(reason));
     } catch {}
   }
-  await Promise.allSettled(live.map((s) => s.savingChain));
+  await Promise.allSettled(saves);
 }

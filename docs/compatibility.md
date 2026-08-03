@@ -22,6 +22,18 @@ Persisted nodes contain Markdown source, base-URL provenance, origin metadata,
 layout and read state, timestamps, and an `extensions` object. Rendered HTML is
 derived and is never persisted.
 
+### Markdown dialect
+
+Rabbithole uses GFM with one deliberate ambiguity removed: strikethrough
+requires double tildes (`~~deleted~~`). Single tildes remain literal so common
+approximation notation such as `~77%`, `~zero`, and `~1,000` cannot pair across
+an arbitrary span and silently render intervening prose as deleted. Escaped
+tildes and tildes inside code retain their normal Markdown behavior.
+
+This rule belongs to the shared renderer and therefore applies identically to
+live canvases, browser documents, Node rendering, and newly generated frozen
+snapshots. Markdown source is not rewritten.
+
 ## Portable files and snapshots
 
 Portable `.rabbithole` files use this envelope:

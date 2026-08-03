@@ -1,5 +1,6 @@
 import katex from "katex";
-import { createMarkdownRenderer, encodeBase64Utf8 } from "../../src/core/markdown.js";
+import { encodeBase64Utf8 } from "../../src/core/markdown.js";
+import { createMarkdownRenderer } from "../../src/core/markdown-renderer.js";
 import { OpenAICompatibleBrain } from "../../src/web/brain/openai-compatible.js";
 
 const REQUIRED_ENV = ["EVAL_BASE_URL", "EVAL_API_KEY", "EVAL_MODEL"];
@@ -265,19 +266,6 @@ function buildGoldenAsks() {
       }),
     },
     {
-      name: "synthesis",
-      minWords: 90,
-      context: baseContext({
-        synthesis: true,
-        selected_text: "",
-        question: "Synthesize the whole Rabbithole journey.",
-        ancestors: [
-          { title: "Root", markdown: "Local-first software keeps user data on the user's machine." },
-          { title: "Branch", markdown: "Export files make local data portable." },
-        ],
-      }),
-    },
-    {
       name: "long_doc_pack",
       context: baseContext({
         parent_markdown: longDoc,
@@ -321,7 +309,6 @@ function baseContext(overrides = {}) {
     selected_text: "Rabbithole",
     question: "Explain the selected text.",
     lens: null,
-    synthesis: false,
     ...overrides,
   };
 }

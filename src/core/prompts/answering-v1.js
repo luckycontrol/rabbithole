@@ -1,4 +1,4 @@
-import { AUTHORING_VOCABULARY_V1 } from "./authoring-v1.js";
+import { AUTHORING_VOCABULARY_V1, normalizePromptText } from "./authoring-v1.js";
 import { lensLabel, truncate } from "../model.js";
 
 const ANSWERING_SYSTEM_PROMPT_V1 = [
@@ -38,11 +38,11 @@ export function buildAnswerMessages(context, { tokenBudget = DEFAULT_TOKEN_BUDGE
 function packBranchContext(context, { tokenBudget = DEFAULT_TOKEN_BUDGET } = {}) {
   const budget = Math.max(2000, Number(tokenBudget) || DEFAULT_TOKEN_BUDGET);
   const charBudget = budget * APPROX_CHARS_PER_TOKEN;
-  const rootTitle = clean(context?.root_title || context?.rootTitle || "Untitled");
-  const parentTitle = clean(context?.parent_title || context?.parentTitle || "Untitled");
-  const selectedText = clean(context?.selected_text || context?.selectedText || "");
-  const question = clean(context?.question || "");
-  const lens = clean(context?.lens || "");
+  const rootTitle = normalizePromptText(context?.root_title || context?.rootTitle || "Untitled");
+  const parentTitle = normalizePromptText(context?.parent_title || context?.parentTitle || "Untitled");
+  const selectedText = normalizePromptText(context?.selected_text || context?.selectedText || "");
+  const question = normalizePromptText(context?.question || "");
+  const lens = normalizePromptText(context?.lens || "");
   const lensLine = lens ? `${lens} (${lensLabel(lens) || lens})` : "none";
   const ancestorLines = summarizeAncestors(context?.ancestors || []);
 
@@ -68,7 +68,7 @@ function packBranchContext(context, { tokenBudget = DEFAULT_TOKEN_BUDGET } = {})
 
   const fixed = header + parentPrefix + ancestorPrefix + instruction;
   const parentBudget = Math.max(1000, charBudget - fixed.length - ancestorLines.length - 200);
-  const parentMarkdown = trimToBudget(clean(context?.parent_markdown || context?.parentMarkdown || ""), parentBudget);
+  const parentMarkdown = trimToBudget(normalizePromptText(context?.parent_markdown || context?.parentMarkdown || ""), parentBudget);
   let packed = header + parentPrefix + parentMarkdown + ancestorPrefix + ancestorLines + instruction;
 
   if (packed.length > charBudget) {
@@ -87,15 +87,10 @@ function summarizeAncestors(ancestors) {
   const list = Array.isArray(ancestors) ? ancestors : [];
   if (!list.length) return "(none)";
   return list.map((entry, index) => {
-    const title = clean(entry?.title || `Ancestor ${index + 1}`);
-    const excerpt = truncate(clean(entry?.markdown || entry?.excerpt || "").replace(/\s+/g, " "), 200);
+    const title = normalizePromptText(entry?.title || `Ancestor ${index + 1}`);
+    const excerpt = truncate(normalizePromptText(entry?.markdown || entry?.excerpt || "").replace(/\s+/g, " "), 200);
     return `${index + 1}. ${title}${excerpt ? ` - ${excerpt}` : ""}`;
   }).join("\n");
-}
-
-/** @param {unknown} value */
-function clean(value) {
-  return String(value ?? "").replace(/\r\n?/g, "\n").trim();
 }
 
 /** @param {unknown} value @param {number} budget */

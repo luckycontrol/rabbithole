@@ -58,10 +58,10 @@ const AUTHORING_SYSTEM_PROMPT_V1 = [
 
 /** @param {AuthorSource} [source] */
 export function buildAuthorMessages(source = {}) {
-  const title = clean(source.title || source.name || source.source_name || "");
-  const baseUrl = clean(source.base_url || source.baseUrl || "");
-  const kind = clean(source.kind || source.type || "source");
-  const content = clean(source.markdown || source.content || source.text || "");
+  const title = normalizePromptText(source.title || source.name || source.source_name || "");
+  const baseUrl = normalizePromptText(source.base_url || source.baseUrl || "");
+  const kind = normalizePromptText(source.kind || source.type || "source");
+  const content = normalizePromptText(source.markdown || source.content || source.text || "");
   return [
     { role: "system", content: AUTHORING_SYSTEM_PROMPT_V1 },
     {
@@ -81,6 +81,6 @@ export function buildAuthorMessages(source = {}) {
 }
 
 /** @param {unknown} value */
-function clean(value) {
+export function normalizePromptText(value) {
   return String(value ?? "").replace(/\r\n?/g, "\n").trim();
 }

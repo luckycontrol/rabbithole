@@ -5,13 +5,15 @@ import os from "node:os";
 import path from "node:path";
 import { renderMarkdownToHtml } from "../../src/core/markdown.js";
 import { buildCanvasHtml } from "../../src/node/html/canvas.js";
-import { getKatexCss } from "../../src/node/html/built-assets.js";
+import { getUiAssets } from "../../src/node/html/built-assets.js";
 import { createSession, closeAllSessions } from "../../src/node/sessions.js";
 
 process.env.RABBITHOLE_NO_BROWSER = "1";
 process.env.RABBITHOLE_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "rabbithole-markdown-renderer-"));
 
 const KATEX_CSS_SENTINEL = ".katex .katex-version::after";
+const CODE_COPY_CSS_SENTINEL = ".md .code-copy { position: absolute; top: 7px; right: 7px;";
+const CODE_COPY_MARKUP_SENTINEL = '<span class="ic-check" hidden>';
 
 function count(haystack, needle) {
   return haystack.split(needle).length - 1;
@@ -118,6 +120,44 @@ async function runMarkdownFixtures() {
       markdown: "<script>alert(1)</script>",
       assert: assertNoRawHtmlLeak,
     },
+    {
+      name: "single tildes remain literal approximation notation",
+      markdown: "Rates price ~zero cuts (~77% probability); the structural bid is ~1,000t/yr.",
+      assert(html) {
+        assert.equal(count(html, "<del>"), 0);
+        assert(html.includes("~zero cuts"));
+        assert(html.includes("~77% probability"));
+        assert(html.includes("~1,000t/yr"));
+      },
+    },
+    {
+      name: "only double tildes create strikethrough",
+      markdown: [
+        "Keep ~one~ and ~77%, delete ~~this **clearly**~~.",
+        "",
+        "Keep \\~escaped and `~code~`.",
+      ].join("\n"),
+      assert(html) {
+        assert.equal(count(html, "<del>"), 1);
+        assert(html.includes("<del>this <strong>clearly</strong></del>"));
+        assert(html.includes("Keep ~one~ and ~77%"));
+        assert(html.includes("Keep ~escaped and <code>~code~</code>"));
+      },
+    },
+    {
+      name: "distant approximation tildes cannot delete intervening prose",
+      markdown: [
+        "Fed funds futures now price ~zero cuts and probable hikes through 2026",
+        "(a market showed ~77% probability). The structural official-sector bid",
+        "(~1,000t/yr) is not carry-priced.",
+      ].join(" "),
+      assert(html) {
+        assert.equal(count(html, "<del>"), 0);
+        assert(html.includes("~zero cuts"));
+        assert(html.includes("~77% probability"));
+        assert(html.includes("(~1,000t/yr)"));
+      },
+    },
   ];
 
   for (const fixture of fixtures) {
@@ -172,6 +212,8 @@ async function assertPageAssembly() {
       ["export", exportHtml],
     ]) {
       assert.equal(count(html, KATEX_CSS_SENTINEL), 1, `${label} should include KaTeX CSS once`);
+      assert.equal(count(html, CODE_COPY_CSS_SENTINEL), 1, `${label} should include code-copy CSS once`);
+      assert(html.includes(CODE_COPY_MARKUP_SENTINEL), `${label} should bundle the code-copy control`);
       assert.equal(count(html, "data:font/woff2;base64,"), 20, `${label} should inline KaTeX woff2 fonts`);
       assert(!/fonts\/KaTeX_[^)]+\.(?:woff|ttf)/.test(html), `${label} should not reference external KaTeX fonts`);
       assert(html.includes("Root with $x^2$."), `${label} should carry markdown in hydration`);
@@ -189,9 +231,9 @@ async function assertPageAssembly() {
     const check = spawnSync(process.execPath, ["--check", scriptPath], { encoding: "utf8" });
     assert.equal(check.status, 0, check.stderr || check.stdout);
 
-    const katexCssBytes = Buffer.byteLength(getKatexCss(), "utf8");
+    const stylesheetBytes = Buffer.byteLength(getUiAssets().stylesheetText, "utf8");
     const pageBytes = Buffer.byteLength(liveHtml, "utf8");
-    console.log(`ok page assembly: KaTeX CSS ${katexCssBytes} bytes, live page ${pageBytes} bytes`);
+    console.log(`ok page assembly: UI stylesheet ${stylesheetBytes} bytes, live page ${pageBytes} bytes`);
   } finally {
     await closeAllSessions("markdown_renderer_test_complete");
   }

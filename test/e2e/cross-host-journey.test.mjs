@@ -9,13 +9,16 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { extractSnapshotPayload } from "../../src/core/portable-import.js";
 import { FsStore } from "../../src/node/fs-store.js";
 import { importRabbitholeFile } from "../../src/web/portable.js";
+import { assertCodeCopy } from "../support/code-copy.mjs";
 
 const ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
 const WEB_DIST = path.join(ROOT, "web/dist");
 const SECRET_KEYS = ["api_key", "apiKey", "provider_keys", "rh-web-settings", "sk-or-v1-"];
 const ASSET_BYTES = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zs1sAAAAASUVORK5CYII=", "base64");
+const JOURNEY_CODE = 'const answer = "<raw>&";\nconsole.log(answer);';
 const MODERN_MARKDOWN = [
   "# Journey root", "", "Select this exact phrase for the branch.", "", "Inline math $a^2+b^2=c^2$.", "",
+  "```js", JOURNEY_CODE, "```", "",
   "```show", "<div class=\"journey-show\">A real show fence</div>", "```", "",
   "![journey asset](asset:journey.png)",
 ].join("\n");
@@ -47,10 +50,14 @@ async function modernJourney() {
       assets: [{ name: "journey.png", file_path: assetPath }],
     });
     const liveUrl = await mcp.nextUrl();
-    authorContext = await browser.newContext({ acceptDownloads: true });
+    authorContext = await browser.newContext({
+      acceptDownloads: true,
+      permissions: ["clipboard-read", "clipboard-write"],
+    });
     const page = await authorContext.newPage();
     await page.goto(liveUrl);
     await assertRendered(page, "Select this exact phrase", true);
+    await assertCodeCopy(page, { scope: ".doc-content:visible", rawCode: JOURNEY_CODE, click: true, label: "live MCP" });
     await selectAndAsk(page, "Select this exact phrase", "Explain the selected phrase");
     const branch = await openPromise;
     assert.equal(branch.status, "branch_request", `modern MCP open result: ${JSON.stringify(branch)}`);
@@ -64,6 +71,14 @@ async function modernJourney() {
     const snapshot = JSON.parse(extractSnapshotPayload(snapshotText));
     assertProjection(snapshot, { title: "Modern journey", rootMarkdown: MODERN_MARKDOWN, branchMarkdown: BRANCH_MARKDOWN, asset: ASSET_BYTES, stripExtensions: true });
     const canonicalRoot = snapshot.hole.nodes.find((node) => node.id === snapshot.hole.root_id).markdown;
+    const snapshotPage = await authorContext.newPage();
+    try {
+      await snapshotPage.setContent(snapshotText, { waitUntil: "load" });
+      await assertRendered(snapshotPage, "Select this exact phrase", true);
+      await assertCodeCopy(snapshotPage, { scope: ".doc-content:visible", rawCode: JOURNEY_CODE, hover: false, label: "MCP snapshot" });
+    } finally {
+      await snapshotPage.close();
+    }
 
     const webContext = await browser.newContext({ acceptDownloads: true });
     try {

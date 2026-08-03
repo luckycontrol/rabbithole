@@ -1,6 +1,4 @@
 import {
-  DEFAULT_CHILD,
-  DEFAULT_ROOT,
   MAX_SCALE,
   MIN_SCALE,
   currentNodeId,
@@ -15,6 +13,7 @@ import {
   setViewAdjusted,
   view
 } from "./core.js";
+import { DEFAULT_CHILD, DEFAULT_ROOT } from "../core/layout.js";
 import { openNode } from "./reader.js";
 import { setMode } from "./canvas-view.js";
 import { setRendererAssetData } from "./renderer.js";

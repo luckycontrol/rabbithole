@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createMarkdownRenderer, encodeBase64Utf8 } from "../../src/core/markdown.js";
+import { encodeBase64Utf8 } from "../../src/core/markdown.js";
+import { createMarkdownRenderer } from "../../src/core/markdown-renderer.js";
 import { NEWER_SCHEMA_MESSAGE } from "../../src/core/schema.js";
 import { extractSnapshotPayload, SNAPSHOT_PAYLOAD_OPEN } from "../../src/core/portable-import.js";
 import { snapshotProjectionToFrozenHydration } from "../../src/core/snapshot-projection.js";
 import { validatePortableProjection } from "../../src/core/portable-projection.js";
-import { openRabbithole, answerBranch } from "../../src/node/index.js";
+import { openRabbithole, answerBranch } from "../../src/node/rabbithole.js";
 import { closeAllSessions, getSession } from "../../src/node/sessions.js";
 import { FsStore } from "../../src/node/fs-store.js";
 import { importSnapshotFile } from "../../src/web/portable.js";
@@ -286,7 +287,7 @@ async function runMarkdownWireFixture() {
   assert.equal(projection.assets["diagram-1.png"], PNG_BYTES.toString("base64"));
   assert(!exportHtml.includes("new EventSource"), "export should not include EventSource wiring");
   assert(!exportHtml.includes("/sse"), "export should not include SSE routes");
-  assert(!exportHtml.includes("/assets/"), "export should not include live asset routes");
+  assert(!/\b(?:src|href)=["']\/assets\//.test(exportHtml), "export should not include live asset routes in rendered attributes");
 
   const frozenRenderer = createMarkdownRenderer({
     encodeBase64: encodeBase64Utf8,
