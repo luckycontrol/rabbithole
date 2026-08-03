@@ -518,7 +518,8 @@ export function createNodeEl(node, enter){
     if (comp) updateCardComposer(node);
     if (node.collapsed) el.classList.add("collapsed");
 
-    enableDrag(node, head);
+    if (manualKind) enableDrag(node, el, { threshold: 4, canStart: manualNodeDragAllowed });
+    else enableDrag(node, head);
     enableResize(node, resize);
     head.addEventListener("dblclick", function(e){
       if (onCardControl(e)) return;
@@ -775,12 +776,45 @@ function layoutNode(node){
   // holds the controls, and a pointer that lands on one of those is operating the control,
   // not the card. Every head gesture owes that distinction the same answer.
   function onCardControl(e){ return !!e.target.closest(".node-btn"); }
-  function enableDrag(node, handle){
-    var sx, sy, ox, oy;
+  function manualNodeDragAllowed(e){
+    if (onCardControl(e) || e.target.closest("a, button, input, textarea, select, [contenteditable='true'], .node-resize, .rh-pdf-scroll")) return false;
+    // A touch that starts in a manual card's body belongs to the card's native
+    // scroller. The header remains a deliberate move handle on touch devices.
+    if (e.pointerType === "touch" && e.target.closest(".node-body")) return false;
+    return true;
+  }
+  function enableDrag(node, handle, options){
+    options = options || {};
+    var sx, sy, ox, oy, moved = false;
+    var threshold = options.threshold || 0;
     onPointerGesture(handle,
-      function(e){ if (e.button !== 0 || onCardControl(e)) return false; e.preventDefault(); canvasLifecycle.hooks.hideAsk(); sx=e.clientX; sy=e.clientY; ox=node.x; oy=node.y; return true; },
-      function(ev){ node.x = ox + (ev.clientX - sx) / view.scale; node.y = oy + (ev.clientY - sy) / view.scale; layoutNode(node); scheduleEdges(); },
-      function(){ drawEdges(); canvasLifecycle.hooks.persistNode(node); });
+      function(e){
+        if (e.button !== 0 || onCardControl(e) || (options.canStart && !options.canStart(e))) return false;
+        if (!threshold) e.preventDefault();
+        canvasLifecycle.hooks.hideAsk();
+        sx=e.clientX; sy=e.clientY; ox=node.x; oy=node.y; moved = false;
+        return true;
+      },
+      function(ev){
+        var dx = ev.clientX - sx, dy = ev.clientY - sy;
+        if (threshold && !moved){
+          if (Math.hypot(dx, dy) < threshold) return;
+          moved = true;
+          // Let clicks, double-clicks, and text selections remain native. Once
+          // the pointer clearly becomes a move, cancel the pending selection.
+          ev.preventDefault();
+          var selection = window.getSelection && window.getSelection();
+          if (selection && !selection.isCollapsed) selection.removeAllRanges();
+        }
+        if (!threshold || moved){
+          if (threshold) ev.preventDefault();
+          node.x = ox + dx / view.scale; node.y = oy + dy / view.scale; layoutNode(node); scheduleEdges();
+        }
+      },
+      function(){
+        if (threshold && !moved) return;
+        drawEdges(); canvasLifecycle.hooks.persistNode(node);
+      });
   }
   function enableResize(node, handle){
     var sx, sy, ow, oh;

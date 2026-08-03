@@ -405,6 +405,8 @@ body.mode-canvas #viewport { display: block; }
 .canvas-text-node .node-title { color: var(--fg-dim); font-size: 10.5px; }
 .canvas-text-node .node-acts { position: static; margin-left: auto; padding: 0; background: none; }
 .canvas-text-node .node-body { padding: 8px; overflow: auto; }
+.canvas-manual-node .node-body { cursor: grab; }
+.canvas-manual-node .node-body:active { cursor: grabbing; }
 .canvas-text-node .node-resize { opacity: 0; }
 .canvas-text-node:hover .node-resize { opacity: .55; }
 

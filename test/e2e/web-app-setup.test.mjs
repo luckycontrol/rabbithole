@@ -63,6 +63,13 @@ async function verifyCanvasInsertToolbar() {
     await page.waitForSelector(".canvas-text-node", { state: "visible" });
     assert.equal(await page.locator(".canvas-text-node").innerText().then((text) => text.includes("manual note")), true,
       "saved text should render through the shared Markdown path");
+    const textPositionBefore = await canvasNodePosition(page, ".canvas-text-node");
+    await dragCanvasNodeBody(page, ".canvas-text-node", 64, 42);
+    const textPositionAfter = await canvasNodePosition(page, ".canvas-text-node");
+    assert(Math.abs(textPositionAfter.left - textPositionBefore.left) > 1
+      && Math.abs(textPositionAfter.top - textPositionBefore.top) > 1,
+    `the body of a manually-created text node should move it (${JSON.stringify({ textPositionBefore, textPositionAfter })})`);
+    await assertStoredCanvasNodePosition(page, ".canvas-text-node", textPositionAfter);
 
     const cardPoint = await emptyCanvasPoint(page);
     await page.mouse.dblclick(cardPoint.x, cardPoint.y);
@@ -77,6 +84,13 @@ async function verifyCanvasInsertToolbar() {
     await page.locator(".canvas-card-draft").getByRole("textbox", { name: "Card content" }).fill("Edited card body.");
     await page.locator(".canvas-card-draft").getByRole("button", { name: "Save card" }).click();
     await card.getByText("Edited card body.").waitFor();
+    const cardPositionBefore = await canvasNodePosition(page, ".canvas-card-node");
+    await dragCanvasNodeBody(page, ".canvas-card-node", -58, 36);
+    const cardPositionAfter = await canvasNodePosition(page, ".canvas-card-node");
+    assert(Math.abs(cardPositionAfter.left - cardPositionBefore.left) > 1
+      && Math.abs(cardPositionAfter.top - cardPositionBefore.top) > 1,
+    `the body of a manually-created card should move it (${JSON.stringify({ cardPositionBefore, cardPositionAfter })})`);
+    await assertStoredCanvasNodePosition(page, ".canvas-card-node", cardPositionAfter);
 
     await page.waitForFunction(async () => {
       const hole = await window.__rabbitholeTest.readStoredHole();
@@ -110,6 +124,34 @@ async function emptyCanvasPoint(page) {
     }
     throw new Error("No empty canvas point found");
   });
+}
+
+async function canvasNodePosition(page, selector) {
+  return page.locator(selector).evaluate((node) => ({
+    left: parseFloat(node.style.left),
+    top: parseFloat(node.style.top),
+  }));
+}
+
+async function dragCanvasNodeBody(page, selector, dx, dy) {
+  const point = await page.locator(`${selector} .node-body`).evaluate((body) => {
+    const rect = body.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  });
+  await page.mouse.move(point.x, point.y);
+  await page.mouse.down();
+  await page.mouse.move(point.x + dx, point.y + dy);
+  await page.mouse.up();
+}
+
+async function assertStoredCanvasNodePosition(page, selector, expected) {
+  await page.waitForFunction(async ({ selector, expected }) => {
+    const element = document.querySelector(selector);
+    if (!element) return false;
+    const hole = await window.__rabbitholeTest.readStoredHole();
+    const node = hole?.nodes?.find((candidate) => candidate.id === element.dataset.id);
+    return !!node && Math.abs(node.position.x - expected.left) < 0.1 && Math.abs(node.position.y - expected.top) < 0.1;
+  }, { selector, expected });
 }
 
 async function verifyReducedMotionOverlays() {
