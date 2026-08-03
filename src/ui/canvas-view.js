@@ -18,9 +18,11 @@ import {
   isVisible,
   mode,
   motionSourceFromEvent,
+  nextOrder,
   nodes,
   readerMain,
   registerCoreHooks,
+  registerNode,
   rootId,
   setCanvasBuilt,
   setCanvasFramed,
@@ -28,6 +30,7 @@ import {
   setViewAdjusted,
   shouldReduceMotion,
   sessionPhase,
+  uuid,
   view,
   viewport,
   world,
@@ -46,7 +49,12 @@ import {
   BRANCH_FOLLOWUP,
   BRANCH_SELECTION,
   branchTypeOfNode,
-  lensLabel
+  CANVAS_NODE_CARD,
+  CANVAS_NODE_ORIGIN_VERSION,
+  CANVAS_NODE_TEXT,
+  canvasNodeKind,
+  lensLabel,
+  truncate
 } from "../core/model.js";
 import { openNode } from "./reader.js";
 import { applyChildHighlights, transitionMarkGroups } from "./text-marks.js";
@@ -58,6 +66,10 @@ import { createModuleLifecycle } from "./lifecycle.js";
 import { captureContentPosition, restoreContentPosition } from "./scroll-position.js";
 import { applyComposerState } from "./composer-state.js";
 import { ENTER_SEND_HINT, isSubmitEnter } from "./input-intent.js";
+import { openAnchoredSurface } from "./overlay/anchor.js";
+import { registerLayer } from "./overlay/layer-stack.js";
+import { refreshNodeHtml } from "./renderer.js";
+import { teardownNode } from "./node-teardown.js";
 
 function isSelectionBranch(node) {
   return branchTypeOfNode(node) === BRANCH_SELECTION;
@@ -72,6 +84,7 @@ function defaultCanvasHooks(){
     hideAsk: function(){},
     sendFollowup: function(){ return null; },
     confirmDelete: function(){},
+    post: function(){ return Promise.resolve({ ok: true }); },
     persistNode: function(){},
     persistNodesBulk: function(){},
     scheduleViewSave: function(){}
@@ -82,6 +95,8 @@ var canvasLifecycle = createModuleLifecycle({ defaults: defaultCanvasHooks });
 var filmCameraHandle = null;
 var cardResizeObserver = null;
 var activePointerGestures = new Set();
+var canvasInsertToolbar = null;
+var canvasDraft = null;
 
 export function registerCanvasHooks(hooks) {
   canvasLifecycle.register(hooks);
@@ -120,6 +135,8 @@ function cleanupCanvasView(resetHooks){
   cardResizeObserver = null;
   activePointerGestures.forEach(function(cancel){ cancel(); });
   activePointerGestures.clear();
+  closeCanvasInsertToolbar();
+  closeCanvasDraft();
   cancelViewAnimation();
   if (edgeRaf){ cancelAnimationFrame(edgeRaf); edgeRaf = 0; }
   if (filmCameraHandle && window.__rhFilmCamera === filmCameraHandle) {
@@ -175,6 +192,209 @@ function applyTransform(){
     });
   }
 function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy - view.y) / view.scale }; }
+
+  var CANVAS_TEXT_SIZE = { w: 300, h: 160 };
+  var CANVAS_CARD_SIZE = { w: 420, h: 360 };
+
+  function closeCanvasInsertToolbar(){
+    var active = canvasInsertToolbar;
+    canvasInsertToolbar = null;
+    if (!active) return;
+    if (active.surfaceControl) active.surfaceControl.dispose();
+    if (active.el.parentNode) active.el.parentNode.removeChild(active.el);
+  }
+
+  function toolbarPointAnchor(point){
+    return {
+      contextElement: viewport,
+      getBoundingClientRect: function(){
+        return { x: point.clientX, y: point.clientY, left: point.clientX, top: point.clientY,
+          right: point.clientX, bottom: point.clientY, width: 0, height: 0 };
+      }
+    };
+  }
+
+  function focusCanvasInsertButton(button, buttons){
+    buttons.forEach(function(candidate){ candidate.tabIndex = candidate === button ? 0 : -1; });
+    button.focus({ preventScroll: true });
+  }
+
+  function openCanvasInsertToolbar(event){
+    closeCanvasInsertToolbar();
+    closeCanvasDraft();
+    var point = { clientX: event.clientX, clientY: event.clientY };
+    var el = document.createElement("div");
+    el.className = "canvas-insert-toolbar canvas-insert-ui popover-surface visible";
+    el.setAttribute("role", "toolbar");
+    el.setAttribute("aria-label", "Add to canvas");
+    el.innerHTML =
+      iconButtonMarkup({ bare: true, className: "canvas-insert-action", ariaLabel: "Add text", title: "Add text", svgIconHtml: iconSvg("text") }) +
+      iconButtonMarkup({ bare: true, className: "canvas-insert-action", ariaLabel: "Add card", title: "Add card", svgIconHtml: iconSvg("card") });
+    document.body.appendChild(el);
+    var buttons = Array.prototype.slice.call(el.querySelectorAll("button"));
+    buttons.forEach(function(button, index){ button.tabIndex = index === 0 ? 0 : -1; });
+    el.addEventListener("keydown", function(e){
+      var index = buttons.indexOf(document.activeElement), next = null;
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") next = buttons[(index + 1 + buttons.length) % buttons.length];
+      else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = buttons[(index - 1 + buttons.length) % buttons.length];
+      else if (e.key === "Home") next = buttons[0];
+      else if (e.key === "End") next = buttons[buttons.length - 1];
+      if (!next) return;
+      e.preventDefault(); focusCanvasInsertButton(next, buttons);
+    });
+    buttons[0].addEventListener("click", function(){ closeCanvasInsertToolbar(); openCanvasDraft(CANVAS_NODE_TEXT, draftPosition(point, CANVAS_TEXT_SIZE)); });
+    buttons[1].addEventListener("click", function(){ closeCanvasInsertToolbar(); openCanvasDraft(CANVAS_NODE_CARD, draftPosition(point, CANVAS_CARD_SIZE)); });
+    var surfaceControl = openAnchoredSurface({
+      surface: el,
+      anchor: toolbarPointAnchor(point),
+      placement: "top-center",
+      restoreFocus: false,
+      onClose: closeCanvasInsertToolbar
+    });
+    canvasInsertToolbar = { el: el, surfaceControl: surfaceControl };
+    focusCanvasInsertButton(buttons[0], buttons);
+  }
+
+  function draftPosition(point, size){
+    var margin = 16, topClear = 68;
+    var scaledW = size.w * view.scale, scaledH = size.h * view.scale;
+    var maxLeft = Math.max(margin, viewport.clientWidth - margin - scaledW);
+    var maxTop = Math.max(topClear, viewport.clientHeight - margin - scaledH);
+    var left = Math.max(margin, Math.min(maxLeft, point.clientX - scaledW / 2));
+    var top = Math.max(topClear, Math.min(maxTop, point.clientY + 12));
+    return screenToWorld(left, top);
+  }
+
+  function closeCanvasDraft(){
+    var active = canvasDraft;
+    canvasDraft = null;
+    if (!active) return;
+    if (active.unregisterLayer) active.unregisterLayer({ restoreFocus: false });
+    if (active.el.parentNode) active.el.parentNode.removeChild(active.el);
+    if (active.node && active.node.el) active.node.el.classList.remove("canvas-manual-editing");
+  }
+
+  function openCanvasDraft(kind, position, node){
+    if (closed){
+      flashHint("Changes can't be saved in this read-only canvas.");
+      return;
+    }
+    closeCanvasInsertToolbar();
+    closeCanvasDraft();
+    var size = node ? { w: node.w, h: node.h } : (kind === CANVAS_NODE_TEXT ? CANVAS_TEXT_SIZE : CANVAS_CARD_SIZE);
+    var form = document.createElement("form");
+    form.className = "node canvas-insert-draft canvas-insert-ui canvas-" + kind + "-draft";
+    form.setAttribute("role", "dialog");
+    form.setAttribute("aria-label", node ? "Edit canvas " + kind : "Add canvas " + kind);
+    form.style.left = position.x + "px"; form.style.top = position.y + "px";
+    form.style.width = size.w + "px"; form.style.height = size.h + "px";
+    var head = document.createElement("div"); head.className = "canvas-draft-head";
+    head.textContent = node ? "Edit " + kind : (kind === CANVAS_NODE_TEXT ? "Add text" : "Add card");
+    var titleInput = null;
+    if (kind === CANVAS_NODE_CARD){
+      titleInput = document.createElement("input"); titleInput.className = "canvas-draft-title";
+      titleInput.type = "text"; titleInput.placeholder = "Card title"; titleInput.setAttribute("aria-label", "Card title");
+      titleInput.value = node ? (node.title || "") : "";
+    }
+    var textarea = document.createElement("textarea"); textarea.className = "canvas-draft-content";
+    textarea.placeholder = kind === CANVAS_NODE_TEXT ? "Type text…" : "Write Markdown…";
+    textarea.setAttribute("aria-label", kind === CANVAS_NODE_TEXT ? "Text" : "Card content");
+    textarea.value = node ? (node.md || "") : "";
+    var actions = document.createElement("div"); actions.className = "canvas-draft-actions";
+    var cancel = cardButton(buttonMarkup({ bare: true, className: "canvas-draft-button", label: "Cancel" }));
+    var save = cardButton(buttonMarkup({ bare: true, className: "canvas-draft-button primary", label: kind === CANVAS_NODE_TEXT ? "Add text" : "Save card", svgIconHtml: iconSvg("check") }));
+    actions.appendChild(cancel); actions.appendChild(save);
+    form.appendChild(head); if (titleInput) form.appendChild(titleInput); form.appendChild(textarea); form.appendChild(actions);
+    world.appendChild(form);
+    if (node && node.el) node.el.classList.add("canvas-manual-editing");
+    var unregisterLayer = registerLayer({
+      element: form,
+      restoreFocus: false,
+      preventOutsidePointerDefault: false,
+      onClose: closeCanvasDraft
+    });
+    canvasDraft = { el: form, node: node || null, kind: kind, position: position, size: size,
+      titleInput: titleInput, textarea: textarea, unregisterLayer: unregisterLayer };
+    cancel.addEventListener("click", function(){ closeCanvasDraft(); });
+    save.addEventListener("click", function(){ form.requestSubmit(); });
+    form.addEventListener("submit", function(e){ e.preventDefault(); saveCanvasDraft(); });
+    form.addEventListener("keydown", function(e){
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)){ e.preventDefault(); form.requestSubmit(); }
+    });
+    requestAnimationFrame(function(){ (titleInput || textarea).focus({ preventScroll: true }); });
+  }
+
+  function textNodeTitle(markdown){
+    var first = String(markdown || "").split(/\r?\n/).find(function(line){ return line.trim(); }) || "Text";
+    first = first.replace(/^\s*#{1,6}\s*/, "").replace(/[*_`~\[\]]/g, "").trim() || "Text";
+    return truncate(first, 48);
+  }
+
+  function saveCanvasDraft(){
+    var active = canvasDraft;
+    if (!active) return;
+    var markdown = active.textarea.value.trim();
+    var title = active.kind === CANVAS_NODE_TEXT ? textNodeTitle(markdown) : active.titleInput.value.trim();
+    if (active.kind === CANVAS_NODE_TEXT && !markdown){ flashHint("Type some text before adding it."); active.textarea.focus(); return; }
+    if (active.kind === CANVAS_NODE_CARD && !title && !markdown){ flashHint("Add a title or some card content first."); active.titleInput.focus(); return; }
+    if (!title) title = "Untitled card";
+    if (active.node){
+      updateManualNodeContent(active.node, title, markdown);
+      closeCanvasDraft();
+      return;
+    }
+    var payload = {
+      type: "canvas_node_create",
+      node_id: uuid(),
+      kind: active.kind,
+      title: title,
+      markdown: markdown,
+      position: { x: active.position.x, y: active.position.y },
+      size: { w: active.size.w, h: active.size.h }
+    };
+    closeCanvasDraft();
+    createManualNode(payload);
+  }
+
+  function createManualNode(payload){
+    var node = registerNode({
+      id: payload.node_id, parent_id: null, title: payload.title, html: "", md: payload.markdown,
+      base_url: null, base_url_source: null, read: false,
+      origin: { canvas: { version: CANVAS_NODE_ORIGIN_VERSION, kind: payload.kind } },
+      x: payload.position.x, y: payload.position.y, w: payload.size.w, h: payload.size.h,
+      font_scale: 1, collapsed: false, status: "answered", extensions: {}, _order: nextOrder(), _startTs: 0
+    });
+    refreshNodeHtml(node);
+    createNodeEl(node, true); renderVisibility(); drawEdges();
+    Promise.resolve(canvasLifecycle.hooks.post(payload)).then(function(result){
+      if (result && result.ok !== false) return;
+      if (nodes[node.id] === node){ teardownNode(node.id); renderVisibility(); drawEdges(); }
+      flashHint("Couldn't save the new canvas item.");
+    }, function(){
+      if (nodes[node.id] === node){ teardownNode(node.id); renderVisibility(); drawEdges(); }
+      flashHint("Couldn't save the new canvas item.");
+    });
+  }
+
+  function updateManualNodeContent(node, title, markdown){
+    var previous = { title: node.title, markdown: node.md };
+    node.title = title; node.md = markdown; refreshNodeHtml(node);
+    if (node.titleEl){ node.titleEl.textContent = title; node.titleEl.title = title; }
+    fillBody(node); scheduleEdges();
+    var payload = { type: "canvas_node_content", node_id: node.id, title: title, markdown: markdown };
+    Promise.resolve(canvasLifecycle.hooks.post(payload)).then(function(result){
+      if (result && result.ok !== false) return;
+      restoreManualNodeContent(node, previous, title, markdown);
+    }, function(){ restoreManualNodeContent(node, previous, title, markdown); });
+  }
+
+  function restoreManualNodeContent(node, previous, expectedTitle, expectedMarkdown){
+    if (nodes[node.id] !== node || node.title !== expectedTitle || node.md !== expectedMarkdown) return;
+    node.title = previous.title; node.md = previous.markdown; refreshNodeHtml(node);
+    if (node.titleEl){ node.titleEl.textContent = node.title; node.titleEl.title = node.title; }
+    fillBody(node); scheduleEdges(); flashHint("Couldn't save the canvas item.");
+  }
+
   function zoomAt(sx, sy, factor){
     var next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, view.scale * factor));
     zoomTo(sx, sy, next);
@@ -197,8 +417,10 @@ function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy -
   }
 
 export function createNodeEl(node, enter){
+    var manualKind = canvasNodeKind(node);
     var el = document.createElement("div");
     el.className = "node" + (node.id === rootId ? " root" : "");
+    if (manualKind) el.className += " canvas-manual-node canvas-" + manualKind + "-node";
     if (enter && !document.hidden && !shouldReduceMotion()) el.className += " node-enter";
     el.dataset.id = node.id;
 
@@ -219,28 +441,44 @@ export function createNodeEl(node, enter){
     var divider = document.createElement("span"); divider.className = "node-act-divider"; divider.setAttribute("aria-hidden", "true");
     var acts = document.createElement("span"); acts.className = "node-acts";
     if (node.id !== rootId){
-      var delBtn = cardButton(buttonMarkup({ bare: true, className: "node-btn danger", label: "✕", ariaLabel: "Remove this branch", title: "Remove this branch" }));
+      var removeLabel = manualKind ? "Remove canvas " + manualKind : "Remove this branch";
+      var delBtn = cardButton(buttonMarkup({ bare: true, className: "node-btn danger", label: "✕", ariaLabel: removeLabel, title: removeLabel }));
       delBtn.addEventListener("click", function(e){ e.stopPropagation(); canvasLifecycle.hooks.confirmDelete(node, delBtn); });
       acts.appendChild(delBtn);
     }
-    acts.appendChild(aDown); acts.appendChild(aUp); acts.appendChild(divider); acts.appendChild(collapseBtn); acts.appendChild(openBtn);
+    if (manualKind){
+      var editBtn = cardButton(iconButtonMarkup({ bare: true, className: "node-btn canvas-manual-edit", svgIconHtml: iconSvg("edit"), ariaLabel: "Edit canvas " + manualKind, title: "Edit canvas " + manualKind }));
+      editBtn.addEventListener("click", function(e){ e.stopPropagation(); openCanvasDraft(manualKind, { x: node.x, y: node.y }, node); });
+      acts.appendChild(editBtn);
+    }
+    if (manualKind !== CANVAS_NODE_TEXT){
+      acts.appendChild(aDown); acts.appendChild(aUp); acts.appendChild(divider); acts.appendChild(collapseBtn); acts.appendChild(openBtn);
+    }
     head.appendChild(titleEl); head.appendChild(acts);
 
     var body = document.createElement("div"); body.className = "node-body";
-    var comp = buildCardComposer(node);
+    var comp = manualKind === CANVAS_NODE_TEXT ? null : buildCardComposer(node);
     var resize = document.createElement("div"); resize.className = "node-resize";
-    el.appendChild(head); el.appendChild(body); el.appendChild(comp); el.appendChild(resize);
+    el.appendChild(head); el.appendChild(body); if (comp) el.appendChild(comp); el.appendChild(resize);
     world.appendChild(el);
 
     node.el = el; node.bodyEl = body; node.titleEl = titleEl;
     if (cardResizeObserver) cardResizeObserver.observe(el);
     fillBody(node);
-    updateCardComposer(node);
+    if (comp) updateCardComposer(node);
     if (node.collapsed) el.classList.add("collapsed");
 
     enableDrag(node, head);
     enableResize(node, resize);
-    head.addEventListener("dblclick", function(e){ if (onCardControl(e)) return; openNode(node.id); });
+    head.addEventListener("dblclick", function(e){
+      if (onCardControl(e)) return;
+      if (manualKind === CANVAS_NODE_TEXT) openCanvasDraft(manualKind, { x: node.x, y: node.y }, node);
+      else openNode(node.id);
+    });
+    if (manualKind) body.addEventListener("dblclick", function(e){
+      if (e.target.closest("a, button, input, textarea, select, [contenteditable='true']")) return;
+      e.preventDefault(); e.stopPropagation(); openCanvasDraft(manualKind, { x: node.x, y: node.y }, node);
+    });
     openBtn.addEventListener("click", function(e){ e.stopPropagation(); openNode(node.id); });
     collapseBtn.addEventListener("click", function(e){ e.stopPropagation(); toggleCollapse(node, collapseBtn); });
     aDown.addEventListener("click", function(e){ e.stopPropagation(); setNodeFontScale(node, -0.1); });
@@ -434,7 +672,7 @@ function layoutNode(node){
       // Short answers therefore hug their content while longer answers retain
       // the existing scrollable viewport. Keep the root's established fixed
       // document window; it is the canvas anchor rather than a branch.
-      if (node.id === rootId){
+      if (node.id === rootId || canvasNodeKind(node)){
         el.style.height = node.h + "px";
         el.style.maxHeight = "";
       } else {
@@ -883,10 +1121,13 @@ export function frameAll(animate, source){
     if (animate){ animateView(tx, ty, ts, { source: source, duration: 270, ease: "inOut" }); return; }
     view.scale = ts; view.x = tx; view.y = ty; applyTransform();
   }
-  // Double-clicking empty canvas = frame everything (canvas-tool muscle memory).
+  // Double-clicking empty canvas opens the insertion tools. Read-only canvases
+  // retain the historical frame-all gesture because they cannot add content.
   function onViewportDblClick(e){
     if (e.target.closest && e.target.closest(".node")) return;
-    frameAll(true, motionSourceFromEvent(e));
+    if (closed){ frameAll(true, motionSourceFromEvent(e)); return; }
+    e.preventDefault();
+    openCanvasInsertToolbar(e);
   }
 
 export function tidy(source){
@@ -949,6 +1190,8 @@ function ensureCanvasBuilt(){
     applyTransform();
   }
 export function setMode(m){
+    closeCanvasInsertToolbar();
+    closeCanvasDraft();
     var transferredPosition = null;
     if (m === "canvas" && mode === "reader"){
       // display:none resets the reader's scrollTop — remember it first so

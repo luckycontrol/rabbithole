@@ -14,7 +14,7 @@ import {
   setSurfaceOrigin,
   shareMenu
 } from "./core.js";
-import { lensLabel, lineageNodesFromMap, truncate } from "../core/model.js";
+import { canvasNodeKind, lensLabel, lineageNodesFromMap, truncate } from "../core/model.js";
 import {
   clearEdgeHighlight,
   drawEdges,
@@ -227,7 +227,12 @@ export function confirmDelete(node, anchor){
       return;
     }
     var subCount = countSubtree(node.id) - 1;
-    document.getElementById("cf-msg").textContent = subCount > 0
+    var manualKind = canvasNodeKind(node);
+    document.getElementById("cf-msg").textContent = manualKind
+      ? (subCount > 0
+        ? "Remove this canvas " + manualKind + " and " + subCount + " inside it?"
+        : "Remove this canvas " + manualKind + "?")
+      : subCount > 0
       ? "Remove this branch and " + subCount + " inside it?"
       : "Remove this branch?";
     hideConfirm({ restoreFocus: false });

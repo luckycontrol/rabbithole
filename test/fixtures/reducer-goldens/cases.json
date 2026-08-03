@@ -135,5 +135,19 @@
     "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "extensions": { "kept": { "nested": [1] }, "learn": { "c8lb3": { "attempts": 2, "revealed": true, "last": { "option": 1, "correct": true } }, "other": { "score": 9 } } } }] },
     "expected_effects": { "node_id": "root" }
   },
+  {
+    "name": "canvas_node_create materializes a standalone text node",
+    "initial": { "hole_id": "h", "root_id": "root", "nodes": [{ "id": "root" }] },
+    "events": [{ "event": { "type": "canvas_node_create", "node_id": "note", "kind": "text", "title": "Canvas note", "markdown": "Remember **this**", "position": { "x": "12", "y": 34 }, "size": { "w": 300, "h": 160 } }, "options": { "now": "fixed" } }],
+    "expected": { "hole_id": "h", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root" }, { "id": "note", "parent_id": null, "title": "Canvas note", "markdown": "Remember **this**", "base_url": null, "base_url_source": null, "origin": { "canvas": { "version": 1, "kind": "text" } }, "position": { "x": 12, "y": 34 }, "size": { "w": 300, "h": 160 }, "font_scale": 1, "collapsed": false, "status": "answered", "read": false, "created_at": "fixed", "extensions": {} }] },
+    "expected_effects": { "createdNodeId": "note" }
+  },
+  {
+    "name": "canvas_node_content edits only manual canvas nodes",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root", "title": "Root", "markdown": "Keep" }, { "id": "card", "title": "Draft", "markdown": "Before", "origin": { "canvas": { "version": 1, "kind": "card" } } }] },
+    "events": [{ "event": { "type": "canvas_node_content", "node_id": "root", "title": "Changed", "markdown": "No" } }, { "event": { "type": "canvas_node_content", "node_id": "card", "title": "Edited", "markdown": "After" } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root", "title": "Root", "markdown": "Keep" }, { "id": "card", "title": "Edited", "markdown": "After", "origin": { "canvas": { "version": 1, "kind": "card" } } }] },
+    "expected_effects": { "node_id": "card" }
+  },
   { "name": "unknown event type throws", "initial": { "nodes": [] }, "events": [{ "event": { "type": "future_event" } }], "expected_error": "Unsupported hole event: future_event" }
 ]

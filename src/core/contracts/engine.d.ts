@@ -94,6 +94,18 @@ export interface NodeAnsweredEvent extends NodeTarget, BaseUrlFields, NodePresen
   origin?: unknown;
   created_at?: unknown;
 }
+export interface CanvasNodeCreateEvent extends NodeTarget, NodePresentationFields {
+  type: "canvas_node_create";
+  kind?: unknown;
+  title?: unknown;
+  markdown?: unknown;
+  created_at?: unknown;
+}
+export interface CanvasNodeContentEvent extends NodeTarget {
+  type: "canvas_node_content";
+  title?: unknown;
+  markdown?: unknown;
+}
 export interface DeleteNodeEvent extends NodeTarget {
   type: "delete_node" | "node_deleted";
   node_ids?: unknown;
@@ -118,6 +130,7 @@ export interface BlockStateEvent extends NodeTarget {
 }
 
 export type DocEvent = BranchRequestEvent | NodeProgressEvent | NodeAnsweredEvent |
+  CanvasNodeCreateEvent | CanvasNodeContentEvent |
   DeleteNodeEvent | NodeUpdateEvent | NodesUpdateEvent | ViewStateEvent |
   HoleTitleEvent | NodeOriginEvent | NodeExtensionsPatchEvent | BlockStateEvent;
 

@@ -28,10 +28,88 @@ try {
   await verifyReducedMotionOverlays();
   await verifySetupReadinessInvalidation();
   await verifyComboboxCatalogStates();
+  await verifyCanvasInsertToolbar();
   await verifyAskKeyUxAndRail();
   console.log("web app verification passed");
 } finally {
   await app.close();
+}
+
+async function verifyCanvasInsertToolbar() {
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await page.goto(baseUrl, { waitUntil: "networkidle" });
+    await createDocument(page, "# Canvas insertion\n\nA root document leaves room for manual canvas items.");
+    const textPoint = await emptyCanvasPoint(page);
+    await page.mouse.dblclick(textPoint.x, textPoint.y);
+    const toolbar = page.getByRole("toolbar", { name: "Add to canvas" });
+    await toolbar.waitFor();
+    assert.deepEqual(await toolbar.getByRole("button").evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label"))),
+      ["Add text", "Add card"], "empty-canvas double-click should expose text and card icon actions");
+    assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Add text",
+      "the insertion toolbar should place keyboard focus on its first action");
+    await page.keyboard.press("ArrowRight");
+    assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Add card",
+      "arrow keys should move focus across insertion actions");
+    await page.keyboard.press("Escape");
+    await toolbar.waitFor({ state: "detached" });
+    await page.mouse.dblclick(textPoint.x, textPoint.y);
+    await toolbar.waitFor();
+    await toolbar.getByRole("button", { name: "Add text" }).click();
+    const textDraft = page.locator(".canvas-text-draft");
+    await textDraft.getByRole("textbox", { name: "Text" }).fill("A **manual note** on the canvas.");
+    await textDraft.getByRole("button", { name: "Add text" }).click();
+    await page.waitForSelector(".canvas-text-node", { state: "visible" });
+    assert.equal(await page.locator(".canvas-text-node").innerText().then((text) => text.includes("manual note")), true,
+      "saved text should render through the shared Markdown path");
+
+    const cardPoint = await emptyCanvasPoint(page);
+    await page.mouse.dblclick(cardPoint.x, cardPoint.y);
+    await page.getByRole("toolbar", { name: "Add to canvas" }).getByRole("button", { name: "Add card" }).click();
+    const cardDraft = page.locator(".canvas-card-draft");
+    await cardDraft.getByRole("textbox", { name: "Card title" }).fill("Manual card");
+    await cardDraft.getByRole("textbox", { name: "Card content" }).fill("Card body with `code`.");
+    await cardDraft.getByRole("button", { name: "Save card" }).click();
+    const card = page.locator(".canvas-card-node", { hasText: "Manual card" });
+    await card.waitFor();
+    await card.getByRole("button", { name: "Edit canvas card" }).click();
+    await page.locator(".canvas-card-draft").getByRole("textbox", { name: "Card content" }).fill("Edited card body.");
+    await page.locator(".canvas-card-draft").getByRole("button", { name: "Save card" }).click();
+    await card.getByText("Edited card body.").waitFor();
+
+    await page.waitForFunction(async () => {
+      const hole = await window.__rabbitholeTest.readStoredHole();
+      return hole.nodes.some((node) => node.origin?.canvas?.kind === "text" && node.markdown.includes("manual note"))
+        && hole.nodes.some((node) => node.origin?.canvas?.kind === "card" && node.markdown === "Edited card body.");
+    });
+    const portable = await page.evaluate(() => window.__rabbitholeTest.exportPortable());
+    const manualNodes = portable.hole.nodes.filter((node) => node.origin?.canvas);
+    assert.deepEqual(manualNodes.map((node) => node.origin.canvas.kind).sort(), ["card", "text"],
+      "portable exports should preserve manual canvas item kinds without a schema change");
+    const snapshot = JSON.parse(extractSnapshotPayload(await page.evaluate(() => window.__rabbitholeTest.exportSnapshot())));
+    assert.deepEqual(snapshot.hole.nodes.filter((node) => node.origin?.canvas).map((node) => node.origin.canvas.kind).sort(), ["card", "text"],
+      "self-contained snapshots should preserve manual canvas item kinds");
+
+    await page.reload({ waitUntil: "networkidle" });
+    await page.waitForSelector(".canvas-text-node");
+    assert.equal(await page.locator(".canvas-card-node", { hasText: "Edited card body." }).count(), 1,
+      "manual text and cards should restore from IndexedDB after reload");
+  } finally {
+    await context.close();
+  }
+}
+
+async function emptyCanvasPoint(page) {
+  return page.evaluate(() => {
+    for (let y = innerHeight - 70; y >= 90; y -= 36) {
+      for (let x = 70; x <= innerWidth - 70; x += 48) {
+        const target = document.elementFromPoint(x, y);
+        if (target && target.closest("#viewport") && !target.closest(".node, #taskbar, .web-rail")) return { x, y };
+      }
+    }
+    throw new Error("No empty canvas point found");
+  });
 }
 
 async function verifyReducedMotionOverlays() {

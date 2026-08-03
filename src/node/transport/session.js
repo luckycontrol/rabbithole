@@ -847,6 +847,12 @@ export class RabbitHoleSession {
           await this.flushSave();
           return result;
         },
+        canvas_node_create: async (event) => {
+          const result = this.applyPersistedBrowserEvent(event);
+          await this.flushSave();
+          return { ...result, node_id: String(event.node_id || "") };
+        },
+        canvas_node_content: (event) => this.applyPersistedBrowserEvent(event),
         node_update: (event) => this.handleNodeUpdate(event),
         nodes_update: (event) => this.handleNodesUpdate(event),
         block_state: (event) => this.applyPersistedBrowserEvent(event),
