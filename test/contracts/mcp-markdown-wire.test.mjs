@@ -278,18 +278,22 @@ async function runMarkdownWireFixture() {
   assertNoContentHtml(answered, "node_answered");
   assertIncludes(answered.markdown, "Done.");
   assert.match(answered.markdown, /```show id=[a-z0-9]{4,8}\n/, "completed generation mints block identity before persistence");
+  const editedAnswerTitle = "Edited answer title";
   const editedAnswerMarkdown = "## Edited answer\n\nThis **revised** Markdown is saved.";
   assert.deepEqual(await postEvent(session, {
-    type: "answer_node_content", node_id: nodeId, markdown: editedAnswerMarkdown,
+    type: "answer_node_content", node_id: nodeId, title: editedAnswerTitle, markdown: editedAnswerMarkdown,
   }), { ok: true });
   await session.flushSave();
   const persistedAfterAnswer = await new FsStore().loadHole(session.holeId);
+  assert.equal(persistedAfterAnswer.nodes.find((node) => node.id === nodeId).title, editedAnswerTitle,
+    "MCP browser transport should persist revised answer title");
   assert.equal(persistedAfterAnswer.nodes.find((node) => node.id === nodeId).markdown, editedAnswerMarkdown,
     "MCP browser transport should persist revised answer Markdown");
 
   const reloaded = await fetch(session.url);
   const rehydration = parseHydration(await reloaded.text());
   assertNoContentHtml(rehydration, "reloaded hydration");
+  assert.equal(rehydration.nodes.find((node) => node.id === nodeId).title, editedAnswerTitle);
   assert.equal(rehydration.nodes.find((node) => node.id === nodeId).markdown, editedAnswerMarkdown);
 
   const exported = await fetch(`${session.url}/export`);

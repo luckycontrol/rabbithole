@@ -964,18 +964,33 @@ async function verifyAskKeyUxAndRail() {
   await page.waitForSelector("body:not(.mode-canvas) #reader-main");
   await page.getByRole("button", { name: "Edit answer Markdown" }).click();
   const readerAnswerDraft = page.locator(".reader-answer-editor");
+  assert.equal(await page.locator(".reader-answer-editor-head").count(), 0,
+    "Reader editing should stay inline instead of opening an Edit answer panel");
+  const readerTitleInput = page.getByRole("textbox", { name: "Card title" });
+  assert.equal(await readerTitleInput.count(), 1, "Reader editing should expose the current card title in place");
+  assert.equal(await readerTitleInput.inputValue(), "Can I revise this answer?",
+    "Reader title editing should start with the current card title");
   assert.match(await readerAnswerDraft.getByRole("textbox", { name: "Answer content" }).inputValue(), /\*\*user-edited\*\*/,
     "opening a card in Reader should preserve its current Markdown in the answer editor");
+  await readerTitleInput.fill("Reader title revision");
   await readerAnswerDraft.getByRole("textbox", { name: "Answer content" }).fill("## Reader revision\n\nA **Reader-edited** Markdown answer.");
   await readerAnswerDraft.getByRole("button", { name: "Save answer" }).click();
   await page.locator("#reader-main").getByText("Reader-edited Markdown answer.").waitFor();
+  assert.equal(await page.locator('.crumb[aria-current="page"]').innerText(), "Reader title revision",
+    "Reader should render the saved card title in the breadcrumb");
   await page.click("#t-canvas");
   await page.waitForSelector("body.mode-canvas");
+  const readerEditedCard = page.locator(".node[data-id=\"" + editedAnswerId + "\"]");
+  await readerEditedCard.getByText("Reader title revision").waitFor();
   await page.locator(`.node[data-id="${editedAnswerId}"]`).getByText("Reader-edited Markdown answer.").waitFor();
   await page.waitForFunction(async ({ nodeId, markdown }) => {
     const hole = await window.__rabbitholeTest.readStoredHole();
     return hole?.nodes?.find((node) => node.id === nodeId)?.markdown === markdown;
   }, { nodeId: editedAnswerId, markdown: "## Reader revision\n\nA **Reader-edited** Markdown answer." });
+  await page.waitForFunction(async ({ nodeId, title }) => {
+    const hole = await window.__rabbitholeTest.readStoredHole();
+    return hole?.nodes?.find((node) => node.id === nodeId)?.title === title;
+  }, { nodeId: editedAnswerId, title: "Reader title revision" });
   await page.waitForTimeout(1200); // view-state debounce + IndexedDB save debounce
   const hole = await page.evaluate(async () => window.__rabbitholeTest.readStoredHole());
   assert.equal(hole.root_id, rootIdWhileLoading, "the loading node should remain the root after streaming completes");
