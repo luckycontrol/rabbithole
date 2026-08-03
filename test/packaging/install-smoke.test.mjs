@@ -135,6 +135,7 @@ try {
     "README.md",
     "LICENSE",
     "bin/mcp-server.js",
+    "bin/watch.js",
     ...(await filesBelow("src/node")),
     ...(await filesBelow("src/core")),
     ...(await filesBelow("dist")),
@@ -155,7 +156,11 @@ try {
   );
 
   const binPath = path.join(projectDir, "node_modules", ".bin", "rabbithole-mcp");
+  const watchBinPath = path.join(projectDir, "node_modules", ".bin", "rabbithole-watch");
   await fs.access(binPath, fs.constants.X_OK);
+  await fs.access(watchBinPath, fs.constants.X_OK);
+  const { stdout: watchHelp } = await execFileAsync(watchBinPath, ["--help"], { cwd: projectDir });
+  assert.match(watchHelp, /Usage: rabbithole-watch <hole_id>/);
   child = spawn(binPath, [], {
     cwd: projectDir,
     env: {

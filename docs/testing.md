@@ -55,6 +55,10 @@ These tests should be fast and should avoid host orchestration.
   browser. They cover branch creation, streaming ordering and retries, completion,
   deletion, updates, view state, extension state, immutability, unknown events,
   and host-specific hydration projections.
+- `watch-runner.test.mjs` protects deterministic `keep_listening` re-arming,
+  cancelled-wait recovery, markdown streaming boundaries, and Codex launch
+  configuration. `watch-app-server.test.mjs` protects the newline-delimited
+  request/notification transport used for structured answer turns.
 
 ### Contract tests
 
@@ -108,6 +112,9 @@ host adapters without owning the broad product journey.
   conditional runtime embedding, and zero-network offline snapshots.
 - `mcp-rearm.test.mjs` protects the keep-listening response, grace period, live
   reattachment, waiter cleanup, and exactly-once requeue of a saved pending ask.
+- `watch-mcp-client.test.mjs` launches the published MCP entry point and proves
+  the watcher keeps one child process and one live session across consecutive
+  `keep_listening` re-arms.
 - `web-ingestion.test.mjs` protects local browser PDF ingestion, arXiv proxy
   fallback and recovery messages, future-schema import refusal, MIME-independent
   file classification, and the Markdown pre-read size limit.
@@ -159,8 +166,8 @@ must not be hidden by raising a ceiling without explanation.
 ### Packaging tests
 
 `test/packaging/install-smoke.test.mjs` packs the repository, installs the tarball
-into a clean consumer project, verifies the executable, metadata, runtime source,
-and committed browser bundles, then completes an MCP initialize handshake. It is
+into a clean consumer project, verifies both executables, metadata, runtime source,
+and committed browser bundles, checks watcher help, then completes an MCP initialize handshake. It is
 kept outside the default suite and should run against every supported Node release
 in CI.
 

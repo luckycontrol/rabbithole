@@ -93,6 +93,15 @@ canvas over a loopback HTTP server and sends live changes over SSE. The MCP
 server is passive with respect to generation: the external agent receives a
 branch request and streams the answer back through `answer_branch`.
 
+`bin/watch.js` is an optional Codex-side orchestration host for unattended saved
+holes. It keeps a single stdio MCP process alive and deterministically re-calls
+`open_rabbithole` whenever a long poll returns `keep_listening`; the model is not
+involved in that scheduling decision. A separate ephemeral Codex app-server
+thread generates structured branch answers using the user's existing Codex
+login. The watcher then streams those answers through the persistent MCP
+connection. This remains outside the MCP server so the standard host stays
+client-neutral and does not initiate model work itself.
+
 Standard output is reserved for MCP protocol messages. Node diagnostics must go
 through the stderr logger.
 

@@ -148,6 +148,31 @@ new document. Keep going.
 If a host ever reports a tool timeout, nothing is lost — questions are saved
 and re-queued the next time the agent listens.
 
+### Keep Codex listening unattended
+
+Codex does not guarantee that a normal chat turn will make the next
+`open_rabbithole` call after `keep_listening`. For a long-running saved hole,
+use the optional watcher. It owns one persistent MCP connection, immediately
+re-arms every long poll with the same `hole_id`, and uses your existing local
+Codex login only when a branch needs an answer:
+
+```bash
+npx -y --package github:shlokkhemani/rabbithole rabbithole-watch <hole_id>
+```
+
+Use `list_rabbitholes` to find the saved `hole_id`. If the MCP server normally
+uses a custom data directory, pass that same directory to the watcher:
+
+```bash
+npx -y --package github:shlokkhemani/rabbithole rabbithole-watch <hole_id> --data-dir /path/to/data
+```
+
+The watcher requires the `codex` executable to be installed and logged in. It
+keeps each MCP wait at four minutes and re-arms it immediately instead of
+making one fragile one- or two-hour call. Transient process or transport failures
+restart with exponential backoff and resume the same saved hole. Stop it with
+Ctrl-C; `--help` lists model, effort, working-directory, and retry overrides.
+
 <details>
 <summary><strong>Prefer running from a local clone?</strong> (faster startup, easier hacking)</summary>
 
@@ -276,9 +301,10 @@ before mounting, and invalid diagrams fall back to their original source.
 ## Repo layout
 
 - `bin/mcp-server.js` — entry point (stdio MCP server)
+- `bin/watch.js` — persistent Codex re-arm and answer runner for a saved hole
 - `src/core/` — host-independent document engine, rendering, artifacts, and contracts
 - `src/ui/` — shared live/frozen browser runtime
-- `src/node/` — MCP host, filesystem storage, local HTTP/SSE, and PDF ingestion
+- `src/node/` — MCP host, Codex watcher, filesystem storage, local HTTP/SSE, and PDF ingestion
 - `src/web/` — static BYOK browser host and IndexedDB storage
 - `build.mjs` — builds the committed MCP bundles and the static web app
 - `dist/` — committed browser bundles used by GitHub `npx` installs
