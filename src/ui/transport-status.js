@@ -38,6 +38,7 @@ import {
   fillBody,
   renderVisibility,
   scheduleEdges,
+  updateAnswerEditControl,
   updateCardComposer
 } from "./canvas-view.js";
 import { updateComposerState } from "./ask-followups.js";
@@ -306,6 +307,7 @@ function handleServer(msg){
       if (hasStreamSurface(node)) refreshNodeHtml(node);
       if (node.titleEl){ node.titleEl.textContent = node.title; node.titleEl.title = node.title; }
       if (node.bodyEl){ fillBody(node); scheduleEdges(); }
+      updateAnswerEditControl(node);
       updateCardComposer(node);
       if (mode === "reader"){
         // The answered node itself may be open (e.g. opened pending from canvas).

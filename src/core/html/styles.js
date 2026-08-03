@@ -370,8 +370,8 @@ body.mode-canvas #viewport { display: block; }
 .canvas-insert-action:focus { outline: none; }
 .canvas-insert-action:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 
-.canvas-manual-node.canvas-manual-editing { visibility: hidden; }
-.canvas-manual-edit { color: var(--fg-dim); }
+.node.canvas-content-editing { visibility: hidden; }
+.canvas-manual-edit, .canvas-answer-edit { color: var(--fg-dim); }
 .canvas-text-node { background: transparent; border-color: transparent; box-shadow: none; }
 .canvas-text-node::after { border: 1px solid var(--border-focus); }
 .canvas-text-node .node-head { position: absolute; left: 0; right: 0; top: -30px; min-height: 26px; padding: 0 4px 0 8px;
@@ -402,7 +402,7 @@ body.mode-canvas #viewport { display: block; }
 .canvas-draft-button svg { width: 13px; height: 13px; }
 .canvas-draft-button:focus { outline: none; }
 .canvas-draft-button:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
-body.frozen .canvas-manual-edit, body.frozen .canvas-manual-node .node-resize { display: none !important; }
+body.frozen .canvas-manual-edit, body.frozen .canvas-answer-edit, body.frozen .canvas-manual-node .node-resize { display: none !important; }
 
 @media (hover: none), (pointer: coarse), (max-width: 760px) {
   .canvas-insert-action { width: 44px; height: 44px; }

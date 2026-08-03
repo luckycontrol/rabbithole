@@ -106,6 +106,11 @@ export interface CanvasNodeContentEvent extends NodeTarget {
   title?: unknown;
   markdown?: unknown;
 }
+/** User-authored Markdown replacement for a settled branch answer. */
+export interface AnswerNodeContentEvent extends NodeTarget {
+  type: "answer_node_content";
+  markdown?: unknown;
+}
 export interface DeleteNodeEvent extends NodeTarget {
   type: "delete_node" | "node_deleted";
   node_ids?: unknown;
@@ -130,7 +135,7 @@ export interface BlockStateEvent extends NodeTarget {
 }
 
 export type DocEvent = BranchRequestEvent | NodeProgressEvent | NodeAnsweredEvent |
-  CanvasNodeCreateEvent | CanvasNodeContentEvent |
+  CanvasNodeCreateEvent | CanvasNodeContentEvent | AnswerNodeContentEvent |
   DeleteNodeEvent | NodeUpdateEvent | NodesUpdateEvent | ViewStateEvent |
   HoleTitleEvent | NodeOriginEvent | NodeExtensionsPatchEvent | BlockStateEvent;
 

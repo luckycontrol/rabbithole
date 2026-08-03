@@ -25,6 +25,7 @@ import {
 /** @typedef {import("./contracts/engine.js").NodeAnsweredEvent} NodeAnsweredEvent */
 /** @typedef {import("./contracts/engine.js").CanvasNodeCreateEvent} CanvasNodeCreateEvent */
 /** @typedef {import("./contracts/engine.js").CanvasNodeContentEvent} CanvasNodeContentEvent */
+/** @typedef {import("./contracts/engine.js").AnswerNodeContentEvent} AnswerNodeContentEvent */
 /** @typedef {import("./contracts/engine.js").DeleteNodeEvent} DeleteNodeEvent */
 /** @typedef {import("./contracts/engine.js").NodeUpdateEvent} NodeUpdateEvent */
 /** @typedef {import("./contracts/engine.js").NodesUpdateEvent} NodesUpdateEvent */
@@ -101,6 +102,8 @@ export function reduceHoleEvent(state, event, options = {}) {
       return reduceCanvasNodeCreate(state, /** @type {CanvasNodeCreateEvent} */ (event), options);
     case "canvas_node_content":
       return reduceCanvasNodeContent(state, /** @type {CanvasNodeContentEvent} */ (event), options);
+    case "answer_node_content":
+      return reduceAnswerNodeContent(state, /** @type {AnswerNodeContentEvent} */ (event), options);
     case "delete_node":
     case "node_deleted":
       return reduceNodeDeleted(state, /** @type {DeleteNodeEvent} */ (event), options);
@@ -162,6 +165,21 @@ function reduceCanvasNodeContent(state, event, options) {
   nodes.set(nodeId, {
     ...node,
     title: String(event.title ?? node.title ?? "Untitled").trim() || "Untitled",
+    markdown: normalizeBlockIds(String(event.markdown ?? node.markdown ?? ""), { idFactory: options.idFactory }).markdown,
+  });
+  return withState({ ...state, nodes }, { node_id: nodeId });
+}
+
+/** @param {HoleState} state @param {AnswerNodeContentEvent} event @param {ReduceOptions} options */
+function reduceAnswerNodeContent(state, event, options) {
+  const nodeId = String(event.node_id || "");
+  const node = state.nodes.get(nodeId);
+  // A generated branch answer is safe to revise only after generation settles.
+  // Root documents and manual canvas items retain their existing authoring paths.
+  if (!node || node.parent_id == null || node.status !== "answered" || canvasNodeKind(node)) return withState(state);
+  const nodes = cloneNodes(state, options);
+  nodes.set(nodeId, {
+    ...node,
     markdown: normalizeBlockIds(String(event.markdown ?? node.markdown ?? ""), { idFactory: options.idFactory }).markdown,
   });
   return withState({ ...state, nodes }, { node_id: nodeId });

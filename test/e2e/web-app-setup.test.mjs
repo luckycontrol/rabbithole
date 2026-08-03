@@ -871,6 +871,8 @@ async function verifyAskKeyUxAndRail() {
     streams: [[
       "# Attention mechanism\n\n",
       "Attention compares tokens, scores their relevance, and mixes information according to those scores.",
+    ], [
+      "## Branch answer\n\nThis answer is ready to edit.",
     ]],
   });
 
@@ -902,6 +904,24 @@ async function verifyAskKeyUxAndRail() {
   assert.equal(await page.locator("#composer-modal").isVisible(), false, "the composer should close before the root begins streaming");
   assert(!/creating (?:the )?(?:root|first)|creating your starting point/i.test(await page.locator("body").innerText()), "root creation status copy should be absent");
   await waitForCanvasText(page, "Attention compares tokens");
+  await selectText(page, "Attention compares tokens");
+  await page.waitForSelector("#ask.visible");
+  await page.fill("#ask-text", "Can I revise this answer?");
+  await page.click("#ask-go");
+  const answerCard = page.locator(".node:not(.root)", { hasText: "This answer is ready to edit." });
+  await answerCard.waitFor();
+  await answerCard.getByRole("button", { name: "Edit answer Markdown" }).click();
+  const editedAnswerId = await answerCard.getAttribute("data-id");
+  const answerDraft = page.locator(".canvas-answer-draft");
+  assert.match(await answerDraft.getByRole("textbox", { name: "Answer content" }).inputValue(), /This answer is ready to edit\./,
+    "the answer editor should start with the generated Markdown source");
+  await answerDraft.getByRole("textbox", { name: "Answer content" }).fill("## Revised answer\n\nA **user-edited** Markdown answer.");
+  await answerDraft.getByRole("button", { name: "Save answer" }).click();
+  await page.locator(`.node[data-id="${editedAnswerId}"]`).getByText("user-edited Markdown answer.").waitFor();
+  await page.waitForFunction(async ({ nodeId, markdown }) => {
+    const hole = await window.__rabbitholeTest.readStoredHole();
+    return hole?.nodes?.find((node) => node.id === nodeId)?.markdown === markdown;
+  }, { nodeId: editedAnswerId, markdown: "## Revised answer\n\nA **user-edited** Markdown answer." });
   await page.waitForTimeout(1200); // view-state debounce + IndexedDB save debounce
   const hole = await page.evaluate(async () => window.__rabbitholeTest.readStoredHole());
   assert.equal(hole.root_id, rootIdWhileLoading, "the loading node should remain the root after streaming completes");

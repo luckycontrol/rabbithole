@@ -113,6 +113,7 @@ export class DirectRabbitholeHost {
             return { ...result, node_id: String(event.node_id || "") };
           },
           canvas_node_content: (event) => this.applyPersistedBrowserEvent(event),
+          answer_node_content: (event) => this.applyPersistedBrowserEvent(event),
           retry_branch: (event) => this.handleRetry(event),
           node_update: (event) => this.applyPersistedBrowserEvent(event),
           nodes_update: (event) => this.applyPersistedBrowserEvent(event),

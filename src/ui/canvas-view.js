@@ -195,6 +195,7 @@ function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy -
 
   var CANVAS_TEXT_SIZE = { w: 300, h: 160 };
   var CANVAS_CARD_SIZE = { w: 420, h: 360 };
+  var ANSWER_DRAFT_KIND = "answer";
 
   function closeCanvasInsertToolbar(){
     var active = canvasInsertToolbar;
@@ -271,7 +272,7 @@ function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy -
     if (!active) return;
     if (active.unregisterLayer) active.unregisterLayer({ restoreFocus: false });
     if (active.el.parentNode) active.el.parentNode.removeChild(active.el);
-    if (active.node && active.node.el) active.node.el.classList.remove("canvas-manual-editing");
+    if (active.node && active.node.el) active.node.el.classList.remove("canvas-content-editing");
   }
 
   function openCanvasDraft(kind, position, node){
@@ -281,15 +282,16 @@ function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy -
     }
     closeCanvasInsertToolbar();
     closeCanvasDraft();
+    var isAnswerDraft = kind === ANSWER_DRAFT_KIND;
     var size = node ? { w: node.w, h: node.h } : (kind === CANVAS_NODE_TEXT ? CANVAS_TEXT_SIZE : CANVAS_CARD_SIZE);
     var form = document.createElement("form");
     form.className = "node canvas-insert-draft canvas-insert-ui canvas-" + kind + "-draft";
     form.setAttribute("role", "dialog");
-    form.setAttribute("aria-label", node ? "Edit canvas " + kind : "Add canvas " + kind);
+    form.setAttribute("aria-label", node ? (isAnswerDraft ? "Edit answer" : "Edit canvas " + kind) : "Add canvas " + kind);
     form.style.left = position.x + "px"; form.style.top = position.y + "px";
     form.style.width = size.w + "px"; form.style.height = size.h + "px";
     var head = document.createElement("div"); head.className = "canvas-draft-head";
-    head.textContent = node ? "Edit " + kind : (kind === CANVAS_NODE_TEXT ? "Add text" : "Add card");
+    head.textContent = node ? (isAnswerDraft ? "Edit answer" : "Edit " + kind) : (kind === CANVAS_NODE_TEXT ? "Add text" : "Add card");
     var titleInput = null;
     if (kind === CANVAS_NODE_CARD){
       titleInput = document.createElement("input"); titleInput.className = "canvas-draft-title";
@@ -298,15 +300,15 @@ function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy -
     }
     var textarea = document.createElement("textarea"); textarea.className = "canvas-draft-content";
     textarea.placeholder = kind === CANVAS_NODE_TEXT ? "Type text…" : "Write Markdown…";
-    textarea.setAttribute("aria-label", kind === CANVAS_NODE_TEXT ? "Text" : "Card content");
+    textarea.setAttribute("aria-label", kind === CANVAS_NODE_TEXT ? "Text" : (isAnswerDraft ? "Answer content" : "Card content"));
     textarea.value = node ? (node.md || "") : "";
     var actions = document.createElement("div"); actions.className = "canvas-draft-actions";
     var cancel = cardButton(buttonMarkup({ bare: true, className: "canvas-draft-button", label: "Cancel" }));
-    var save = cardButton(buttonMarkup({ bare: true, className: "canvas-draft-button primary", label: kind === CANVAS_NODE_TEXT ? "Add text" : "Save card", svgIconHtml: iconSvg("check") }));
+    var save = cardButton(buttonMarkup({ bare: true, className: "canvas-draft-button primary", label: kind === CANVAS_NODE_TEXT ? "Add text" : (isAnswerDraft ? "Save answer" : "Save card"), svgIconHtml: iconSvg("check") }));
     actions.appendChild(cancel); actions.appendChild(save);
     form.appendChild(head); if (titleInput) form.appendChild(titleInput); form.appendChild(textarea); form.appendChild(actions);
     world.appendChild(form);
-    if (node && node.el) node.el.classList.add("canvas-manual-editing");
+    if (node && node.el) node.el.classList.add("canvas-content-editing");
     var unregisterLayer = registerLayer({
       element: form,
       restoreFocus: false,
@@ -334,7 +336,13 @@ function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy -
     var active = canvasDraft;
     if (!active) return;
     var markdown = active.textarea.value.trim();
-    var title = active.kind === CANVAS_NODE_TEXT ? textNodeTitle(markdown) : active.titleInput.value.trim();
+    var isAnswerDraft = active.kind === ANSWER_DRAFT_KIND;
+    var title = active.kind === CANVAS_NODE_TEXT ? textNodeTitle(markdown) : (active.titleInput ? active.titleInput.value.trim() : "");
+    if (isAnswerDraft){
+      updateAnswerNodeContent(active.node, markdown);
+      closeCanvasDraft();
+      return;
+    }
     if (active.kind === CANVAS_NODE_TEXT && !markdown){ flashHint("Type some text before adding it."); active.textarea.focus(); return; }
     if (active.kind === CANVAS_NODE_CARD && !title && !markdown){ flashHint("Add a title or some card content first."); active.titleInput.focus(); return; }
     if (!title) title = "Untitled card";
@@ -388,6 +396,23 @@ function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy -
     }, function(){ restoreManualNodeContent(node, previous, title, markdown); });
   }
 
+  function updateAnswerNodeContent(node, markdown){
+    var previous = node.md;
+    node.md = markdown; refreshNodeHtml(node);
+    fillBody(node); scheduleEdges();
+    var payload = { type: "answer_node_content", node_id: node.id, markdown: markdown };
+    Promise.resolve(canvasLifecycle.hooks.post(payload)).then(function(result){
+      if (result && result.ok !== false) return;
+      restoreAnswerNodeContent(node, previous, markdown);
+    }, function(){ restoreAnswerNodeContent(node, previous, markdown); });
+  }
+
+  function restoreAnswerNodeContent(node, previous, expectedMarkdown){
+    if (nodes[node.id] !== node || node.md !== expectedMarkdown) return;
+    node.md = previous; refreshNodeHtml(node);
+    fillBody(node); scheduleEdges(); flashHint("Couldn't save the answer.");
+  }
+
   function restoreManualNodeContent(node, previous, expectedTitle, expectedMarkdown){
     if (nodes[node.id] !== node || node.title !== expectedTitle || node.md !== expectedMarkdown) return;
     node.title = previous.title; node.md = previous.markdown; refreshNodeHtml(node);
@@ -414,6 +439,19 @@ function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy -
     var action = node.collapsed ? "Expand document" : "Collapse document";
     btn.innerHTML = node.collapsed ? NODE_RESTORE_ICON : NODE_COLLAPSE_ICON;
     btn.setAttribute("aria-label", action); btn.title = action;
+  }
+
+  function isAnswerNodeEditable(node){
+    return !!node && node.id !== rootId && node.parent_id != null
+      && !canvasNodeKind(node) && node.status === "answered";
+  }
+
+export function updateAnswerEditControl(node){
+    var button = node && node.answerEditBtn;
+    if (!button) return;
+    var editable = isAnswerNodeEditable(node);
+    button.hidden = !editable;
+    button.disabled = !editable;
   }
 
 export function createNodeEl(node, enter){
@@ -451,6 +489,15 @@ export function createNodeEl(node, enter){
       editBtn.addEventListener("click", function(e){ e.stopPropagation(); openCanvasDraft(manualKind, { x: node.x, y: node.y }, node); });
       acts.appendChild(editBtn);
     }
+    var answerEditBtn = null;
+    if (!manualKind && node.parent_id != null){
+      answerEditBtn = cardButton(iconButtonMarkup({ bare: true, className: "node-btn canvas-answer-edit", svgIconHtml: iconSvg("edit"), ariaLabel: "Edit answer Markdown", title: "Edit answer Markdown" }));
+      answerEditBtn.addEventListener("click", function(e){
+        e.stopPropagation();
+        if (isAnswerNodeEditable(node)) openCanvasDraft(ANSWER_DRAFT_KIND, { x: node.x, y: node.y }, node);
+      });
+      acts.appendChild(answerEditBtn);
+    }
     if (manualKind !== CANVAS_NODE_TEXT){
       acts.appendChild(aDown); acts.appendChild(aUp); acts.appendChild(divider); acts.appendChild(collapseBtn); acts.appendChild(openBtn);
     }
@@ -462,7 +509,8 @@ export function createNodeEl(node, enter){
     el.appendChild(head); el.appendChild(body); if (comp) el.appendChild(comp); el.appendChild(resize);
     world.appendChild(el);
 
-    node.el = el; node.bodyEl = body; node.titleEl = titleEl;
+    node.el = el; node.bodyEl = body; node.titleEl = titleEl; node.answerEditBtn = answerEditBtn;
+    updateAnswerEditControl(node);
     if (cardResizeObserver) cardResizeObserver.observe(el);
     fillBody(node);
     if (comp) updateCardComposer(node);
@@ -475,9 +523,13 @@ export function createNodeEl(node, enter){
       if (manualKind === CANVAS_NODE_TEXT) openCanvasDraft(manualKind, { x: node.x, y: node.y }, node);
       else openNode(node.id);
     });
-    if (manualKind) body.addEventListener("dblclick", function(e){
+    if (manualKind || answerEditBtn) body.addEventListener("dblclick", function(e){
       if (e.target.closest("a, button, input, textarea, select, [contenteditable='true']")) return;
-      e.preventDefault(); e.stopPropagation(); openCanvasDraft(manualKind, { x: node.x, y: node.y }, node);
+      if (manualKind){
+        e.preventDefault(); e.stopPropagation(); openCanvasDraft(manualKind, { x: node.x, y: node.y }, node);
+      } else if (isAnswerNodeEditable(node)) {
+        e.preventDefault(); e.stopPropagation(); openCanvasDraft(ANSWER_DRAFT_KIND, { x: node.x, y: node.y }, node);
+      }
     });
     openBtn.addEventListener("click", function(e){ e.stopPropagation(); openNode(node.id); });
     collapseBtn.addEventListener("click", function(e){ e.stopPropagation(); toggleCollapse(node, collapseBtn); });

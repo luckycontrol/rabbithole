@@ -278,14 +278,19 @@ async function runMarkdownWireFixture() {
   assertNoContentHtml(answered, "node_answered");
   assertIncludes(answered.markdown, "Done.");
   assert.match(answered.markdown, /```show id=[a-z0-9]{4,8}\n/, "completed generation mints block identity before persistence");
+  const editedAnswerMarkdown = "## Edited answer\n\nThis **revised** Markdown is saved.";
+  assert.deepEqual(await postEvent(session, {
+    type: "answer_node_content", node_id: nodeId, markdown: editedAnswerMarkdown,
+  }), { ok: true });
   await session.flushSave();
   const persistedAfterAnswer = await new FsStore().loadHole(session.holeId);
-  assert.equal(persistedAfterAnswer.nodes.find((node) => node.id === nodeId).markdown, answered.markdown);
+  assert.equal(persistedAfterAnswer.nodes.find((node) => node.id === nodeId).markdown, editedAnswerMarkdown,
+    "MCP browser transport should persist revised answer Markdown");
 
   const reloaded = await fetch(session.url);
   const rehydration = parseHydration(await reloaded.text());
   assertNoContentHtml(rehydration, "reloaded hydration");
-  assert.equal(rehydration.nodes.find((node) => node.id === nodeId).markdown, answered.markdown);
+  assert.equal(rehydration.nodes.find((node) => node.id === nodeId).markdown, editedAnswerMarkdown);
 
   const exported = await fetch(`${session.url}/export`);
   assert.equal(exported.status, 200);
@@ -319,7 +324,7 @@ async function runMarkdownWireFixture() {
   const imported = await importSnapshotFile(importStore, exportHtml);
   assert.equal(imported.asset_count, 1, "web import should restore the MCP snapshot asset");
   const importedHole = await importStore.loadHole(imported.hole_id);
-  assert.equal(importedHole.nodes.find((node) => node.id === nodeId).markdown, answered.markdown, "web import should restore the MCP-authored branch");
+  assert.equal(importedHole.nodes.find((node) => node.id === nodeId).markdown, editedAnswerMarkdown, "web import should restore the revised MCP-authored branch");
 
   session.close("markdown_wire_done");
   assertSessionClosedShape(await answerBranch({ sessionId: session.id, requestId, content: "late" }), session.id);
