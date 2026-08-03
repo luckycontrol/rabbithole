@@ -356,6 +356,59 @@ body.mode-canvas #viewport { display: block; }
 /* Landing flash when ⌘K jumps the canvas to a card. */
 .node.flash::after { opacity: 1; }
 
+/* Empty-canvas insertion keeps the first choice compact at the pointer, then
+   moves authoring into world space so the draft lands exactly where it will be
+   saved. Both surfaces are part of the self-contained canvas payload. */
+.canvas-insert-toolbar { --surface-edge: 10px; --surface-gap: 8px; position: fixed; z-index: var(--layer-popover); display: flex; gap: 3px;
+  padding: 5px; background: var(--popover-bg); border: var(--popover-border); border-radius: 10px;
+  -webkit-backdrop-filter: var(--popover-blur); backdrop-filter: var(--popover-blur); box-shadow: var(--popover-shadow); }
+.canvas-insert-action { appearance: none; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0;
+  color: var(--fg-dim); background: transparent; border: none; border-radius: 7px; cursor: pointer; transition: var(--transition-color); }
+.canvas-insert-action svg { width: 17px; height: 17px; }
+.canvas-insert-action:hover { color: var(--fg-bold); background: var(--hl); }
+.canvas-insert-action:active { background: var(--hl-strong); }
+.canvas-insert-action:focus { outline: none; }
+.canvas-insert-action:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+.canvas-manual-node.canvas-manual-editing { visibility: hidden; }
+.canvas-manual-edit { color: var(--fg-dim); }
+.canvas-text-node { background: transparent; border-color: transparent; box-shadow: none; }
+.canvas-text-node::after { border: 1px solid var(--border-focus); }
+.canvas-text-node .node-head { position: absolute; left: 0; right: 0; top: -30px; min-height: 26px; padding: 0 4px 0 8px;
+  background: var(--node-head); border: var(--border-default); border-radius: 7px; box-shadow: var(--shadow-card); opacity: 0; pointer-events: none;
+  transform: translateY(3px); transition: opacity var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard); }
+.canvas-text-node:hover .node-head, .canvas-text-node:focus-within .node-head { opacity: 1; pointer-events: auto; transform: translateY(0); }
+.canvas-text-node .node-title { color: var(--fg-dim); font-size: 10.5px; }
+.canvas-text-node .node-acts { position: static; margin-left: auto; padding: 0; background: none; }
+.canvas-text-node .node-body { padding: 8px; overflow: auto; }
+.canvas-text-node .node-resize { opacity: 0; }
+.canvas-text-node:hover .node-resize { opacity: .55; }
+
+.canvas-insert-draft { z-index: 20; padding: 0; overflow: hidden; border-color: var(--accent); box-shadow: var(--focus-field-shadow), var(--shadow-card); }
+.canvas-draft-head { flex: 0 0 auto; padding: 9px 12px; color: var(--fg-dim); background: var(--node-head); border-bottom: var(--border-default);
+  font-family: var(--font-ui); font-size: 11px; font-weight: var(--weight-medium); letter-spacing: .02em; }
+.canvas-draft-title, .canvas-draft-content { display: block; width: 100%; min-width: 0; box-sizing: border-box; color: var(--fg); background: transparent;
+  border: none; outline: none; }
+.canvas-draft-title { flex: 0 0 auto; padding: 12px 14px 9px; border-bottom: var(--border-default); font-family: var(--font-ui); font-size: 13px; font-weight: 600; }
+.canvas-draft-content { flex: 1 1 auto; min-height: 0; padding: 12px 14px; resize: none; font-family: var(--font-doc); font-size: 14px; line-height: 1.55; }
+.canvas-text-draft .canvas-draft-content { padding-top: 14px; }
+.canvas-draft-title::placeholder, .canvas-draft-content::placeholder { color: var(--fg-faint); }
+.canvas-draft-actions { display: flex; flex: 0 0 auto; justify-content: flex-end; gap: 6px; padding: 7px 8px; background: var(--node-head); border-top: var(--border-default); }
+.canvas-draft-button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 28px; padding: 0 10px; color: var(--fg-dim);
+  background: transparent; border: 1px solid transparent; border-radius: 7px; font-family: var(--font-ui); font-size: 11px; cursor: pointer; }
+.canvas-draft-button:hover { color: var(--fg-bold); background: var(--hl); }
+.canvas-draft-button.primary { color: var(--accent-contrast); background: var(--accent); }
+.canvas-draft-button.primary:hover { filter: brightness(1.06); }
+.canvas-draft-button svg { width: 13px; height: 13px; }
+.canvas-draft-button:focus { outline: none; }
+.canvas-draft-button:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+body.frozen .canvas-manual-edit, body.frozen .canvas-manual-node .node-resize { display: none !important; }
+
+@media (hover: none), (pointer: coarse), (max-width: 760px) {
+  .canvas-insert-action { width: 44px; height: 44px; }
+  .canvas-text-node .node-head { opacity: 1; pointer-events: auto; }
+}
+
 /* Follow-ups live in a drawer tucked under each card. Hovering the card makes a
    small "+ Follow-up" handle peek out beneath the bottom edge; clicking it slides
    the full-width composer out from underneath. The card itself never changes —

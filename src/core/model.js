@@ -11,6 +11,9 @@ import { validateAssetName } from "./assets.js";
 
 export const BRANCH_SELECTION = "selection";
 export const BRANCH_FOLLOWUP = "followup";
+export const CANVAS_NODE_ORIGIN_VERSION = 1;
+export const CANVAS_NODE_TEXT = "text";
+export const CANVAS_NODE_CARD = "card";
 
 /** @type {Readonly<Record<PropertyKey, { label: string, q: string }>>} */
 export const LENSES = Object.freeze({
@@ -61,6 +64,15 @@ export function branchTypeOfNode(node) {
   if (!node || (!node.origin && !node.parent_id)) return null;
   const type = node.origin?.branch_type;
   return type === BRANCH_SELECTION || type === BRANCH_FOLLOWUP ? type : null;
+}
+
+/** @param {{ origin?: unknown } | null | undefined} node */
+export function canvasNodeKind(node) {
+  const canvas = /** @type {{ canvas?: unknown } | null | undefined} */ (node?.origin)?.canvas;
+  if (!canvas || typeof canvas !== "object") return null;
+  const record = /** @type {{ version?: unknown, kind?: unknown }} */ (canvas);
+  if (record.version !== CANVAS_NODE_ORIGIN_VERSION) return null;
+  return record.kind === CANVAS_NODE_TEXT || record.kind === CANVAS_NODE_CARD ? record.kind : null;
 }
 
 /** @param {unknown} pos @returns {Position} */

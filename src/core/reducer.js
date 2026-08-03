@@ -3,8 +3,14 @@ import { normalizeBlockIds } from "./blocks.js";
 import { cloneJson } from "./schema.js";
 import {
   applyNodeUpdateFields,
+  canvasNodeKind,
+  CANVAS_NODE_CARD,
+  CANVAS_NODE_ORIGIN_VERSION,
+  CANVAS_NODE_TEXT,
   collectSubtreeIds,
   createPendingBranchNode,
+  normalizePosition,
+  normalizeSize,
   normalizeViewState,
 } from "./model.js";
 
@@ -17,6 +23,8 @@ import {
 /** @typedef {import("./contracts/engine.js").BranchRequestEvent} BranchRequestEvent */
 /** @typedef {import("./contracts/engine.js").NodeProgressEvent} NodeProgressEvent */
 /** @typedef {import("./contracts/engine.js").NodeAnsweredEvent} NodeAnsweredEvent */
+/** @typedef {import("./contracts/engine.js").CanvasNodeCreateEvent} CanvasNodeCreateEvent */
+/** @typedef {import("./contracts/engine.js").CanvasNodeContentEvent} CanvasNodeContentEvent */
 /** @typedef {import("./contracts/engine.js").DeleteNodeEvent} DeleteNodeEvent */
 /** @typedef {import("./contracts/engine.js").NodeUpdateEvent} NodeUpdateEvent */
 /** @typedef {import("./contracts/engine.js").NodesUpdateEvent} NodesUpdateEvent */
@@ -89,6 +97,10 @@ export function reduceHoleEvent(state, event, options = {}) {
       return reduceNodeProgress(state, /** @type {NodeProgressEvent} */ (event), options);
     case "node_answered":
       return reduceNodeAnswered(state, /** @type {NodeAnsweredEvent} */ (event), options);
+    case "canvas_node_create":
+      return reduceCanvasNodeCreate(state, /** @type {CanvasNodeCreateEvent} */ (event), options);
+    case "canvas_node_content":
+      return reduceCanvasNodeContent(state, /** @type {CanvasNodeContentEvent} */ (event), options);
     case "delete_node":
     case "node_deleted":
       return reduceNodeDeleted(state, /** @type {DeleteNodeEvent} */ (event), options);
@@ -109,6 +121,50 @@ export function reduceHoleEvent(state, event, options = {}) {
     default:
       throw new Error(`Unsupported hole event: ${type}`);
   }
+}
+
+/** @param {HoleState} state @param {CanvasNodeCreateEvent} event @param {ReduceOptions} options */
+function reduceCanvasNodeCreate(state, event, options) {
+  const nodeId = String(event.node_id || "");
+  if (!nodeId) throw new Error("Canvas node node_id is required");
+  if (state.nodes.has(nodeId)) return withState(state, { node_id: nodeId });
+  const kind = event.kind === CANVAS_NODE_TEXT ? CANVAS_NODE_TEXT : CANVAS_NODE_CARD;
+  const markdown = normalizeBlockIds(String(event.markdown ?? ""), { idFactory: options.idFactory }).markdown;
+  const node = /** @type {HoleNode} */ ({
+    id: nodeId,
+    parent_id: null,
+    title: String(event.title ?? (kind === CANVAS_NODE_TEXT ? "Text" : "Untitled card")).trim()
+      || (kind === CANVAS_NODE_TEXT ? "Text" : "Untitled card"),
+    markdown,
+    base_url: null,
+    base_url_source: null,
+    origin: { canvas: { version: CANVAS_NODE_ORIGIN_VERSION, kind } },
+    position: normalizePosition(event.position),
+    size: normalizeSize(event.size),
+    font_scale: 1,
+    collapsed: false,
+    status: "answered",
+    read: false,
+    created_at: event.created_at ?? options.now ?? new Date().toISOString(),
+    extensions: {},
+  });
+  const nodes = cloneNodes(state, options);
+  nodes.set(nodeId, node);
+  return withState({ ...state, nodes }, { createdNode: node });
+}
+
+/** @param {HoleState} state @param {CanvasNodeContentEvent} event @param {ReduceOptions} options */
+function reduceCanvasNodeContent(state, event, options) {
+  const nodeId = String(event.node_id || "");
+  const node = state.nodes.get(nodeId);
+  if (!node || !canvasNodeKind(node)) return withState(state);
+  const nodes = cloneNodes(state, options);
+  nodes.set(nodeId, {
+    ...node,
+    title: String(event.title ?? node.title ?? "Untitled").trim() || "Untitled",
+    markdown: normalizeBlockIds(String(event.markdown ?? node.markdown ?? ""), { idFactory: options.idFactory }).markdown,
+  });
+  return withState({ ...state, nodes }, { node_id: nodeId });
 }
 
 /** @param {HoleState} state @param {NodeExtensionsPatchEvent} event @param {ReduceOptions} options */

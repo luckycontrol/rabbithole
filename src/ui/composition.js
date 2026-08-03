@@ -84,6 +84,7 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
       hideAsk: hideAsk,
       sendFollowup: sendFollowup,
       confirmDelete: confirmDelete,
+      post: post,
       persistNode: host.persistNode || noop,
       persistNodesBulk: host.persistNodesBulk || noop,
       scheduleViewSave: host.scheduleViewSave || noop
