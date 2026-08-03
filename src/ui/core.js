@@ -59,7 +59,8 @@ function defaultCoreHooks(){
     openNode: function(){},
     ensureNodeHtml: function(){},
     mountDocImages: null,
-    mountPdfView: null
+    mountPdfView: null,
+    refreshCanvasNodeContent: function(){}
   };
 }
 
@@ -69,6 +70,12 @@ var coreScope = null;
 
 export function registerCoreHooks(hooks) {
   Object.assign(coreHooks, hooks || {});
+}
+
+// Reader-side edits can update an already-built Canvas card without making
+// either surface import the other directly.
+export function refreshCanvasNodeContent(node) {
+  coreHooks.refreshCanvasNodeContent(node);
 }
 
 export function initCore(inputHydration) {

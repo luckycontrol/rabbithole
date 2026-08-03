@@ -108,7 +108,8 @@ export function initCanvasView(){
   if (typeof ResizeObserver === "function") cardResizeObserver = new ResizeObserver(scheduleEdges);
   registerCoreHooks({
     ensureCanvasBuilt: ensureCanvasBuilt,
-    diveToNode: diveToNode
+    diveToNode: diveToNode,
+    refreshCanvasNodeContent: refreshCanvasNodeContent
   });
   canvasScope.listen(world, "mouseover", onWorldMouseOver);
   canvasScope.listen(world, "mouseout", onWorldMouseOut);
@@ -154,7 +155,8 @@ function cleanupCanvasView(resetHooks){
   if (resetHooks) {
     registerCoreHooks({
       ensureCanvasBuilt: function(){},
-      diveToNode: function(){}
+      diveToNode: function(){},
+      refreshCanvasNodeContent: function(){}
     });
   }
 }
@@ -399,7 +401,7 @@ function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy -
   function updateAnswerNodeContent(node, markdown){
     var previous = node.md;
     node.md = markdown; refreshNodeHtml(node);
-    fillBody(node); scheduleEdges();
+    refreshCanvasNodeContent(node);
     var payload = { type: "answer_node_content", node_id: node.id, markdown: markdown };
     Promise.resolve(canvasLifecycle.hooks.post(payload)).then(function(result){
       if (result && result.ok !== false) return;
@@ -410,7 +412,7 @@ function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy -
   function restoreAnswerNodeContent(node, previous, expectedMarkdown){
     if (nodes[node.id] !== node || node.md !== expectedMarkdown) return;
     node.md = previous; refreshNodeHtml(node);
-    fillBody(node); scheduleEdges(); flashHint("Couldn't save the answer.");
+    refreshCanvasNodeContent(node); flashHint("Couldn't save the answer.");
   }
 
   function restoreManualNodeContent(node, previous, expectedTitle, expectedMarkdown){
@@ -709,6 +711,13 @@ export function fillBody(node){
     body.classList.toggle("pdf-body", dc.classList.contains("rh-pdf"));
     applyChildHighlights(dc, node);
   }
+
+  function refreshCanvasNodeContent(node){
+    if (!node || !node.bodyEl) return;
+    fillBody(node);
+    scheduleEdges();
+  }
+
   function setNodeFontScale(node, delta){
     node.font_scale = Math.min(MAX_FS, Math.max(MIN_FS, (node.font_scale || 1) + delta));
     var dc = node.bodyEl && node.bodyEl.querySelector(".doc-content"); if (dc) dc.style.fontSize = fontPx(node, CANVAS_BASE) + "px";

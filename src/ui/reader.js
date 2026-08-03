@@ -1,5 +1,7 @@
 import {
   CANVAS_BASE,
+  closed,
+  flashHint,
   MAX_FS,
   MIN_FS,
   READER_BASE,
@@ -14,6 +16,7 @@ import {
   nodes,
   playLandingCue,
   readerMain,
+  refreshCanvasNodeContent,
   setCurrentNodeId,
   setModeValue,
   world,
@@ -22,6 +25,7 @@ import {
 import {
   BRANCH_FOLLOWUP,
   branchTypeOfNode,
+  canvasNodeKind,
   lensLabel,
   lineageNodesFromMap,
   truncate
@@ -32,6 +36,9 @@ import { captureContentPosition, restoreContentPosition } from "./scroll-positio
 import { mountVisuals } from "./visuals.js";
 import { applyChildHighlights, transitionMarkGroups } from "./text-marks.js";
 import { buildOriginCrop } from "./origin-provenance.js";
+import { buttonMarkup } from "../core/html/button-markup.js";
+import { iconSvg } from "../core/html/icons.js";
+import { refreshNodeHtml } from "./renderer.js";
 
 function anchorStart(node) {
   return node.origin?.anchor?.offset_start ?? 1e9;
@@ -66,6 +73,7 @@ export function registerReaderHooks(hooks) {
 
 var breadcrumbNodes = {};
 var noteNodes = {};
+var readerDraft = null;
 
 function marginNotesLayer(){ return document.getElementById("margin-notes"); }
 
@@ -74,6 +82,7 @@ function marginNotesLayer(){ return document.getElementById("margin-notes"); }
   // ===========================================================================
 export function openNode(id){
     if (!nodes[id]) return;
+    if (readerDraft && readerDraft.nodeId !== id) readerDraft = null;
     var transferredPosition = document.body.classList.contains("mode-canvas")
       ? captureContentPosition(nodes[id].bodyEl)
       : null;
@@ -180,6 +189,7 @@ function disposeReaderResources(resetHooks){
     readerLifecycle.dispose(resetHooks);
     breadcrumbNodes = {};
     noteNodes = {};
+    readerDraft = null;
     kbdMarkIdx = -1;
   }
 
@@ -222,9 +232,11 @@ export function renderReaderBody(){
     }
     var crop = buildOriginCrop(node, "reader");
     if (crop) col.appendChild(crop);
-    var dc = buildDocContent(node, READER_BASE);
+    var editing = readerDraft && readerDraft.nodeId === node.id;
+    if (!editing && isAnswerNodeEditable(node)) col.appendChild(buildReaderAnswerActions(node));
+    var dc = editing ? buildReaderAnswerEditor(node) : buildDocContent(node, READER_BASE);
     col.appendChild(dc);
-    applyChildHighlights(dc, node);
+    if (!editing) applyChildHighlights(dc, node);
     var isPdfReader = dc.classList.contains("rh-pdf");
     var isPdfViewport = isPdfReader && !node.parent_id && !crop;
     readerMain.classList.toggle("pdf-reader", isPdfReader);
@@ -235,6 +247,114 @@ export function renderReaderBody(){
     // Each document remembers where you were; a first open starts at the top.
     readerMain.scrollTop = node._scrollTop || 0;
   }
+
+function isAnswerNodeEditable(node){
+  return !!node && !closed && node.parent_id != null
+    && node.status === "answered" && !canvasNodeKind(node);
+}
+
+function buildReaderAnswerActions(node){
+  var actions = document.createElement("div");
+  actions.className = "reader-answer-actions";
+  actions.innerHTML = buttonMarkup({
+    bare: true,
+    className: "reader-answer-edit",
+    label: "Edit",
+    ariaLabel: "Edit answer Markdown",
+    title: "Edit answer Markdown",
+    svgIconHtml: iconSvg("edit")
+  });
+  actions.querySelector("button").addEventListener("click", function(){ openReaderAnswerDraft(node); });
+  return actions;
+}
+
+function openReaderAnswerDraft(node){
+  if (!isAnswerNodeEditable(node) || readerDraft) return;
+  node._scrollTop = readerMain.scrollTop;
+  readerDraft = { nodeId: node.id, scrollTop: node._scrollTop, textarea: null };
+  renderReaderBody();
+}
+
+function buildReaderAnswerEditor(node){
+  var form = document.createElement("form");
+  form.className = "reader-answer-editor";
+  form.setAttribute("aria-label", "Edit answer");
+  var head = document.createElement("div");
+  head.className = "reader-answer-editor-head";
+  head.textContent = "Edit answer";
+  var textarea = document.createElement("textarea");
+  textarea.className = "reader-answer-editor-content";
+  textarea.setAttribute("aria-label", "Answer content");
+  textarea.placeholder = "Write Markdown…";
+  textarea.value = node.md || "";
+  var actions = document.createElement("div");
+  actions.className = "reader-answer-editor-actions";
+  actions.innerHTML =
+    buttonMarkup({ bare: true, className: "reader-answer-editor-button", label: "Cancel" }) +
+    buttonMarkup({ bare: true, className: "reader-answer-editor-button primary", label: "Save answer", svgIconHtml: iconSvg("check") });
+  var cancel = actions.querySelector("button");
+  var save = actions.querySelector(".primary");
+  form.append(head, textarea, actions);
+  var draft = readerDraft;
+  if (draft) draft.textarea = textarea;
+  cancel.addEventListener("click", function(){ closeReaderAnswerDraft(true); });
+  save.addEventListener("click", function(){ form.requestSubmit(); });
+  form.addEventListener("submit", function(e){ e.preventDefault(); saveReaderAnswerDraft(); });
+  form.addEventListener("keydown", function(e){
+    if (e.key === "Escape") { e.preventDefault(); closeReaderAnswerDraft(true); }
+    else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); form.requestSubmit(); }
+  });
+  requestAnimationFrame(function(){
+    if (readerDraft === draft && textarea.isConnected) textarea.focus({ preventScroll: true });
+  });
+  return form;
+}
+
+function closeReaderAnswerDraft(restoreFocus){
+  var draft = readerDraft;
+  readerDraft = null;
+  if (!draft) return;
+  var node = nodes[draft.nodeId];
+  if (!node || mode !== "reader" || currentNodeId !== node.id) return;
+  node._scrollTop = draft.scrollTop;
+  renderReaderBody();
+  if (restoreFocus) requestAnimationFrame(function(){
+    readerMain.querySelector(".reader-answer-edit")?.focus({ preventScroll: true });
+  });
+}
+
+function saveReaderAnswerDraft(){
+  var draft = readerDraft;
+  var node = draft && nodes[draft.nodeId];
+  if (!draft || !node) return;
+  if (!isAnswerNodeEditable(node)) { closeReaderAnswerDraft(true); return; }
+  var markdown = draft.textarea.value.trim();
+  readerDraft = null;
+  node._scrollTop = draft.scrollTop;
+  updateReaderAnswerContent(node, markdown);
+}
+
+function updateReaderAnswerContent(node, markdown){
+  var previous = node.md;
+  node.md = markdown;
+  refreshNodeHtml(node);
+  refreshCanvasNodeContent(node);
+  if (mode === "reader" && currentNodeId === node.id) renderReaderBody();
+  var payload = { type: "answer_node_content", node_id: node.id, markdown: markdown };
+  Promise.resolve(readerLifecycle.hooks.post(payload)).then(function(result){
+    if (result && result.ok !== false) return;
+    restoreReaderAnswerContent(node, previous, markdown);
+  }, function(){ restoreReaderAnswerContent(node, previous, markdown); });
+}
+
+function restoreReaderAnswerContent(node, previous, expectedMarkdown){
+  if (nodes[node.id] !== node || node.md !== expectedMarkdown) return;
+  node.md = previous;
+  refreshNodeHtml(node);
+  refreshCanvasNodeContent(node);
+  if (mode === "reader" && currentNodeId === node.id) renderReaderBody();
+  flashHint("Couldn't save the answer.");
+}
   // Open the parent and land on the exact origin when this branch is anchored.
 export function jumpToOrigin(node, source){
     var parent = nodes[node.parent_id];

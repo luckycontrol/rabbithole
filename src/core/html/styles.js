@@ -231,6 +231,26 @@ body.mode-canvas #reader { display: none; }
 .reader-context.linked:hover { border-left-color: var(--accent); color: var(--fg); }
 .reader-context.linked:hover .rc-go { color: var(--accent); }
 .reader-context .rc-go { display: inline-block; color: var(--fg-faint); margin-left: 7px; transition: color 0.15s; }
+.reader-answer-actions { display: flex; justify-content: flex-end; margin: -6px 0 14px; }
+.reader-answer-edit { appearance: none; display: inline-flex; min-height: 30px; align-items: center; justify-content: center; gap: 5px; padding: 0 9px;
+  color: var(--fg-dim); background: transparent; border: 1px solid transparent; border-radius: var(--radius-control); cursor: pointer;
+  font-family: var(--font-ui); font-size: 11px; font-weight: var(--weight-medium); transition: var(--transition-color); }
+.reader-answer-edit svg { width: 14px; height: 14px; }
+.reader-answer-edit:hover { color: var(--fg-bold); background: var(--hl); border-color: color-mix(in srgb, var(--fg) 10%, transparent); }
+.reader-answer-edit:focus { outline: none; }
+.reader-answer-edit:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.reader-answer-editor { display: flex; min-height: min(460px, calc(100dvh - 210px)); flex-direction: column; overflow: hidden; border: 1px solid var(--accent); border-radius: var(--radius-card); background: var(--node-bg); box-shadow: var(--focus-field-shadow), var(--shadow-card); }
+.reader-answer-editor-head { flex: 0 0 auto; padding: 10px 14px; color: var(--fg-dim); background: var(--node-head); border-bottom: var(--border-default); font-family: var(--font-ui); font-size: 12px; font-weight: var(--weight-medium); }
+.reader-answer-editor-content { display: block; width: 100%; min-width: 0; min-height: 0; flex: 1 1 auto; box-sizing: border-box; padding: 14px 16px; resize: vertical; color: var(--fg); background: transparent; border: none; outline: none; font-family: var(--font-doc); font-size: var(--doc-size-reader); line-height: 1.6; }
+.reader-answer-editor-content::placeholder { color: var(--fg-faint); }
+.reader-answer-editor-actions { display: flex; flex: 0 0 auto; justify-content: flex-end; gap: 6px; padding: 8px 10px; background: var(--node-head); border-top: var(--border-default); }
+.reader-answer-editor-button { display: inline-flex; min-height: 30px; align-items: center; justify-content: center; gap: 5px; padding: 0 11px; color: var(--fg-dim); background: transparent; border: 1px solid transparent; border-radius: var(--radius-control); cursor: pointer; font-family: var(--font-ui); font-size: 11px; }
+.reader-answer-editor-button:hover { color: var(--fg-bold); background: var(--hl); }
+.reader-answer-editor-button.primary { color: var(--accent-contrast); background: var(--accent); }
+.reader-answer-editor-button.primary:hover { filter: brightness(1.06); }
+.reader-answer-editor-button svg { width: 13px; height: 13px; }
+.reader-answer-editor-button:focus { outline: none; }
+.reader-answer-editor-button:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 /* ---------- branch rail ----------
    Reader content and its branches are sibling surfaces. The document gets all
    remaining width; the rail stays at the physical right edge and scrolls on
@@ -289,6 +309,10 @@ body.mode-canvas #reader { display: none; }
   .reader-col { width: 100%; max-width: none; }
   #reader-rail, #margin-notes { display: none; }
   .reader-context { margin-bottom: 20px; overflow-wrap: anywhere; }
+  .reader-answer-edit { min-width: 44px; min-height: 44px; padding-inline: 12px; }
+  .reader-answer-editor { min-height: min(420px, calc(100dvh - 190px)); }
+  .reader-answer-editor-content { font-size: 16px; }
+  .reader-answer-editor-button { min-height: 44px; padding-inline: 15px; }
   .rh-origin-crop { max-width: 100%; }
   #composer { padding: 8px max(12px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
     overflow: hidden; scrollbar-gutter: auto; }

@@ -918,10 +918,22 @@ async function verifyAskKeyUxAndRail() {
   await answerDraft.getByRole("textbox", { name: "Answer content" }).fill("## Revised answer\n\nA **user-edited** Markdown answer.");
   await answerDraft.getByRole("button", { name: "Save answer" }).click();
   await page.locator(`.node[data-id="${editedAnswerId}"]`).getByText("user-edited Markdown answer.").waitFor();
+  await page.locator(`.node[data-id="${editedAnswerId}"] .node-head`).dblclick();
+  await page.waitForSelector("body:not(.mode-canvas) #reader-main");
+  await page.getByRole("button", { name: "Edit answer Markdown" }).click();
+  const readerAnswerDraft = page.locator(".reader-answer-editor");
+  assert.match(await readerAnswerDraft.getByRole("textbox", { name: "Answer content" }).inputValue(), /\*\*user-edited\*\*/,
+    "opening a card in Reader should preserve its current Markdown in the answer editor");
+  await readerAnswerDraft.getByRole("textbox", { name: "Answer content" }).fill("## Reader revision\n\nA **Reader-edited** Markdown answer.");
+  await readerAnswerDraft.getByRole("button", { name: "Save answer" }).click();
+  await page.locator("#reader-main").getByText("Reader-edited Markdown answer.").waitFor();
+  await page.click("#t-canvas");
+  await page.waitForSelector("body.mode-canvas");
+  await page.locator(`.node[data-id="${editedAnswerId}"]`).getByText("Reader-edited Markdown answer.").waitFor();
   await page.waitForFunction(async ({ nodeId, markdown }) => {
     const hole = await window.__rabbitholeTest.readStoredHole();
     return hole?.nodes?.find((node) => node.id === nodeId)?.markdown === markdown;
-  }, { nodeId: editedAnswerId, markdown: "## Revised answer\n\nA **user-edited** Markdown answer." });
+  }, { nodeId: editedAnswerId, markdown: "## Reader revision\n\nA **Reader-edited** Markdown answer." });
   await page.waitForTimeout(1200); // view-state debounce + IndexedDB save debounce
   const hole = await page.evaluate(async () => window.__rabbitholeTest.readStoredHole());
   assert.equal(hole.root_id, rootIdWhileLoading, "the loading node should remain the root after streaming completes");
