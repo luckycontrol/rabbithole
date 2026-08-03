@@ -43,13 +43,18 @@ function maxBlockMs() {
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : DEFAULT_MAX_BLOCK_MS;
 }
 
+function answerWatchdogTimeoutMs() {
+  const value = Number(process.env.RABBITHOLE_ANSWER_WATCHDOG_MS);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : ANSWER_WATCHDOG_MS;
+}
+
 /**
  * One live Rabbithole: the node tree, the browser transport, and the
  * agent-facing event queue. The agent blocks on waitForEvent(); the browser
  * drives the canvas and posts branch requests / node updates.
  */
 export class RabbitHoleSession {
-  constructor({ holeId, title, rootId, createdAt, nodes, assetNames, viewState, isResume, renderPage, onClose, mintGenerationRunId = randomUUID }) {
+  constructor({ holeId, title, rootId, createdAt, nodes, assetNames, viewState, isResume, renderPage, onClose, mintGenerationRunId = randomUUID, recoverStalledBranch = null, answerWatchdogMs = answerWatchdogTimeoutMs() }) {
     this.id = randomUUID();
     this.holeId = holeId || randomUUID();
     this.title = title || "Untitled";
@@ -59,6 +64,10 @@ export class RabbitHoleSession {
     this.renderPage = renderPage;
     this.onClose = onClose;
     this.mintGenerationRunId = mintGenerationRunId;
+    this.recoverStalledBranch = typeof recoverStalledBranch === "function" ? recoverStalledBranch : null;
+    this.answerWatchdogMs = Number.isFinite(Number(answerWatchdogMs)) && Number(answerWatchdogMs) > 0
+      ? Math.floor(Number(answerWatchdogMs))
+      : ANSWER_WATCHDOG_MS;
 
     this.state = createHoleState({
       hole_id: this.holeId,
@@ -86,9 +95,14 @@ export class RabbitHoleSession {
     this.queue = []; // agent-facing events awaiting consumption
     this.waiters = []; // FIFO of {resolve, cleanup} for blocked waitForEvent() calls
     this.agentAttached = true; // false once the agent cancels/stalls; browser is told
+    this.agentReason = null;
     this.watchdogTimer = null;
     this.rearmDetachTimer = null;
     this.inFlightBranchRequests = new Map(); // request_id -> last delivered branch_request not yet answered
+    this.recoveryControllers = new Map(); // request_id -> AbortController for a sampling fallback
+    this.recoveryChain = Promise.resolve();
+    this.recoveryEpoch = 0;
+    this.autoRecoveryMode = false; // enabled after the first successful sampled recovery
     this.convertRequests = new Map();
     // Legacy/failure-fallback transient region JPEGs (request_id -> path).
     // Successful region asks use branch-owned crop-* assets instead.
@@ -202,6 +216,7 @@ export class RabbitHoleSession {
     this.clearAnswerWatchdog();
     this.clearRearmDetach();
     this.clearDisconnectClose();
+    this.stopAutomaticRecovery();
     this.closePromise = this.flushSave();
 
     this.broadcast({ type: "session_closed", reason });
@@ -253,6 +268,9 @@ export class RabbitHoleSession {
    */
   waitForEvent(signal) {
     if (this.closed) return Promise.resolve({ status: "session_closed", session_id: this.id });
+    // A new MCP tool call takes precedence over a sampling fallback. Its
+    // existing in-flight request remains claimable and is delivered below.
+    this.stopAutomaticRecovery();
     this.touch();
     this.markAgentAttached();
     if (this.queue.length > 0) return Promise.resolve(this.deliverToAgent(this.queue.shift()));
@@ -305,9 +323,11 @@ export class RabbitHoleSession {
     if (waiter) {
       waiter.cleanup?.();
       waiter.resolve(event);
-      return;
+      return true;
     }
     this.queue.push(event);
+    this.scheduleAutomaticRecovery(event);
+    return false;
   }
 
   // Every branch_request handed to the agent arms the watchdog; any subsequent
@@ -350,10 +370,18 @@ export class RabbitHoleSession {
 
   startAnswerWatchdog() {
     this.clearAnswerWatchdog();
+    const event = this.nextInFlightBranchRequest();
+    const requestId = event?.request_id || null;
     this.watchdogTimer = setTimeout(() => {
       this.watchdogTimer = null;
-      if (!this.closed) this.setAgentAttached(false, "stalled");
-    }, ANSWER_WATCHDOG_MS);
+      if (this.closed) return;
+      const current = requestId ? this.inFlightBranchRequests.get(requestId) : null;
+      if (current && this.canRecoverStalledEvent(current)) {
+        this.enqueueStalledRecovery(current, { automatic: false });
+      } else {
+        this.setAgentAttached(false, "stalled");
+      }
+    }, this.answerWatchdogMs);
   }
 
   clearAnswerWatchdog() {
@@ -361,6 +389,95 @@ export class RabbitHoleSession {
       clearTimeout(this.watchdogTimer);
       this.watchdogTimer = null;
     }
+  }
+
+  canRecoverStalledEvent(event) {
+    if (!this.recoverStalledBranch || event?.status !== "branch_request" || event.region) return false;
+    const nodeId = this.pendingByRequest.get(event.request_id);
+    const node = nodeId ? this.nodes.get(nodeId) : null;
+    return !!(node && node.status === "pending");
+  }
+
+  // Once a compatible MCP client has recovered one stalled answer, later asks
+  // can be handled without making the human re-open the same hole by hand.
+  // The microtask gives an arriving normal MCP waiter first claim on the event.
+  scheduleAutomaticRecovery(event) {
+    if (!this.autoRecoveryMode || !this.canRecoverStalledEvent(event)) return;
+    queueMicrotask(() => {
+      if (this.closed || !this.autoRecoveryMode || !this.canRecoverStalledEvent(event)) return;
+      const index = this.queue.indexOf(event);
+      if (index === -1) return;
+      this.queue.splice(index, 1);
+      this.inFlightBranchRequests.set(event.request_id, event);
+      this.enqueueStalledRecovery(event, { automatic: true });
+    });
+  }
+
+  enqueueStalledRecovery(event, { automatic }) {
+    const recoveryEpoch = this.recoveryEpoch;
+    this.recoveryChain = this.recoveryChain
+      .catch(() => {})
+      .then(() => this.runStalledRecovery(event, { automatic, recoveryEpoch }));
+    return this.recoveryChain;
+  }
+
+  async runStalledRecovery(event, { automatic, recoveryEpoch }) {
+    if (this.closed || recoveryEpoch !== this.recoveryEpoch || (automatic && !this.autoRecoveryMode) || !this.canRecoverStalledEvent(event)) {
+      return;
+    }
+    if (this.recoveryControllers.has(event.request_id)) return;
+
+    const nodeId = this.pendingByRequest.get(event.request_id);
+    const node = nodeId ? this.nodes.get(nodeId) : null;
+    const parent = this.nodes.get(event.parent_node_id);
+    if (!node || node.status !== "pending") return;
+
+    const controller = new AbortController();
+    this.recoveryControllers.set(event.request_id, controller);
+    this.setAgentAttached(false, "recovering");
+    try {
+      const recovered = await this.recoverStalledBranch({ event, parent, node, signal: controller.signal });
+      if (!recovered?.content) throw new Error("Stalled-branch recovery returned no answer");
+      if (this.closed || controller.signal.aborted || this.pendingByRequest.get(event.request_id) !== nodeId) return;
+
+      this.clearAnswerWatchdog();
+      this.inFlightBranchRequests.delete(event.request_id);
+      this.discardRegionFile(event.request_id);
+      await this.finalizeBranchAnswer({
+        requestId: event.request_id,
+        title: recovered.title || node.title || "Follow-up",
+        content: recovered.content,
+        baseUrl: null,
+        assets: [],
+      });
+      if (this.closed || controller.signal.aborted) return;
+      this.autoRecoveryMode = true;
+      this.setAgentAttached(true);
+      log(`Session ${this.id} recovered stalled branch ${event.request_id} through MCP sampling`);
+    } catch (error) {
+      if (!this.closed && !controller.signal.aborted) {
+        this.autoRecoveryMode = false;
+        logError(`Session ${this.id} stalled-branch recovery failed: ${error.message}`);
+        this.setAgentAttached(false, "stalled");
+      }
+    } finally {
+      if (this.recoveryControllers.get(event.request_id) === controller) {
+        this.recoveryControllers.delete(event.request_id);
+      }
+    }
+  }
+
+  stopAutomaticRecovery() {
+    this.recoveryEpoch += 1;
+    this.autoRecoveryMode = false;
+    for (const requestId of [...this.recoveryControllers.keys()]) this.cancelStalledRecovery(requestId);
+  }
+
+  cancelStalledRecovery(requestId) {
+    const controller = this.recoveryControllers.get(requestId);
+    if (!controller) return;
+    this.recoveryControllers.delete(requestId);
+    controller.abort();
   }
 
   scheduleRearmDetach() {
@@ -385,9 +502,11 @@ export class RabbitHoleSession {
   }
 
   setAgentAttached(attached, reason = null) {
-    if (this.closed || this.agentAttached === attached) return;
+    if (this.closed || (this.agentAttached === attached && this.agentReason === reason)) return;
+    const becameDetached = this.agentAttached && !attached;
     this.agentAttached = attached;
-    if (!attached) for (const request of this.convertRequests.values()) if (request.markdown) this.restoreNodeConversion(request.node_id);
+    this.agentReason = reason;
+    if (becameDetached) for (const request of this.convertRequests.values()) if (request.markdown) this.restoreNodeConversion(request.node_id);
     this.broadcast({ type: "agent_status", attached, reason });
   }
 
@@ -436,6 +555,7 @@ export class RabbitHoleSession {
       // serving this page and the EventSource connecting gets replayed.
       last_event_id: this.lastOutboundEventId,
       agent_attached: this.agentAttached,
+      agent_reason: this.agentReason,
       view_state: this.viewState,
       nodes: holeStateToHydrationNodes(this.state),
     };
@@ -476,7 +596,9 @@ export class RabbitHoleSession {
     this.touch();
     if (this.closed) throw new Error("Rabbithole session is already closed");
     this.clearAnswerWatchdog();
+    this.stopAutomaticRecovery();
     this.markAgentAttached();
+    const inFlightEvent = this.inFlightBranchRequests.get(requestId);
     this.inFlightBranchRequests.delete(requestId);
     if (!partial) this.discardRegionFile(requestId);
     if (this.convertRequests.has(requestId)) return this.answerConversion({ requestId, content, partial, signal });
@@ -489,6 +611,52 @@ export class RabbitHoleSession {
       return this.waitForEvent(signal);
     }
 
+    // A partial call streams a chunk into the pending node and returns right
+    // away — the request stays claimable, the watchdog stays armed (a death
+    // mid-stream should still surface as stalled), and nothing persists yet.
+    if (partial) {
+      const nodeId = this.pendingByRequest.get(requestId);
+      if (!nodeId) throw buildJsonError(`No pending branch request ${requestId}`, 404);
+      const node = this.nodes.get(nodeId);
+      if (!node) throw buildJsonError(`Node ${nodeId} not found`, 404);
+      let ingress = this.generationByRequest.get(requestId);
+      if (!ingress) {
+        ingress = this.createGenerationIngress(node);
+        this.generationByRequest.set(requestId, ingress);
+      }
+
+      const addedAssets = await addAssetsToHole(this.holeId, assets);
+      for (const asset of addedAssets) this.assetNames.add(asset.name);
+
+      const explicitBaseUrl = normalizeBaseUrl(baseUrl);
+      const baseUrlFields = explicitBaseUrl
+        ? { base_url: explicitBaseUrl, base_url_source: "explicit" }
+        : { base_url: node.base_url, base_url_source: node.base_url_source };
+      const progress = ingress.acceptChunk(content, { progressFields: baseUrlFields });
+      this.dispatchHoleEvent(progress);
+      const updated = this.nodes.get(node.id);
+      // Keep the original event claimable. If a stream dies, sampling can
+      // continue from updated.markdown rather than abandoning the branch.
+      if (inFlightEvent) this.inFlightBranchRequests.set(requestId, inFlightEvent);
+      this.startAnswerWatchdog();
+      // Deliberately untagged outbound projection: `progress` already passed
+      // through the reducer with its GenerationRun tag; the SSE payload mirrors
+      // canonical node state and is never reducer input.
+      this.broadcast({
+        type: "node_progress",
+        node_id: updated.id,
+        markdown: updated.markdown,
+        base_url: updated.base_url,
+        base_url_source: updated.base_url_source,
+      });
+      return { ok: true, node_id: updated.id, request_id: requestId, partial: true };
+    }
+
+    await this.finalizeBranchAnswer({ requestId, title, content, baseUrl, assets });
+    return this.waitForEvent(signal);
+  }
+
+  async finalizeBranchAnswer({ requestId, title, content, baseUrl, assets }) {
     const nodeId = this.pendingByRequest.get(requestId);
     if (!nodeId) throw buildJsonError(`No pending branch request ${requestId}`, 404);
     const node = this.nodes.get(nodeId);
@@ -507,30 +675,7 @@ export class RabbitHoleSession {
       ? { base_url: explicitBaseUrl, base_url_source: "explicit" }
       : { base_url: node.base_url, base_url_source: node.base_url_source };
 
-    // A partial call streams a chunk into the pending node and returns right
-    // away — the request stays claimable, the watchdog stays armed (a death
-    // mid-stream should still surface as stalled), and nothing persists yet.
-    if (partial) {
-      const progress = ingress.acceptChunk(content, { progressFields: baseUrlFields });
-      this.dispatchHoleEvent(progress);
-      const updated = this.nodes.get(node.id);
-      this.startAnswerWatchdog();
-      // Deliberately untagged outbound projection: `progress` already passed
-      // through the reducer with its GenerationRun tag; the SSE payload mirrors
-      // canonical node state and is never reducer input.
-      this.broadcast({
-        type: "node_progress",
-        node_id: updated.id,
-        markdown: updated.markdown,
-        base_url: updated.base_url,
-        base_url_source: updated.base_url_source,
-      });
-      return { ok: true, node_id: updated.id, request_id: requestId, partial: true };
-    }
-
-    // Claim the request before the async render boundary so a concurrent
-    // duplicate answer for the same request_id is rejected (404) rather than
-    // both rendering and double-broadcasting the node.
+    // Asset ingress succeeded, so this response now owns the pending request.
     this.pendingByRequest.delete(requestId);
     this.generationByRequest.delete(requestId);
 
@@ -553,9 +698,8 @@ export class RabbitHoleSession {
     const finalNode = this.nodes.get(nodeId);
 
     this.broadcast(buildNodeAnsweredEvent(finalNode));
-    this.flushSave();
-
-    return this.waitForEvent(signal);
+    await this.flushSave();
+    return finalNode;
   }
 
   async answerConversion({ requestId, content, partial, signal }) {
@@ -794,6 +938,7 @@ export class RabbitHoleSession {
       if (doomed.has(nodeId)) {
         this.pendingByRequest.delete(reqId);
         this.generationByRequest.delete(reqId);
+        this.cancelStalledRecovery(reqId);
         this.cancelledRequests.add(reqId);
         this.inFlightBranchRequests.delete(reqId);
         this.discardRegionFile(reqId);

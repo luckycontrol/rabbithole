@@ -3,7 +3,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { log, error as logError } from "../logger.js";
 import { buildMcpInputSchema } from "./schema.js";
 import { toolDefinitions } from "../tools/manifest.js";
-import { closeAllSessions } from "../sessions.js";
+import { closeAllSessions, setStalledBranchRecovery } from "../sessions.js";
+import { createSamplingStallRecovery, samplingRecoveryEnabled } from "./sampling-recovery.js";
 
 const server = new McpServer(
   { name: "rabbithole", version: "0.1.0" },
@@ -77,6 +78,12 @@ for (const tool of toolDefinitions) {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
+  if (samplingRecoveryEnabled()) {
+    setStalledBranchRecovery(createSamplingStallRecovery(server));
+    log("Rabbithole stalled-branch sampling recovery enabled when the MCP client supports sampling");
+  } else {
+    setStalledBranchRecovery(null);
+  }
   // If the MCP client disconnects (Claude Code exits or drops the server) the
   // browsers must not keep queueing asks nobody will answer — close every
   // session (which broadcasts session_closed) and exit.
@@ -93,6 +100,7 @@ let shuttingDown = false;
 async function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
+  setStalledBranchRecovery(null);
   log(`Received ${signal}, shutting down`);
   try {
     // Tell every open canvas the agent is gone and flush debounced saves
