@@ -38,16 +38,39 @@ stdout.
 
 ## Workflow
 
+For any feature addition, removal, or modification, the implementation work
+must be performed by a **subagent** in a dedicated **git worktree**. The main
+agent coordinates the task, reviews the subagent's changes, runs verification,
+and integrates the result; it must not directly edit the implementation for
+that task.
+
 Always work in a **git worktree** — never edit directly on `main`:
 
 1. Create a worktree on a new branch before making changes
    (`git worktree add ../rabbithole-<topic> -b <topic>`).
-2. Do all work and commit inside that worktree.
-3. When done, merge the branch back into `main`.
-4. Push the updated `main` branch to its configured upstream and verify that the
-   push succeeds.
-5. Only after the push succeeds, remove the worktree
-   (`git worktree remove ../rabbithole-<topic>`) and delete the branch.
+2. Create a dedicated pane for the subagent in tmux session `rabbithole`,
+   window `0`, and start the subagent from the new worktree:
+   ```bash
+   tmux split-window -t rabbithole:0 -c <absolute-worktree-path>
+   ```
+   Do not substitute another session or window. If `rabbithole:0` is not
+   available, stop and report the environment issue before editing files.
+3. Run the subagent in that pane with model **GPT-5.6-luna** and
+   `reasoning_effort=max`. For the Codex CLI, use the installed CLI's
+   equivalent of:
+   ```bash
+   codex -C <absolute-worktree-path> -m gpt-5.6-luna -c 'model_reasoning_effort="max"'
+   ```
+4. Give the subagent the implementation task and require it to make all
+   changes, tests, and the commit inside the dedicated worktree. After
+   committing, the subagent reports the commit hash and stops; it must not
+   merge, push, or remove the worktree.
+5. The main agent reviews the subagent's diff and test results, then merges the
+   branch back into `main`.
+6. The main agent pushes the updated `main` branch to its configured upstream
+   and verifies that the push succeeds.
+7. Only the main agent, and only after the push succeeds, removes the worktree
+   (`git worktree remove ../rabbithole-<topic>`) and deletes the branch.
 
 ## Conventions
 
