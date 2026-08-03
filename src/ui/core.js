@@ -85,7 +85,7 @@ export function initCore(inputHydration) {
   closed = frozen;
   closedReason = frozen ? "frozen" : null;
   agentAttached = hydration.agent_attached !== false;
-  agentReason = null;
+  agentReason = hydration.agent_reason || null;
   connLost = false;
   sseFails = 0;
   canvasBuilt = false;

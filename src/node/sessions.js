@@ -1,10 +1,16 @@
 import { RabbitHoleSession } from "./transport/session.js";
 
 const sessions = new Map();
+let stalledBranchRecovery = null;
+
+export function setStalledBranchRecovery(recovery) {
+  stalledBranchRecovery = typeof recovery === "function" ? recovery : null;
+}
 
 export async function createSession(config) {
   const session = new RabbitHoleSession({
     ...config,
+    recoverStalledBranch: config.recoverStalledBranch === undefined ? stalledBranchRecovery : config.recoverStalledBranch,
     onClose: (s) => sessions.delete(s.id),
   });
   sessions.set(session.id, session);

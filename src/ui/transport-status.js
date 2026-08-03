@@ -426,6 +426,8 @@ export function refreshStatus(){
     } else if (phase === "away"){
       if (connLost)
         setBanner("connlost", true, "Connection lost", "Can't reach the agent session — it may have exited. Your Rabbithole is saved; reopen it from your terminal to continue.");
+      else if (agentReason === "recovering")
+        setBanner("recovering", false, "Recovering the agent", "The connected agent is recovering the unanswered question now.");
       else if (agentReason === "stalled")
         setBanner("stalled", true, "The agent went quiet", "No response for a while — it may have stopped. You can keep asking: questions are saved and answered when the agent returns.");
       else

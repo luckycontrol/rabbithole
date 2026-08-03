@@ -118,6 +118,10 @@ cannot set this field:
 command = "npx"
 args = ["-y", "github:shlokkhemani/rabbithole"]
 tool_timeout_sec = 600
+
+# Optional: recover a branch automatically if the agent stops after receiving it.
+[mcp_servers.rabbithole.env]
+RABBITHOLE_AUTO_RECOVER_STALLED = "1"
 ```
 
 **Any other MCP client** — most accept this shape in their MCP config:
@@ -265,6 +269,8 @@ before mounting, and invalid diagrams fall back to their original source.
 | `RABBITHOLE_DIR` | Override the storage directory (default `~/.rabbithole/`). |
 | `RABBITHOLE_NO_BROWSER=1` | Don't auto-open the browser (headless/testing). |
 | `RABBITHOLE_MAX_BLOCK_MS` | Max time for one blocking MCP wait before returning `keep_listening` (default `240000`). |
+| `RABBITHOLE_ANSWER_WATCHDOG_MS` | Time to wait after the agent receives a branch before treating it as stalled (default `240000`). |
+| `RABBITHOLE_AUTO_RECOVER_STALLED=1` | When the MCP client supports sampling, ask it to recover a branch that the primary agent left unanswered. Disabled by default; PDF image-region asks still wait for the primary agent. |
 | `RABBITHOLE_PROXY_URL` | Build-time: URL of your fetch-proxy relay for the web app (empty string disables the default). |
 
 ## Repo layout
