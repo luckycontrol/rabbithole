@@ -58,6 +58,23 @@ function branchPrompt(event) {
   ].join("\n");
 }
 
+function revisionPrompt(event) {
+  return [
+    "Revise the existing Rabbithole card according to the human's instruction.",
+    "Return only the requested structured output: a short title and the complete replacement GFM Markdown.",
+    "Preserve correct material unless the instruction asks to remove it. Do not describe the edits.",
+    "Do not invoke tools, inspect files, or ask for confirmation.",
+    "",
+    JSON.stringify({
+      current_title: event.current_title,
+      current_markdown: event.current_markdown,
+      instruction: event.instruction,
+      lineage: event.lineage,
+      rehydration: event.rehydration,
+    }, null, 2),
+  ].join("\n");
+}
+
 function conversionPrompt(event, pages) {
   return [
     "Transcribe the attached PDF page images in page-number order.",
@@ -179,6 +196,10 @@ export class CodexWatchDriver {
   generateBranch(event, { signal } = {}) {
     const images = event.region?.image_path ? [event.region.image_path] : [];
     return this.runStructuredTurn({ prompt: branchPrompt(event), images, schema: ANSWER_SCHEMA, signal });
+  }
+
+  generateRevision(event, { signal } = {}) {
+    return this.runStructuredTurn({ prompt: revisionPrompt(event), schema: ANSWER_SCHEMA, signal });
   }
 
   async answer(event, answer, { signal } = {}) {

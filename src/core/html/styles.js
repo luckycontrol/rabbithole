@@ -234,14 +234,15 @@ body.mode-canvas #reader { display: none; }
 .crumb.current:has(.reader-answer-title-input) { display: inline-flex; max-width: min(100%, 520px); }
 .reader-answer-title-input { width: min(100%, 520px); min-width: 0; padding: 1px 3px 3px; color: inherit; background: transparent; border: 0; border-bottom: 1px solid var(--accent); border-radius: 0; outline: none; font: inherit; font-weight: inherit; }
 .reader-answer-title-input:focus { box-shadow: 0 2px 0 var(--accent); }
-.reader-answer-actions { display: flex; justify-content: flex-end; margin: -6px 0 14px; }
-.reader-answer-edit { appearance: none; display: inline-flex; min-height: 30px; align-items: center; justify-content: center; gap: 5px; padding: 0 9px;
+.reader-answer-actions { display: flex; justify-content: flex-end; gap: 4px; margin: -6px 0 14px; }
+.reader-answer-edit, .reader-ai-revise { appearance: none; display: inline-flex; min-height: 30px; align-items: center; justify-content: center; gap: 5px; padding: 0 9px;
   color: var(--fg-dim); background: transparent; border: 1px solid transparent; border-radius: var(--radius-control); cursor: pointer;
   font-family: var(--font-ui); font-size: 11px; font-weight: var(--weight-medium); transition: var(--transition-color); }
-.reader-answer-edit svg { width: 14px; height: 14px; }
-.reader-answer-edit:hover { color: var(--fg-bold); background: var(--hl); border-color: color-mix(in srgb, var(--fg) 10%, transparent); }
-.reader-answer-edit:focus { outline: none; }
-.reader-answer-edit:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.reader-answer-edit svg, .reader-ai-revise svg { width: 14px; height: 14px; }
+.reader-answer-edit:hover, .reader-ai-revise:hover { color: var(--fg-bold); background: var(--hl); border-color: color-mix(in srgb, var(--fg) 10%, transparent); }
+.reader-answer-edit:focus, .reader-ai-revise:focus { outline: none; }
+.reader-answer-edit:focus-visible, .reader-ai-revise:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.reader-ai-revise { color: var(--accent); }
 .reader-answer-editor { display: flex; min-height: 0; flex-direction: column; gap: 14px; }
 .reader-answer-editor-content { display: block; width: 100%; min-width: 0; min-height: min(460px, calc(100dvh - 210px)); box-sizing: border-box; padding: 0 0 12px; resize: vertical; color: var(--fg); background: transparent; border: 0; border-bottom: 1px solid var(--border); outline: none; font-family: var(--font-doc); font-size: var(--doc-size-reader); line-height: 1.6; }
 .reader-answer-editor-content::placeholder { color: var(--fg-faint); }
@@ -312,7 +313,7 @@ body.mode-canvas #reader { display: none; }
   .reader-col { width: 100%; max-width: none; }
   #reader-rail, #margin-notes { display: none; }
   .reader-context { margin-bottom: 20px; overflow-wrap: anywhere; }
-  .reader-answer-edit { min-width: 44px; min-height: 44px; padding-inline: 12px; }
+  .reader-answer-edit, .reader-ai-revise { min-width: 44px; min-height: 44px; padding-inline: 12px; }
   .crumb.current:has(.reader-answer-title-input) { max-width: 100%; }
   .reader-answer-title-input { width: 100%; max-width: none; font-size: 16px; }
   .reader-answer-editor { min-height: min(420px, calc(100dvh - 190px)); }
@@ -401,6 +402,8 @@ body.mode-canvas #viewport { display: block; }
 
 .node.canvas-content-editing { visibility: hidden; }
 .canvas-manual-edit, .canvas-answer-edit { color: var(--fg-dim); }
+.canvas-ai-revise { color: var(--accent); }
+.node.ai-revising .node-composer { display: none; }
 .canvas-text-node { background: transparent; border-color: transparent; box-shadow: none; }
 .canvas-text-node::after { border: 1px solid var(--border-focus); }
 .canvas-text-node .node-head { position: absolute; left: 0; right: 0; top: -30px; min-height: 26px; padding: 0 4px 0 8px;
@@ -434,6 +437,38 @@ body.mode-canvas #viewport { display: block; }
 .canvas-draft-button:focus { outline: none; }
 .canvas-draft-button:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 body.frozen .canvas-manual-edit, body.frozen .canvas-answer-edit, body.frozen .canvas-manual-node .node-resize { display: none !important; }
+body.frozen .canvas-ai-revise { display: none !important; }
+
+/* ---------- AI revision preview ---------- */
+.ai-revision { display: flex; min-height: 0; flex-direction: column; gap: 12px; color: var(--fg); }
+.ai-revision-head { display: flex; align-items: center; gap: 6px; color: var(--accent); font: 600 11px/1.4 var(--font-ui); letter-spacing: .01em; }
+.ai-revision-head svg { width: 14px; height: 14px; }
+.ai-revision-state { margin-left: auto; color: var(--fg-faint); font-weight: 500; }
+.ai-revision-preview { min-height: 72px; }
+.ai-revision-composer { display: flex; flex-direction: column; gap: 9px; padding-top: 10px; border-top: 1px solid var(--border); }
+.ai-revision-note { margin: 0; color: var(--fg-faint); font: 11px/1.45 var(--font-ui); }
+.ai-revision-composer textarea { width: 100%; min-height: 64px; max-height: 150px; box-sizing: border-box; resize: vertical; padding: 9px 10px; color: var(--fg); background: var(--bar-bg); border: 1px solid var(--border); border-radius: var(--radius-control); outline: none; font: 13px/1.5 var(--font-ui); }
+.ai-revision-composer textarea:focus { border-color: var(--accent); box-shadow: var(--focus-field-shadow); }
+.ai-revision-suggestions { display: flex; flex-wrap: wrap; gap: 5px; }
+.ai-revision-chip { appearance: none; padding: 4px 8px; color: var(--fg-dim); background: transparent; border: 1px solid var(--border); border-radius: 999px; cursor: pointer; font: 10.5px/1.3 var(--font-ui); }
+.ai-revision-chip:hover { color: var(--fg-bold); background: var(--hl); }
+.ai-revision-actions, .ai-revision-footer { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 5px; }
+.ai-revision-button { appearance: none; display: inline-flex; min-height: 30px; align-items: center; justify-content: center; gap: 5px; padding: 0 10px; color: var(--fg-dim); background: transparent; border: 1px solid transparent; border-radius: var(--radius-control); cursor: pointer; font: 11px/1.3 var(--font-ui); }
+.ai-revision-button:hover { color: var(--fg-bold); background: var(--hl); }
+.ai-revision-button.primary { color: var(--accent-contrast); background: var(--accent); }
+.ai-revision-button.primary:hover { filter: brightness(1.06); }
+.ai-revision-button svg { width: 13px; height: 13px; }
+.ai-revision-button:focus-visible, .ai-revision-chip:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.ai-revision-progress { margin-right: auto; color: var(--fg-dim); font: 11px/1.4 var(--font-ui); }
+.ai-revision-progress::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: var(--accent); animation: breathe 1.4s ease-in-out infinite; }
+.ai-revision-error { flex: 1 1 180px; color: var(--danger); font: 11px/1.4 var(--font-ui); }
+.reader-col > .ai-revision { min-height: min(520px, calc(100dvh - 190px)); }
+.node .ai-revision { padding: 1px 0 8px; }
+@media (hover: none), (pointer: coarse), (max-width: 760px) {
+  .ai-revision-button { min-height: 44px; padding-inline: 13px; }
+  .ai-revision-chip { min-height: 36px; padding-inline: 11px; }
+  .ai-revision-composer textarea { min-height: 80px; font-size: 16px; }
+}
 
 @media (hover: none), (pointer: coarse), (max-width: 760px) {
   .canvas-insert-action { width: 44px; height: 44px; }
@@ -651,8 +686,11 @@ body.frozen.session-over .ll-frozen { display: inline; }
 
 /* #hint carries transient feedback only ("that ask was undone…") — there is no
    persistent instruction bar; the UI has to explain itself. */
-#hint { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 40; display: none; font-size: 11.5px; color: var(--fg); background: var(--bar-bg); border: 1px solid var(--border); border-radius: 20px; padding: 6px 14px; box-shadow: var(--shadow); pointer-events: none; max-width: 90vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#hint { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 40; display: none; align-items: center; gap: 9px; font-size: 11.5px; color: var(--fg); background: var(--bar-bg); border: 1px solid var(--border); border-radius: 20px; padding: 6px 8px 6px 14px; box-shadow: var(--shadow); pointer-events: auto; max-width: 90vw; white-space: nowrap; }
 #hint.flash { display: block; }
+#hint.flash:has([data-notice-action]:not([hidden])) { display: flex; }
+#hint [data-notice-message] { overflow: hidden; text-overflow: ellipsis; }
+#hint [data-notice-action] { appearance: none; border: 0; border-radius: 14px; padding: 3px 8px; color: var(--accent-contrast); background: var(--accent); cursor: pointer; font: 600 11px/1.4 var(--font-ui); }
 body:not(.mode-canvas) #hint.flash { bottom: 84px; }
 
 /* ---------- native PDF pages ---------- */

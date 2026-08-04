@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { buildAnswerMessages } from "../../src/core/prompts/answering-v1.js";
 import { AUTHORING_VOCABULARY_V1 } from "../../src/core/prompts/authoring-v1.js";
 import { buildTranscribeMessages, TRANSCRIBE_V1_RULES } from "../../src/core/prompts/transcribe-v1.js";
+import { buildRevisionMessages } from "../../src/core/prompts/revision-v1.js";
 
 const context = { root_title: "Root", parent_title: "Parent", parent_markdown: "Body", ancestors: [], selected_text: "x", question: "Why?", lens: null };
 const without = buildAnswerMessages(context);
@@ -28,5 +29,12 @@ assert.equal(transcription[0].content[0].text.includes("x".repeat(500)), true); 
 assert.match(AUTHORING_VOCABULARY_V1, /```mermaid/);
 assert.match(AUTHORING_VOCABULARY_V1, /flowcharts, sequence, class, state, and entity-relationship/);
 assert.match(AUTHORING_VOCABULARY_V1, /mindmap, architecture, and Mermaid-side KaTeX syntax are not supported/);
+
+const revision = buildRevisionMessages({ root_title: "Root", lineage: ["Root", "Answer"], title: "Answer",
+  markdown: "Keep this fact.", instruction: "Make it shorter" });
+assert.match(revision[0].content, /complete replacement/i);
+assert.match(revision[0].content, /TITLE:/);
+assert.match(revision[1].content, /Current card Markdown:\nKeep this fact\./);
+assert.match(revision[1].content, /Revision instruction:\nMake it shorter/);
 
 console.log("ok prompts: PDF attachment parts, byte-identical text-only messages, and supported Mermaid authoring guidance");

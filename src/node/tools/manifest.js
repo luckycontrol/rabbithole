@@ -105,7 +105,7 @@ export const toolDefinitions = [
   {
     name: "answer_branch",
     description: [
-      "Answer one pending branch_request or convert_request from an open Rabbithole. For convert_request, read every pages[].image_path in order, follow rules exactly, stream transcription chunks, and emit figure: refs rather than cropping. For branch_request, write a focused answer using the supplied selection context; when region.image_path is present, it may be the new selection clip or the immediate parent's clip, so read it and trust it over extracted text.",
+      "Answer one pending branch_request, revision_request, or convert_request from an open Rabbithole. For revision_request, return a complete replacement for the existing card according to its instruction; the human previews it before applying, and no new branch is created. For convert_request, read every pages[].image_path in order, follow rules exactly, stream transcription chunks, and emit figure: refs rather than cropping. For branch_request, write a focused answer using the supplied selection context; when region.image_path is present, it may be the new selection clip or the immediate parent's clip, so read it and trust it over extracted text.",
       "",
       AUTHORING_VOCABULARY_V1,
       "",
@@ -113,8 +113,8 @@ export const toolDefinitions = [
     ].join("\n"),
     input: obj({
       session_id: str("Active session ID from open_rabbithole", { maxLength: 200 }),
-      request_id: str("The request_id of the branch_request being answered", { maxLength: 200 }),
-      title: str("Short label for the new node (a few words; required on the final call)", { optional: true, maxLength: 2000 }),
+      request_id: str("The request_id of the branch_request, revision_request, or convert_request being answered", { maxLength: 200 }),
+      title: str("Short title for the answer or revised card (required on the final call)", { optional: true, maxLength: 2000 }),
       content: str("Markdown chunk (partial) or the remaining markdown (final call)", { maxLength: 10485760 }),
       base_url: str("Document URL used to resolve relative markdown links/images; absolute http(s) only", {
         optional: true,

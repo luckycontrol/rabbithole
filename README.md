@@ -221,10 +221,10 @@ are cached. If the browser must not auto-open (headless), set
 | Tool | What it does |
 |------|--------------|
 | `open_rabbithole` | Open a doc (`{ title, content }` / `{ title, file_path }`, optional `base_url`, optional `assets`) or resume one (`{ hole_id }`). A PDF `file_path` opens natively: rendered pages, selectable text, and box-select — no markdown authoring needed (`title` optional; PDF metadata or filename is used). Opens the canvas in the browser and blocks until the human asks something. |
-| `answer_branch` | Answer a pending branch request → a child document. Stream with `partial: true` chunks, then finish with a normal call carrying the node title; use `base_url` for fetched markdown and `assets` for local images referenced as `asset:name.png`. A `branch_request` from a PDF may include `region.image_path` — read that image before answering. Also streams "Convert to document" transcriptions when a `convert_request` arrives. |
+| `answer_branch` | Answer a pending branch request → a child document, or a `revision_request` → an in-place preview. Stream with `partial: true` chunks, then finish with a normal call carrying the node/card title; use `base_url` for fetched markdown and `assets` for local images referenced as `asset:name.png`. A `branch_request` from a PDF may include `region.image_path` — read that image before answering. Also streams "Convert to document" transcriptions when a `convert_request` arrives. |
 | `list_rabbitholes` | List saved holes to resume by id. |
 
-The loop: `open_rabbithole` → `branch_request` → `answer_branch` → `branch_request` → … → `session_closed`.
+The loop: `open_rabbithole` → `branch_request`/`revision_request` → `answer_branch` → … → `session_closed`.
 Long waits may return `keep_listening`; immediately call `open_rabbithole`
 again with the returned `hole_id`. If the host reports a tool timeout, do the
 same — questions are saved.
@@ -251,6 +251,8 @@ links, prefer fetching the HTML version and opening that content with
   Go Deeper (keys 1–4).
 - **Follow-up chat:** a composer under each document asks about the doc as a
   whole; answers render inline and are branchable like any other text.
+- **AI revisions:** completed answer cards can be revised in place from an AI
+  preview, applied only after review, undone, retried, or kept as a new branch.
 - **Canvas mode:** infinite pan/zoom, draggable/resizable cards, edges that
   attach to the exact selected text in the parent, collapse, auto-layout.
 - **Navigation:** `j`/`k` walk marks, `↵` opens, `⌫` jumps back up, `⌘K`
