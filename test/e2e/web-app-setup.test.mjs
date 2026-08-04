@@ -915,6 +915,9 @@ async function verifyAskKeyUxAndRail() {
       "Attention compares tokens, scores their relevance, and mixes information according to those scores.",
     ], [
       "## Branch answer\n\nThis answer is ready to edit.",
+    ], [
+      "TITLE: Revised in place\n",
+      "## AI revision\n\nThis replacement is only applied after preview.",
     ]],
   });
 
@@ -952,6 +955,21 @@ async function verifyAskKeyUxAndRail() {
   await page.click("#ask-go");
   const answerCard = page.locator(".node:not(.root)", { hasText: "This answer is ready to edit." });
   await answerCard.waitFor();
+  await answerCard.getByRole("button", { name: "Revise this card with AI" }).click();
+  const revision = answerCard.locator(".ai-revision");
+  await revision.getByRole("textbox", { name: "AI revision instruction" }).fill("Make this answer clearer");
+  await revision.getByRole("button", { name: "Generate revision" }).click();
+  await revision.getByText("This replacement is only applied after preview.").waitFor();
+  const revisionTargetId = await answerCard.getAttribute("data-id");
+  assert.match((await page.evaluate(async (nodeId) => (await window.__rabbitholeTest.readStoredHole()).nodes.find((node) => node.id === nodeId).markdown, revisionTargetId)),
+    /ready to edit/, "AI revision preview must not overwrite the stored card");
+  await revision.getByRole("button", { name: "Show original" }).click();
+  await revision.getByText("This answer is ready to edit.").waitFor();
+  await revision.getByRole("button", { name: "Show revision" }).click();
+  await revision.getByRole("button", { name: "Apply revision" }).click();
+  await answerCard.getByText("This replacement is only applied after preview.").waitFor();
+  await page.getByRole("button", { name: "Undo" }).click();
+  await answerCard.getByText("This answer is ready to edit.").waitFor();
   await answerCard.getByRole("button", { name: "Edit answer Markdown" }).click();
   const editedAnswerId = await answerCard.getAttribute("data-id");
   const answerDraft = page.locator(".canvas-answer-draft");

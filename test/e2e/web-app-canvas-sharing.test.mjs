@@ -1023,11 +1023,12 @@ async function verifyCanvasBranching() {
   assert.deepEqual(cardControls, [
     { type: "button", name: "Remove this branch" },
     { type: "button", name: "Edit answer Markdown" },
+    { type: "button", name: "Revise this card with AI" },
     { type: "button", name: "Smaller text" },
     { type: "button", name: "Larger text" },
     { type: "button", name: "Collapse document" },
     { type: "button", name: "Expand document" },
-  ], "all six card controls should use Button kit semantics and accessible names");
+  ], "all seven card controls should use Button kit semantics and accessible names");
   const childPosition = await childCard.evaluate((card) => ({ left: card.style.left, top: card.style.top }));
   const smallerBox = await childCard.locator('.node-btn[aria-label="Smaller text"]').boundingBox();
   await page.mouse.move(smallerBox.x + smallerBox.width / 2, smallerBox.y + smallerBox.height / 2);

@@ -1,6 +1,6 @@
 import { createHoleState, holeStateToHole, holeStateToHydrationNodes, reduceHoleEvent } from "../../core/reducer.js";
 import { normalizeBlockIds } from "../../core/blocks.js";
-import { lineageNodesFromMap, normalizePdfAnchor, truncate } from "../../core/model.js";
+import { canvasNodeKind, lineageNodesFromMap, normalizePdfAnchor, truncate } from "../../core/model.js";
 import { extractNodeAssetRefs } from "../../core/assets.js";
 import { GenerationRun } from "../../core/generation-run.js";
 import { applyPersistedBrowserEvent, assetsOrphanedByDeletion, buildNodeAnsweredEvent, createSaveChain, dispatchBrowserEvent } from "../../core/hole-host.js";
@@ -42,6 +42,7 @@ export class DirectRabbitholeHost {
     });
     this.savingChain = Promise.resolve();
     this.abortByNode = new Map();
+    this.revisionByRequest = new Map();
     this.lastEventId = 0;
     this.disposed = false;
     this.subscriptions = new Set();
@@ -107,6 +108,9 @@ export class DirectRabbitholeHost {
       return await dispatchBrowserEvent(payload, {
         handlers: {
           branch_request: (event) => this.handleBranchRequest(event),
+          revision_request: (event) => this.handleRevisionRequest(event),
+          revision_cancel: (event) => this.handleRevisionCancel(event),
+          revision_save_as_branch: (event) => this.handleRevisionSaveAsBranch(event),
           canvas_node_create: async (event) => {
             const result = this.applyPersistedBrowserEvent(event);
             await this.flushSave();
@@ -142,6 +146,95 @@ export class DirectRabbitholeHost {
     await this.flushSave();
     this.startAnswer(node.id, { reset: false });
     return { ok: true, node_id: node.id, request_id: payload.request_id };
+  }
+
+  handleRevisionRequest(payload) {
+    const node = this.state.nodes.get(String(payload.node_id || ""));
+    if (!isRevisableAnswer(node)) throw new Error("Only completed answer cards can be revised with AI.");
+    if (!this.brain?.reviseCard) throw new ProviderError("Add your provider key to revise this card.", {
+      status: 401, code: "missing_key", retryable: true,
+    });
+    const instruction = String(payload.instruction || "").trim();
+    if (!instruction) throw new Error("Tell AI how to revise this card.");
+    const requestId = String(payload.request_id || randomId("revision"));
+    for (const [id, active] of this.revisionByRequest) {
+      if (active.nodeId !== node.id) continue;
+      active.controller.abort();
+      this.revisionByRequest.delete(id);
+    }
+    const controller = new AbortController();
+    const active = { requestId, nodeId: node.id, instruction, controller };
+    this.revisionByRequest.set(requestId, active);
+    queueMicrotask(() => this.runRevision(active).catch((error) => this.failRevision(active, error)));
+    return { ok: true, request_id: requestId, node_id: node.id };
+  }
+
+  async runRevision(active) {
+    const node = this.state.nodes.get(active.nodeId);
+    if (!isRevisableAnswer(node) || this.revisionByRequest.get(active.requestId) !== active) return;
+    const root = this.state.nodes.get(this.state.root_id);
+    const run = new GenerationRun({ id: this.mintGenerationRunId(), fallbackTitle: node.title || "Untitled" });
+    const context = {
+      root_title: root?.title || this.title || "Untitled",
+      lineage: lineageNodesFromMap(this.state.nodes, node.id).map((entry) => entry.title || "Untitled"),
+      title: node.title || "Untitled",
+      markdown: node.markdown || "",
+      instruction: active.instruction,
+    };
+    for await (const event of this.brain.reviseCard(context, active.controller.signal)) {
+      if (active.controller.signal.aborted || this.revisionByRequest.get(active.requestId) !== active) return;
+      run.accept(event, { nodeId: node.id });
+      const snapshot = run.snapshot();
+      this.emit({ type: "revision_progress", request_id: active.requestId, node_id: node.id,
+        title: snapshot.title, markdown: snapshot.markdown });
+    }
+    if (active.controller.signal.aborted || this.revisionByRequest.get(active.requestId) !== active) return;
+    this.revisionByRequest.delete(active.requestId);
+    const result = run.complete({ nodeId: node.id });
+    this.emit({ type: "revision_ready", request_id: active.requestId, node_id: node.id,
+      title: result.title, markdown: result.markdown });
+  }
+
+  failRevision(active, error) {
+    if (this.revisionByRequest.get(active.requestId) !== active) return;
+    this.revisionByRequest.delete(active.requestId);
+    if (active.controller.signal.aborted || error?.name === "AbortError") return;
+    const normalized = normalizeProviderError(error);
+    this.emit({ type: "revision_error", request_id: active.requestId, node_id: active.nodeId,
+      message: normalized.message, code: normalized.code, retryable: normalized.retryable });
+  }
+
+  handleRevisionCancel(payload) {
+    const requestId = String(payload.request_id || "");
+    const active = this.revisionByRequest.get(requestId);
+    if (active) active.controller.abort();
+    this.revisionByRequest.delete(requestId);
+    return { ok: true, request_id: requestId };
+  }
+
+  async handleRevisionSaveAsBranch(payload) {
+    const parent = this.state.nodes.get(String(payload.node_id || ""));
+    if (!isRevisableAnswer(parent)) throw new Error("The source answer is no longer available.");
+    const nodeId = String(payload.child_id || randomId("revision-branch"));
+    const position = payload.position || {
+      x: Number(parent.position?.x || 0) + Number(parent.size?.w || 420) + 80,
+      y: Number(parent.position?.y || 0),
+    };
+    const answered = {
+      type: "node_answered", node_id: nodeId, parent_id: parent.id,
+      title: String(payload.title || parent.title || "Revision").trim() || "Revision",
+      markdown: String(payload.markdown || ""),
+      base_url: parent.base_url || null,
+      base_url_source: parent.base_url ? "inherited" : null,
+      origin: { selected_text: "", question: String(payload.instruction || "AI revision"), lens: null,
+        anchor: null, branch_type: "followup", revision_of: parent.id },
+      position, size: payload.size || { w: 420, h: 360 }, font_scale: 1, collapsed: false, read: false,
+    };
+    this.dispatch(answered, { now: new Date().toISOString() });
+    const child = this.state.nodes.get(nodeId);
+    this.emit(buildNodeAnsweredEvent(child));
+    await this.flushSave();
+    return { ok: true, node_id: nodeId };
   }
 
   handleConvertCancel(payload) {
@@ -638,10 +731,17 @@ export class DirectRabbitholeHost {
       try { controller.abort(); } catch {}
     }
     this.abortByNode.clear();
+    for (const active of this.revisionByRequest.values()) active.controller.abort();
+    this.revisionByRequest.clear();
     for (const subscription of [...this.subscriptions]) subscription.close();
     this.onEvent = null;
     return this.savingChain;
   }
+}
+
+function isRevisableAnswer(node) {
+  return !!node && node.parent_id != null && node.status === "answered"
+    && !canvasNodeKind(node) && !normalizePdfExtension(node);
 }
 
 /**

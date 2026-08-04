@@ -65,6 +65,7 @@ import { BUNNY_MARK_SVG, iconSvg } from "../core/html/icons.js";
 import { createModuleLifecycle } from "./lifecycle.js";
 import { captureContentPosition, restoreContentPosition } from "./scroll-position.js";
 import { applyComposerState } from "./composer-state.js";
+import { buildAiRevisionSurface, canReviseWithAi, openAiRevision, updateAiRevisionControl } from "./ai-revision.js";
 import { ENTER_SEND_HINT, isSubmitEnter } from "./input-intent.js";
 import { openAnchoredSurface } from "./overlay/anchor.js";
 import { registerLayer } from "./overlay/layer-stack.js";
@@ -450,10 +451,12 @@ function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy -
 
 export function updateAnswerEditControl(node){
     var button = node && node.answerEditBtn;
-    if (!button) return;
     var editable = isAnswerNodeEditable(node);
-    button.hidden = !editable;
-    button.disabled = !editable;
+    if (button){
+      button.hidden = !editable || !!node._revision;
+      button.disabled = !editable || !!node._revision;
+    }
+    updateAiRevisionControl(node);
   }
 
 export function createNodeEl(node, enter){
@@ -492,6 +495,7 @@ export function createNodeEl(node, enter){
       acts.appendChild(editBtn);
     }
     var answerEditBtn = null;
+    var aiRevisionBtn = null;
     if (!manualKind && node.parent_id != null){
       answerEditBtn = cardButton(iconButtonMarkup({ bare: true, className: "node-btn canvas-answer-edit", svgIconHtml: iconSvg("edit"), ariaLabel: "Edit answer Markdown", title: "Edit answer Markdown" }));
       answerEditBtn.addEventListener("click", function(e){
@@ -499,6 +503,12 @@ export function createNodeEl(node, enter){
         if (isAnswerNodeEditable(node)) openCanvasDraft(ANSWER_DRAFT_KIND, { x: node.x, y: node.y }, node);
       });
       acts.appendChild(answerEditBtn);
+      aiRevisionBtn = cardButton(iconButtonMarkup({ bare: true, className: "node-btn canvas-ai-revise", svgIconHtml: iconSvg("sparkles"), ariaLabel: "Revise this card with AI", title: "Revise this card with AI" }));
+      aiRevisionBtn.addEventListener("click", function(e){
+        e.stopPropagation();
+        if (canReviseWithAi(node)) openAiRevision(node);
+      });
+      acts.appendChild(aiRevisionBtn);
     }
     if (manualKind !== CANVAS_NODE_TEXT){
       acts.appendChild(aDown); acts.appendChild(aUp); acts.appendChild(divider); acts.appendChild(collapseBtn); acts.appendChild(openBtn);
@@ -511,7 +521,7 @@ export function createNodeEl(node, enter){
     el.appendChild(head); el.appendChild(body); if (comp) el.appendChild(comp); el.appendChild(resize);
     world.appendChild(el);
 
-    node.el = el; node.bodyEl = body; node.titleEl = titleEl; node.answerEditBtn = answerEditBtn;
+    node.el = el; node.bodyEl = body; node.titleEl = titleEl; node.answerEditBtn = answerEditBtn; node.aiRevisionBtn = aiRevisionBtn;
     updateAnswerEditControl(node);
     if (cardResizeObserver) cardResizeObserver.observe(el);
     fillBody(node);
@@ -527,6 +537,7 @@ export function createNodeEl(node, enter){
       else openNode(node.id);
     });
     if (manualKind || answerEditBtn) body.addEventListener("dblclick", function(e){
+      if (node._revision) return;
       if (e.target.closest("a, button, input, textarea, select, [contenteditable='true']")) return;
       if (manualKind){
         e.preventDefault(); e.stopPropagation(); openCanvasDraft(manualKind, { x: node.x, y: node.y }, node);
@@ -697,6 +708,14 @@ export function fillBody(node){
     var previous = body.querySelector(".doc-content"); if (previous && previous._rhDispose) previous._rhDispose();
     body.classList.remove("pdf-body");
     body.innerHTML = "";
+    if (node._revision){
+      var revision = buildAiRevisionSurface(node, CANVAS_BASE);
+      if (revision) body.appendChild(revision);
+      if (node.el) node.el.classList.add("ai-revising");
+      scheduleEdges();
+      return;
+    }
+    if (node.el) node.el.classList.remove("ai-revising");
     if (node.origin && node.origin.selected_text){
       var q = document.createElement("div"); q.className = "origin-quote"; q.textContent = "“" + node.origin.selected_text + "”";
       body.appendChild(q);

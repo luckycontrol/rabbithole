@@ -43,6 +43,7 @@ const ICON_DEFINITIONS = Object.freeze({
   text: { size: 16, attrs: STROKE_16, body: '<path d="M3 3.25h10M8 3.25v9.5M5.75 12.75h4.5"/>' },
   card: { size: 16, attrs: STROKE_16, body: '<rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M2.5 6.25h11"/>' },
   edit: { size: 16, attrs: STROKE_16, body: '<path d="m3.25 12.75.55-2.65 6.95-6.95a1.2 1.2 0 0 1 1.7 1.7L5.5 11.8z"/><path d="m9.8 4.1 2.1 2.1"/>' },
+  sparkles: { size: 16, attrs: STROKE_16, body: '<path d="M8 1.75c.35 2.25 1.25 3.15 3.5 3.5C9.25 5.6 8.35 6.5 8 8.75 7.65 6.5 6.75 5.6 4.5 5.25 6.75 4.9 7.65 4 8 1.75Z"/><path d="M12.25 9c.2 1.3.7 1.8 2 2-.3.05-.65.15-.9.35-.55.35-.85.9-1.1 1.65-.2-1.3-.7-1.8-2-2 1.3-.2 1.8-.7 2-2Z"/><path d="M3.5 9.25c.15.95.55 1.35 1.5 1.5-.95.15-1.35.55-1.5 1.5-.15-.95-.55-1.35-1.5-1.5.95-.15 1.35-.55 1.5-1.5Z"/>' },
   delete: { size: 16, attrs: STROKE_16, body: '<path d="M3.25 4.5h9.5"/><path d="M6.25 2.75h3.5"/><path d="M4.75 4.5l.6 8h5.3l.6-8"/>' },
   eye: { size: 14, attrs: 'viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"', body: '<path d="M1.9 8S4.2 3.8 8 3.8 14.1 8 14.1 8 11.8 12.2 8 12.2 1.9 8 1.9 8Z"/><circle cx="8" cy="8" r="1.9"/>' },
   "eye-off": { size: 14, attrs: 'viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"', body: '<path d="M1.9 8S4.2 3.8 8 3.8 14.1 8 14.1 8 11.8 12.2 8 12.2 1.9 8 1.9 8Z"/><circle cx="8" cy="8" r="1.9"/><path d="m3.2 2.6 9.6 10.8"/>' },
