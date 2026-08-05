@@ -188,6 +188,9 @@ export function initReader(){
     // Hovering a margin note lights its highlight so the pair reads as one.
     readerScope.listen(notes, "mouseover", function(e){ syncNoteHover(e, true); });
     readerScope.listen(notes, "mouseout", function(e){ syncNoteHover(e, false); });
+    readerScope.listen(document.getElementById("reader-rail-toggle"), "click", function(){ setReaderRailCollapsed(true); });
+    readerScope.listen(document.getElementById("reader-rail-strip"), "click", function(){ setReaderRailCollapsed(false); });
+    applyReaderRailCollapse();
     readerScope.listen(document.getElementById("r-textdown"), "click", function(){ setReaderFontScale(-0.1); });
     readerScope.listen(document.getElementById("r-textup"), "click", function(){ setReaderFontScale(0.1); });
     readerScope.listen(document.getElementById("t-canvas"), "click", function(){
@@ -425,6 +428,67 @@ function ensureReaderEditResizeGrip(){
   });
 }
 
+// ---------------------------------------------------------------------------
+// Branch-rail collapse. The head chevron puts the rail away; a narrow strip
+// takes its place and brings it back. The strip keeps the branch count on
+// screen, so an answer that lands while the rail is collapsed is still
+// announced. Collapsing never touches the inline --reader-branch-rail override
+// the grip writes, so expanding returns to the width the reader chose.
+//
+// The edit panel lives inside the rail, so it cannot be shown collapsed: the
+// applied state is the stored preference AND no edit open. Keeping the
+// preference separate from the applied state is what lets closing an edit
+// restore the collapse rather than recompute it.
+// ---------------------------------------------------------------------------
+
+var READER_RAIL_STORAGE_KEY = "rh-reader-rail";
+var readerRailCollapsePref = readStoredReaderRailCollapse();
+
+function readStoredReaderRailCollapse(){
+  try { return localStorage.getItem(READER_RAIL_STORAGE_KEY) === "collapsed"; } catch(e){ return false; }
+}
+
+function storeReaderRailCollapse(collapsed){
+  try { localStorage.setItem(READER_RAIL_STORAGE_KEY, collapsed ? "collapsed" : "open"); } catch(e){}
+}
+
+function applyReaderRailCollapse(){
+  var rail = document.getElementById("reader-rail");
+  if (!rail) return;
+  // An open edit panel wins over the preference — it has nowhere else to render.
+  var collapsed = readerRailCollapsePref && !rail.classList.contains("reader-edit-panel-active");
+  rail.classList.toggle("reader-rail-collapsed", collapsed);
+  var toggle = document.getElementById("reader-rail-toggle");
+  if (toggle) toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  var strip = document.getElementById("reader-rail-strip");
+  if (strip) strip.setAttribute("aria-expanded", collapsed ? "false" : "true");
+}
+
+function setReaderRailCollapsed(collapsed){
+  readerRailCollapsePref = !!collapsed;
+  storeReaderRailCollapse(readerRailCollapsePref);
+  applyReaderRailCollapse();
+  // Collapsing hides the control that was just pressed, so hand focus to the
+  // control that replaces it rather than dropping it on a hidden element.
+  var next = document.getElementById(collapsed ? "reader-rail-strip" : "reader-rail-toggle");
+  if (next) next.focus({ preventScroll: true });
+}
+
+// The strip carries the count itself, so the number stays readable while the
+// list is hidden.
+function syncReaderRailCount(total){
+  var count = document.getElementById("reader-rail-count");
+  if (count) count.textContent = String(total);
+  var stripCount = document.getElementById("reader-rail-strip-count");
+  if (stripCount) stripCount.textContent = String(total);
+  var strip = document.getElementById("reader-rail-strip");
+  if (strip){
+    var label = "Show branches, " + total;
+    strip.setAttribute("aria-label", label);
+    strip.title = label;
+  }
+}
+
 function buildReaderAnswerPreview(node){
   var draft = readerDraft;
   var previewNode = Object.assign({}, node, {
@@ -463,6 +527,9 @@ function renderReaderEditPanel(){
 
   rail.classList.add("reader-edit-panel-active");
   rail.setAttribute("aria-labelledby", "reader-edit-title");
+  // The panel renders inside the rail, so an edit forces it open for its
+  // duration; the stored preference is untouched and applies again on close.
+  applyReaderRailCollapse();
   ensureReaderEditResizeGrip();
   var oldPanel = rail.querySelector(".reader-edit-panel");
   if (oldPanel) oldPanel.remove();
@@ -865,6 +932,9 @@ export function renderMarginNotes(){
       rail.setAttribute("aria-labelledby", "reader-rail-title");
       var editor = rail.querySelector(".reader-edit-panel");
       if (editor) editor.remove();
+      // The edit panel no longer holds the rail open, so a stored collapse
+      // takes effect again.
+      applyReaderRailCollapse();
     }
     var layer = marginNotesLayer();
     if (!layer) return;
@@ -927,8 +997,7 @@ export function renderMarginNotes(){
       fragment.appendChild(empty);
     }
     layer.replaceChildren(fragment);
-    var count = document.getElementById("reader-rail-count");
-    if (count) count.textContent = String(kids.length);
+    syncReaderRailCount(kids.length);
     var rail = document.getElementById("reader-rail");
     if (rail) rail.classList.toggle("empty", !kids.length);
     mountNoteVisuals(newLivePanes);

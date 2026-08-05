@@ -1445,6 +1445,47 @@ async function verifyAskKeyUxAndRail() {
   await page.mouse.move(branchGripBox.x + branchGripBox.width / 2 - 90, branchGripBox.y + branchGripBox.height / 2, { steps: 8 });
   await page.mouse.up();
   assert((await readRailWidth()) > branchWidthBefore + 60, "the grip should resize the rail during branch browsing");
+
+  // Collapsing the rail hands the width back to the document but keeps the
+  // branch count on screen, and it must not discard a width chosen by the grip.
+  const chosenRailWidth = await readRailWidth();
+  const strip = page.locator("#reader-rail-strip");
+  const branchCount = await page.locator("#reader-rail-count").innerText();
+  await page.click("#reader-rail-toggle");
+  const collapsedRailWidth = await readRailWidth();
+  assert(collapsedRailWidth < 40, `collapsing should narrow the rail to a strip (got ${collapsedRailWidth}px)`);
+  assert.equal(await strip.isVisible(), true, "the collapsed rail should show its strip");
+  assert.equal(await page.locator("#margin-notes").isVisible(), false, "collapsing should hide the branch list");
+  assert.equal(await page.locator("#reader-rail-strip-count").innerText(), branchCount,
+    "the collapsed strip should keep showing how many branches exist");
+  assert.equal(await strip.getAttribute("aria-expanded"), "false", "the strip should expose the collapsed state");
+  assert.equal(await grip.isVisible(), false, "a collapsed rail has no width to drag");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "reader-rail-strip",
+    "collapsing should move focus to the control that replaces the toggle");
+  assert.equal(await page.evaluate(() => localStorage.getItem("rh-reader-rail")), "collapsed",
+    "the collapse state should persist across reloads");
+
+  // An edit panel renders inside the rail, so it forces the rail open for its
+  // duration and the collapse returns when the edit closes.
+  await page.getByRole("button", { name: "Edit answer Markdown" }).click();
+  await page.waitForSelector(".reader-edit-panel");
+  assert.equal(await page.locator("#reader-rail.reader-rail-collapsed").count(), 0,
+    "opening an edit should force the collapsed rail open");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".reader-edit-panel", { state: "detached" });
+  assert.equal(await page.locator("#reader-rail.reader-rail-collapsed").count(), 1,
+    "closing the edit should restore the collapsed rail");
+
+  await strip.click();
+  assert.equal(await readRailWidth(), chosenRailWidth,
+    "expanding should return to the width chosen with the grip, not the default");
+  assert.equal(await page.locator("#margin-notes").isVisible(), true, "expanding should bring the branch list back");
+  assert.equal(await page.getAttribute("#reader-rail-toggle", "aria-expanded"), "true",
+    "the head toggle should expose the expanded state");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "reader-rail-toggle",
+    "expanding should return focus to the head toggle");
+  assert.equal(await page.evaluate(() => localStorage.getItem("rh-reader-rail")), "open");
+
   await grip.dblclick();
   await page.click("#t-canvas");
   await page.waitForSelector("body.mode-canvas");

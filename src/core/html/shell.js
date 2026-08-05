@@ -55,8 +55,15 @@ export const CANVAS_SHELL = `
       </div>
     </div>
     <aside id="reader-rail" aria-labelledby="reader-rail-title">
-      <div class="reader-rail-head"><span id="reader-rail-title">Branches</span><span id="reader-rail-count">0</span></div>
+      <div class="reader-rail-head">
+        <span id="reader-rail-title">Branches</span>
+        <span class="reader-rail-head-end">
+          <span id="reader-rail-count">0</span>
+          ${iconButtonMarkup({ bare: true, className: "reader-rail-toggle", id: "reader-rail-toggle", title: "Hide branches", ariaLabel: "Hide branches", ariaExpanded: "true", ariaControls: "margin-notes", svgIconHtml: iconSvg("chevron") })}
+        </span>
+      </div>
       <div id="margin-notes"></div>
+      <button type="button" class="reader-rail-strip" id="reader-rail-strip" title="Show branches" aria-label="Show branches" aria-expanded="false" aria-controls="margin-notes"><span class="reader-rail-strip-count" id="reader-rail-strip-count">0</span><span class="reader-rail-strip-label">Branches</span></button>
     </aside>
   </div>
 </div>

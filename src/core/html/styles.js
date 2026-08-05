@@ -301,10 +301,38 @@ body.reader-resizing { user-select: none; cursor: col-resize; }
   border-left: 1px solid var(--border); background: color-mix(in srgb, var(--bar-bg) 58%, var(--bg)); }
 .reader-rail-head { display: flex; min-height: 44px; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px;
   border-bottom: 1px solid var(--border); color: var(--fg-bold); font-family: var(--font-ui); font-size: 12px; font-weight: 600; }
+.reader-rail-head-end { display: flex; align-items: center; gap: 4px; }
 #reader-rail-count { display: inline-flex; min-width: 20px; height: 20px; align-items: center; justify-content: center; padding: 0 6px;
   border: 1px solid var(--border); border-radius: var(--radius-pill); color: var(--fg-dim); font-size: 10.5px; font-variant-numeric: tabular-nums; font-weight: 500; }
+/* The head toggle points at the rail's own edge: right (away from the document)
+   to put the rail away, left to bring it back. */
+.reader-rail-toggle { display: inline-flex; width: 22px; height: 22px; align-items: center; justify-content: center;
+  border-radius: var(--radius-control); color: var(--fg-faint); cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard); }
+.reader-rail-toggle svg { transform: rotate(-90deg); }
+.reader-rail-toggle:hover { background: var(--hl); color: var(--fg-bold); }
+.reader-rail-toggle:focus { outline: none; }
+.reader-rail-toggle:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 #margin-notes { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 8px; overflow: auto; padding: 12px 12px 24px;
   overscroll-behavior: contain; scrollbar-gutter: stable; }
+/* ---------- collapsed rail ----------
+   Collapsing trades the branch list for a strip that still carries the count,
+   so an answer arriving while the rail is away is still visible. The collapsed
+   width is its own token: the inline --reader-branch-rail override written by
+   the grip survives untouched, and expanding returns to the chosen width. */
+#reader-rail.reader-rail-collapsed { width: var(--reader-branch-rail-collapsed); flex-basis: var(--reader-branch-rail-collapsed); }
+#reader-rail.reader-rail-collapsed .reader-rail-head, #reader-rail.reader-rail-collapsed #margin-notes { display: none; }
+#reader-rail.reader-rail-collapsed .reader-edit-grip { display: none; }
+.reader-rail-strip { display: none; }
+#reader-rail.reader-rail-collapsed .reader-rail-strip { display: flex; width: 100%; min-height: 0; flex: 1; flex-direction: column; align-items: center; gap: 10px;
+  padding: 12px 0; cursor: pointer; color: var(--fg-dim); font-family: var(--font-ui); font-size: 11px; font-weight: 600;
+  transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard); }
+.reader-rail-strip:hover { background: var(--hl); color: var(--fg-bold); }
+.reader-rail-strip:focus { outline: none; }
+.reader-rail-strip:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.reader-rail-strip-count { display: inline-flex; min-width: 20px; height: 20px; flex: 0 0 auto; align-items: center; justify-content: center; padding: 0 5px;
+  border: 1px solid var(--border); border-radius: var(--radius-pill); font-size: 10.5px; font-variant-numeric: tabular-nums; font-weight: 500; }
+.reader-rail-strip-label { min-height: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; writing-mode: vertical-rl; letter-spacing: 0.02em; }
 .reader-rail-empty { margin: auto 8px; color: var(--fg-faint); font-family: var(--font-ui); font-size: 11.5px; line-height: 1.5; text-align: center; }
 .side-item { position: relative; width: 100%; flex: 0 0 auto; border: 1px solid var(--border); border-radius: 10px;
   padding: 10px 12px; cursor: pointer; background: var(--node-bg); font-family: var(--font-ui);
