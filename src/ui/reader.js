@@ -552,6 +552,9 @@ function renderReaderEditPanel(){
   });
   requestAnimationFrame(function(){
     if (readerDraft !== draft) return;
+    // A late frame must not yank focus out of a field the human already reached:
+    // under load this lands mid-keystroke and the rest of the body lands in the title.
+    if (form.contains(document.activeElement)) return;
     var target = isCompactReader() ? textarea : titleInput;
     if (target && target.isConnected) target.focus({ preventScroll: true });
   });
