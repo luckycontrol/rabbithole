@@ -1391,6 +1391,46 @@ async function verifyAskKeyUxAndRail() {
   assert.equal(await page.evaluate(() => document.activeElement?.id), "t-settings", "settings Escape should restore its trigger after the Select child closes first");
   assert.equal(await page.evaluate(() => document.body.classList.contains("mode-canvas")), true, "nested Escapes must not reach the canvas shortcut");
 
+  // The edit-panel width grip is a desktop affordance: it appears while an edit
+  // is open, drags the rail wider, double-clicks to reset, and keeps the chosen
+  // width for the rest of the page session.
+  await page.locator(`.node[data-id="${editedAnswerId}"] .node-head`).dblclick();
+  await page.waitForSelector("body:not(.mode-canvas) #reader-main");
+  await page.getByRole("button", { name: "Edit answer Markdown" }).click();
+  const grip = page.locator(".reader-edit-grip");
+  await grip.waitFor();
+  assert.equal(await grip.isVisible(), true, "the resize grip should appear while an edit is open on desktop");
+  const readRailWidth = () => page.locator("#reader-rail").evaluate((rail) => Math.round(rail.getBoundingClientRect().width));
+  const defaultRailWidth = await readRailWidth();
+  const gripBox = await grip.boundingBox();
+  await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(gripBox.x + gripBox.width / 2 + 140, gripBox.y + gripBox.height / 2, { steps: 8 });
+  await page.mouse.up();
+  const widenedRailWidth = await readRailWidth();
+  assert(widenedRailWidth > defaultRailWidth + 100, `dragging the grip should widen the edit panel (${defaultRailWidth} -> ${widenedRailWidth})`);
+  assert.equal(Number(await grip.getAttribute("aria-valuenow")), widenedRailWidth,
+    "the grip should report the current width through aria-valuenow");
+  await grip.dblclick();
+  const resetRailWidth = await readRailWidth();
+  assert(Math.abs(resetRailWidth - defaultRailWidth) <= 1, `double-click should reset the panel to its default width (${resetRailWidth} vs ${defaultRailWidth})`);
+  await grip.focus();
+  const widthBeforeKey = await readRailWidth();
+  await page.keyboard.press("ArrowRight");
+  assert.equal(await readRailWidth(), widthBeforeKey + 24, "arrow keys should nudge the panel width");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".reader-edit-panel", { state: "detached" });
+  assert.equal(await grip.isVisible(), false, "closing the edit should hide the resize grip");
+  const persistedWidth = await readRailWidth();
+  await page.getByRole("button", { name: "Edit answer Markdown" }).click();
+  await page.waitForSelector(".reader-edit-panel");
+  assert.equal(await readRailWidth(), persistedWidth, "the chosen panel width should survive reopening within the session");
+  await grip.dblclick();
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".reader-edit-panel", { state: "detached" });
+  await page.click("#t-canvas");
+  await page.waitForSelector("body.mode-canvas");
+
   await context.close();
 
   const sessionContext = await browser.newContext();

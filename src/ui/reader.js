@@ -41,6 +41,7 @@ import { iconSvg } from "../core/html/icons.js";
 import { refreshNodeHtml } from "./renderer.js";
 import { registerLayer } from "./overlay/layer-stack.js";
 import { buildAiRevisionSurface, canReviseWithAi, openAiRevision } from "./ai-revision.js";
+import { onPointerGesture } from "./gestures.js";
 
 function anchorStart(node) {
   return node.origin?.anchor?.offset_start ?? 1e9;
@@ -76,6 +77,14 @@ export function registerReaderHooks(hooks) {
 var breadcrumbNodes = {};
 var noteNodes = {};
 var readerDraft = null;
+
+// The chosen edit-panel width persists for the page session as an inline
+// override on the static #reader-rail element (the rail is never recreated, so
+// reopening the panel keeps the last value). These bound that value; a
+// double-click removes the override and falls back to the default clamp().
+var READER_EDIT_MIN_WIDTH = 220;
+var READER_EDIT_MAX_WIDTH = 560;
+var READER_EDIT_WIDTH_STEP = 24;
 
 function marginNotesLayer(){ return document.getElementById("margin-notes"); }
 
@@ -337,6 +346,83 @@ function isCompactReader(){
   return !!(window.matchMedia && window.matchMedia("(max-width: 760px), (pointer: coarse)").matches);
 }
 
+// ---------------------------------------------------------------------------
+// Edit-panel width grip. A vertical handle on the rail's left edge appears only
+// while an edit is open. Dragging it overrides --reader-branch-rail on the rail
+// element (which is what both #reader-rail and the full-width panel measure
+// against), so one inline property resizes the whole edit surface. The element
+// is created once and stays in the static rail; CSS visibility (editing class,
+// compact query) decides when it is interactive.
+// ---------------------------------------------------------------------------
+
+function currentReaderEditPanelWidth(){
+  var rail = document.getElementById("reader-rail");
+  var computed = rail && parseFloat(getComputedStyle(rail).width);
+  return (computed && isFinite(computed)) ? Math.round(computed) : READER_EDIT_MIN_WIDTH;
+}
+
+function setReaderEditPanelWidth(width){
+  var rail = document.getElementById("reader-rail");
+  if (!rail) return;
+  width = Math.max(READER_EDIT_MIN_WIDTH, Math.min(READER_EDIT_MAX_WIDTH, Math.round(width)));
+  rail.style.setProperty("--reader-branch-rail", width + "px");
+  syncReaderEditGripAria();
+}
+
+function resetReaderEditPanelWidth(){
+  var rail = document.getElementById("reader-rail");
+  if (!rail) return;
+  rail.style.removeProperty("--reader-branch-rail");
+  syncReaderEditGripAria();
+}
+
+function syncReaderEditGripAria(){
+  var grip = document.querySelector(".reader-edit-grip");
+  if (grip) grip.setAttribute("aria-valuenow", String(currentReaderEditPanelWidth()));
+}
+
+function ensureReaderEditResizeGrip(){
+  var rail = document.getElementById("reader-rail");
+  if (!rail || rail.querySelector(".reader-edit-grip")) return;
+  var grip = document.createElement("div");
+  grip.className = "reader-edit-grip";
+  grip.setAttribute("role", "separator");
+  grip.setAttribute("aria-orientation", "vertical");
+  grip.setAttribute("aria-label", "Resize edit panel width");
+  grip.setAttribute("aria-valuemin", String(READER_EDIT_MIN_WIDTH));
+  grip.setAttribute("aria-valuemax", String(READER_EDIT_MAX_WIDTH));
+  grip.tabIndex = 0;
+  rail.appendChild(grip);
+  syncReaderEditGripAria();
+
+  onPointerGesture(grip,
+    function(e){
+      if (e.button !== 0) return false;
+      e.preventDefault();
+      document.body.classList.add("reader-resizing");
+      grip._rhStartX = e.clientX;
+      grip._rhStartW = currentReaderEditPanelWidth();
+      return true;
+    },
+    function(ev){
+      setReaderEditPanelWidth(grip._rhStartW + (ev.clientX - grip._rhStartX));
+    },
+    function(){
+      document.body.classList.remove("reader-resizing");
+      delete grip._rhStartX;
+      delete grip._rhStartW;
+    });
+
+  grip.addEventListener("dblclick", function(){ resetReaderEditPanelWidth(); });
+  grip.addEventListener("keydown", function(e){
+    var width = currentReaderEditPanelWidth();
+    if (e.key === "ArrowLeft"){ setReaderEditPanelWidth(width - READER_EDIT_WIDTH_STEP); e.preventDefault(); }
+    else if (e.key === "ArrowRight"){ setReaderEditPanelWidth(width + READER_EDIT_WIDTH_STEP); e.preventDefault(); }
+    else if (e.key === "Home"){ setReaderEditPanelWidth(READER_EDIT_MIN_WIDTH); e.preventDefault(); }
+    else if (e.key === "End"){ setReaderEditPanelWidth(READER_EDIT_MAX_WIDTH); e.preventDefault(); }
+  });
+}
+
 function buildReaderAnswerPreview(node){
   var draft = readerDraft;
   var previewNode = Object.assign({}, node, {
@@ -375,6 +461,7 @@ function renderReaderEditPanel(){
 
   rail.classList.add("reader-edit-panel-active");
   rail.setAttribute("aria-labelledby", "reader-edit-title");
+  ensureReaderEditResizeGrip();
   var oldPanel = rail.querySelector(".reader-edit-panel");
   if (oldPanel) oldPanel.remove();
 
@@ -545,6 +632,9 @@ function renderReaderEditPanel(){
     closeOnOutsidePointer: true,
     preventOutsidePointerDefault: true,
     restoreFocus: false,
+    // The width grip lives beside the form (outside its subtree), so a pointer
+    // that lands on it is operating the edit surface, not dismissing it.
+    ignoreOutsidePointer: function(e){ return !!(e.target && e.target.closest && e.target.closest(".reader-edit-grip")); },
     onClose: function(reason){
       if (reason === "escape") closeReaderAnswerDraft(true);
       else requestCloseReaderAnswerDraft(reason || "outside");

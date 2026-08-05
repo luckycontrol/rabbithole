@@ -243,6 +243,18 @@ body.mode-canvas #reader { display: none; }
 .reader-draft-preview { min-height: 0; }
 #reader-rail.reader-edit-panel-active { background: var(--bar-bg); }
 #reader-rail.reader-edit-panel-active .reader-rail-head, #reader-rail.reader-edit-panel-active #margin-notes { display: none; }
+/* The resize grip sits on the rail's left edge while an edit is open. It acts
+   as a resizable separator: focusable, arrow-key driven, double-click resets.
+   Created once in the static rail; visibility follows the editing class. */
+.reader-edit-grip { position: absolute; left: 0; top: 0; bottom: 0; width: 8px; z-index: 1; display: none;
+  cursor: col-resize; touch-action: none; }
+#reader-rail.reader-edit-panel-active .reader-edit-grip { display: block; }
+.reader-edit-grip::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 1px;
+  background: var(--border); transition: background var(--duration-fast) var(--ease-standard); }
+.reader-edit-grip:hover::after, .reader-edit-grip:focus-visible::after, body.reader-resizing .reader-edit-grip::after { background: var(--accent); }
+.reader-edit-grip:focus { outline: none; }
+.reader-edit-grip:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+body.reader-resizing { user-select: none; cursor: col-resize; }
 .reader-edit-panel { display: flex; width: 100%; min-height: 0; flex: 1; flex-direction: column; gap: 16px; overflow: hidden; padding: 20px 16px 16px; color: var(--fg); }
 .reader-edit-panel-head { flex: 0 0 auto; }
 .reader-edit-panel-head h2 { color: var(--fg-bold); font-family: var(--font-ui); font-size: 14px; font-weight: var(--weight-semibold); line-height: 1.3; }
@@ -286,7 +298,7 @@ body.mode-canvas #reader { display: none; }
    remaining width; the rail stays at the physical right edge and scrolls on
    its own, so PDF scrolling, prose scrolling, and branch browsing never fight
    over the same gesture. */
-#reader-rail { display: flex; width: var(--reader-branch-rail); min-width: 0; min-height: 0; flex: 0 0 var(--reader-branch-rail); flex-direction: column;
+#reader-rail { position: relative; display: flex; width: var(--reader-branch-rail); min-width: 0; min-height: 0; flex: 0 0 var(--reader-branch-rail); flex-direction: column;
   border-left: 1px solid var(--border); background: color-mix(in srgb, var(--bar-bg) 58%, var(--bg)); }
 .reader-rail-head { display: flex; min-height: 44px; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px;
   border-bottom: 1px solid var(--border); color: var(--fg-bold); font-family: var(--font-ui); font-size: 12px; font-weight: 600; }
@@ -339,6 +351,7 @@ body.mode-canvas #reader { display: none; }
   .reader-col { width: 100%; max-width: none; }
   #reader-rail, #margin-notes { display: none; }
   #reader-rail.reader-edit-panel-active { position: fixed; inset: var(--taskbar-clear) 0 0; z-index: var(--layer-reader); display: flex; width: auto; flex: none; border-left: 0; background: var(--bg); }
+  .reader-edit-grip { display: none; }
   body.reader-editing-compact #reader-document { display: none; }
   .reader-context { margin-bottom: 20px; overflow-wrap: anywhere; }
   .reader-answer-edit, .reader-ai-revise { min-width: 44px; min-height: 44px; padding-inline: 12px; }

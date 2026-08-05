@@ -73,6 +73,7 @@ import { openAnchoredSurface } from "./overlay/anchor.js";
 import { registerLayer } from "./overlay/layer-stack.js";
 import { refreshNodeHtml } from "./renderer.js";
 import { teardownNode } from "./node-teardown.js";
+import { activePointerGestures, onPointerGesture } from "./gestures.js";
 
 function isSelectionBranch(node) {
   return branchTypeOfNode(node) === BRANCH_SELECTION;
@@ -97,7 +98,6 @@ function defaultCanvasHooks(){
 var canvasLifecycle = createModuleLifecycle({ defaults: defaultCanvasHooks });
 var filmCameraHandle = null;
 var cardResizeObserver = null;
-var activePointerGestures = new Set();
 var canvasInsertToolbar = null;
 var canvasDraft = null;
 
@@ -865,34 +865,6 @@ function layoutNode(node){
     }
   }
 
-  // Shared pointer-gesture wiring: cleans up on pointerup AND pointercancel/
-  // lostpointercapture, so an interrupted gesture (touch cancel, window blur)
-  // never leaves move listeners or drag state stuck.
-  function onPointerGesture(handle, onDown, onMove, onUp, scope){
-    function pointerDown(e){
-      if (!onDown(e)) return;
-      try { handle.setPointerCapture(e.pointerId); } catch(_e){}
-      function move(ev){ if (ev.pointerId === e.pointerId) onMove(ev); }
-      function finish(commit){
-        handle.removeEventListener("pointermove", move);
-        handle.removeEventListener("pointerup", done);
-        handle.removeEventListener("pointercancel", done);
-        handle.removeEventListener("lostpointercapture", done);
-        activePointerGestures.delete(cancel);
-        try { handle.releasePointerCapture(e.pointerId); } catch(_e){}
-        if (commit) onUp();
-      }
-      function done(ev){ if (ev.pointerId === e.pointerId) finish(true); }
-      function cancel(){ finish(false); }
-      activePointerGestures.add(cancel);
-      handle.addEventListener("pointermove", move);
-      handle.addEventListener("pointerup", done);
-      handle.addEventListener("pointercancel", done);
-      handle.addEventListener("lostpointercapture", done);
-    }
-    if (scope) scope.listen(handle, "pointerdown", pointerDown);
-    else handle.addEventListener("pointerdown", pointerDown);
-  }
   // The head carries the card's own gestures — drag it, double-click to open — but it also
   // holds the controls, and a pointer that lands on one of those is operating the control,
   // not the card. Every head gesture owes that distinction the same answer.
