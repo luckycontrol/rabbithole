@@ -3,7 +3,7 @@
  * exists only for state or artifact inspection that cannot be observed through
  * the product UI; product actions themselves must be driven through real UI.
  */
-export function installTestSeam({ store, currentHoleId, createDocument, exportSnapshot, exportPortable }) {
+export function installTestSeam({ store, currentHoleId, createDocument, exportSnapshot, exportPortable, failNextAnswerSave }) {
   window.__rabbitholeTest = Object.freeze({
     // Routing/reload tests need the raw persistence identity, which the product UI does not expose.
     currentHoleId,
@@ -26,6 +26,8 @@ export function installTestSeam({ store, currentHoleId, createDocument, exportSn
     exportSnapshot,
     // Portable-projection tests need pre-download artifact strings to compare with the snapshot HTML carrier.
     exportPortable,
+    // Save-recovery tests need a deterministic transport failure without changing product actions.
+    failNextAnswerSave: failNextAnswerSave || (() => {}),
   });
 }
 

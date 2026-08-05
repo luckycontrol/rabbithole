@@ -39,6 +39,7 @@ import { buildOriginCrop } from "./origin-provenance.js";
 import { buttonMarkup } from "../core/html/button-markup.js";
 import { iconSvg } from "../core/html/icons.js";
 import { refreshNodeHtml } from "./renderer.js";
+import { registerLayer } from "./overlay/layer-stack.js";
 
 function anchorStart(node) {
   return node.origin?.anchor?.offset_start ?? 1e9;
@@ -81,8 +82,10 @@ function marginNotesLayer(){ return document.getElementById("margin-notes"); }
   // READER
   // ===========================================================================
 export function openNode(id){
-    if (!nodes[id]) return;
-    if (readerDraft && readerDraft.nodeId !== id) readerDraft = null;
+    if (!nodes[id]) return false;
+    if (readerDraft && readerDraft.nodeId !== id){
+      if (!requestCloseReaderAnswerDraft("navigation", function(){ openNode(id); })) return false;
+    }
     var transferredPosition = document.body.classList.contains("mode-canvas")
       ? captureContentPosition(nodes[id].bodyEl)
       : null;
@@ -106,6 +109,7 @@ export function openNode(id){
     renderMarginNotes();
     readerLifecycle.hooks.updateComposerState();
     readerLifecycle.hooks.scheduleViewSave();
+    return true;
   }
 
 export function renderBreadcrumb(){
@@ -133,25 +137,9 @@ export function renderBreadcrumb(){
         crumb.tabIndex = 0;
         crumb.removeAttribute("aria-current");
       }
-      if (cur && readerDraft && readerDraft.nodeId === n.id) {
-        var titleInput = crumb._titleInput;
-        if (!titleInput) {
-          titleInput = document.createElement("input");
-          titleInput.type = "text";
-          titleInput.className = "reader-answer-title-input";
-          titleInput.setAttribute("aria-label", "Card title");
-          titleInput.autocomplete = "off";
-          titleInput.addEventListener("input", function(){
-            if (readerDraft && readerDraft.nodeId === n.id) readerDraft.title = titleInput.value;
-          });
-          crumb._titleInput = titleInput;
-        }
-        titleInput.value = readerDraft.title ?? n.title ?? "";
-        crumb.replaceChildren(titleInput);
-        readerDraft.titleInput = titleInput;
-      } else {
-        crumb.textContent = n.title || "Untitled";
-      }
+      crumb.textContent = cur && readerDraft && readerDraft.nodeId === n.id
+        ? (readerDraft.title || "Untitled")
+        : (n.title || "Untitled");
       if (i > 0) fragment.appendChild(crumb._sep);
       fragment.appendChild(crumb);
     });
@@ -192,7 +180,10 @@ export function initReader(){
     readerScope.listen(notes, "mouseout", function(e){ syncNoteHover(e, false); });
     readerScope.listen(document.getElementById("r-textdown"), "click", function(){ setReaderFontScale(-0.1); });
     readerScope.listen(document.getElementById("r-textup"), "click", function(){ setReaderFontScale(0.1); });
-    readerScope.listen(document.getElementById("t-canvas"), "click", function(){ if (mode === "canvas") return; readerLifecycle.hooks.setMode("canvas"); });
+    readerScope.listen(document.getElementById("t-canvas"), "click", function(){
+      if (mode === "canvas") return;
+      requestCloseReaderAnswerDraft("mode", function(){ readerLifecycle.hooks.setMode("canvas"); });
+    });
     return disposeReader;
     } catch (error) {
       disposeReader();
@@ -205,9 +196,11 @@ export function disposeReader(){
   }
 
 function disposeReaderResources(resetHooks){
+    if (readerDraft && readerDraft.unregisterLayer) readerDraft.unregisterLayer({ restoreFocus: false });
     readerLifecycle.dispose(resetHooks);
     breadcrumbNodes = {};
     noteNodes = {};
+    document.body.classList.remove("reader-editing", "reader-editing-compact");
     readerDraft = null;
     kbdMarkIdx = -1;
   }
@@ -251,11 +244,11 @@ export function renderReaderBody(){
     }
     var crop = buildOriginCrop(node, "reader");
     if (crop) col.appendChild(crop);
-    var editing = readerDraft && readerDraft.nodeId === node.id;
+    var editing = readerDraft && readerDraft.nodeId === node.id && !isCompactReader();
     if (!editing && isAnswerNodeEditable(node)) col.appendChild(buildReaderAnswerActions(node));
-    var dc = editing ? buildReaderAnswerEditor(node) : buildDocContent(node, READER_BASE);
+    var dc = editing ? buildReaderAnswerPreview(node) : buildDocContent(node, READER_BASE);
     col.appendChild(dc);
-    if (!editing) applyChildHighlights(dc, node);
+    applyChildHighlights(dc, node);
     var isPdfReader = dc.classList.contains("rh-pdf");
     var isPdfViewport = isPdfReader && !node.parent_id && !crop;
     readerMain.classList.toggle("pdf-reader", isPdfReader);
@@ -264,7 +257,8 @@ export function renderReaderBody(){
     col.classList.toggle("pdf-reader-viewport", isPdfViewport);
     readerMain.appendChild(col);
     // Each document remembers where you were; a first open starts at the top.
-    readerMain.scrollTop = node._scrollTop || 0;
+    readerMain.scrollTop = editing ? (readerDraft.scrollTop || 0) : (node._scrollTop || 0);
+    if (editing && readerDraft.contentPosition) restoreContentPosition(readerMain, readerDraft.contentPosition);
   }
 
 function isAnswerNodeEditable(node){
@@ -302,61 +296,352 @@ function openReaderAnswerDraft(node){
   readerDraft = {
     nodeId: node.id,
     scrollTop: node._scrollTop,
+    contentPosition: captureContentPosition(readerMain),
     title: node.title || "",
     markdown: node.md || "",
+    trigger: readerMain.querySelector(".reader-answer-edit"),
+    form: null,
     titleInput: null,
     textarea: null,
+    saveButton: null,
+    cancelButton: null,
+    retryButton: null,
+    status: null,
+    compactPreview: null,
+    mobileMode: "write",
+    error: "",
+    saving: false,
+    pendingClose: null,
+    unregisterLayer: null,
   };
+  document.body.classList.add("reader-editing");
+  if (isCompactReader()) document.body.classList.add("reader-editing-compact");
   renderBreadcrumb();
   renderReaderBody();
+  renderReaderEditPanel();
 }
 
-function buildReaderAnswerEditor(node){
+function isCompactReader(){
+  return !!(window.matchMedia && window.matchMedia("(max-width: 760px), (pointer: coarse)").matches);
+}
+
+function buildReaderAnswerPreview(node){
+  var draft = readerDraft;
+  var previewNode = Object.assign({}, node, {
+    md: String(draft?.markdown ?? node.md ?? ""),
+    html: "",
+    _htmlFor: null,
+    _contentDisposers: null,
+  });
+  var dc = buildDocContent(previewNode, READER_BASE);
+  dc.classList.add("reader-draft-preview");
+  return dc;
+}
+
+function replaceReaderDraftPreview(){
+  var draft = readerDraft;
+  var node = draft && nodes[draft.nodeId];
+  if (!draft || !node || mode !== "reader" || currentNodeId !== node.id) return;
+  var current = readerMain.querySelector(".reader-draft-preview");
+  if (!current){ renderReaderBody(); return; }
+  var position = captureContentPosition(readerMain);
+  var next = buildReaderAnswerPreview(node);
+  if (current._rhDispose) current._rhDispose();
+  current.replaceWith(next);
+  applyChildHighlights(next, node);
+  restoreContentPosition(readerMain, position);
+  draft.scrollTop = readerMain.scrollTop;
+  draft.contentPosition = captureContentPosition(readerMain);
+}
+
+function renderReaderEditPanel(){
+  var draft = readerDraft;
+  var node = draft && nodes[draft.nodeId];
+  var rail = document.getElementById("reader-rail");
+  if (!draft || !node || !rail) return;
+  if (draft.form && draft.form.isConnected) return;
+
+  rail.classList.add("reader-edit-panel-active");
+  rail.setAttribute("aria-labelledby", "reader-edit-title");
+  var oldPanel = rail.querySelector(".reader-edit-panel");
+  if (oldPanel) oldPanel.remove();
+
   var form = document.createElement("form");
-  form.className = "reader-answer-editor";
+  form.className = "reader-edit-panel";
   form.setAttribute("aria-label", "Edit answer");
+
+  var head = document.createElement("div");
+  head.className = "reader-edit-panel-head";
+  var heading = document.createElement("h2");
+  heading.id = "reader-edit-title";
+  heading.textContent = "Edit answer";
+  var helper = document.createElement("p");
+  helper.textContent = "Changes stay in this draft until you save.";
+  head.append(heading, helper);
+
+  var body = document.createElement("div");
+  body.className = "reader-edit-panel-body";
+
+  var titleField = document.createElement("label");
+  titleField.className = "reader-edit-field reader-edit-title-field";
+  var titleLabel = document.createElement("span");
+  titleLabel.textContent = "Title";
+  var titleInput = document.createElement("input");
+  titleInput.id = "reader-answer-title";
+  titleInput.type = "text";
+  titleInput.className = "reader-edit-title-input";
+  titleInput.setAttribute("aria-label", "Answer title");
+  titleInput.autocomplete = "off";
+  titleInput.value = draft.title;
+  titleField.append(titleLabel, titleInput);
+
+  var modeSwitch = document.createElement("div");
+  modeSwitch.className = "reader-edit-mode-switch";
+  modeSwitch.setAttribute("role", "tablist");
+  modeSwitch.setAttribute("aria-label", "Editor mode");
+  var writeTab = document.createElement("button");
+  writeTab.type = "button";
+  writeTab.className = "reader-edit-mode-tab";
+  writeTab.dataset.mode = "write";
+  writeTab.setAttribute("role", "tab");
+  writeTab.setAttribute("aria-controls", "reader-edit-write");
+  writeTab.textContent = "Write";
+  var previewTab = document.createElement("button");
+  previewTab.type = "button";
+  previewTab.className = "reader-edit-mode-tab";
+  previewTab.dataset.mode = "preview";
+  previewTab.setAttribute("role", "tab");
+  previewTab.setAttribute("aria-controls", "reader-edit-preview");
+  previewTab.textContent = "Preview";
+  modeSwitch.append(writeTab, previewTab);
+
+  var writeSurface = document.createElement("div");
+  writeSurface.id = "reader-edit-write";
+  writeSurface.className = "reader-edit-write";
+  writeSurface.setAttribute("role", "tabpanel");
+  var markdownField = document.createElement("label");
+  markdownField.className = "reader-edit-field reader-edit-markdown-field";
+  var markdownLabel = document.createElement("span");
+  markdownLabel.textContent = "Markdown";
   var textarea = document.createElement("textarea");
-  textarea.className = "reader-answer-editor-content";
+  textarea.id = "reader-answer-markdown";
+  textarea.className = "reader-edit-markdown-input";
   textarea.setAttribute("aria-label", "Answer content");
   textarea.placeholder = "Write Markdown…";
-  var draft = readerDraft;
-  textarea.value = draft?.markdown ?? node.md ?? "";
-  textarea.addEventListener("input", function(){
-    if (readerDraft === draft) draft.markdown = textarea.value;
-  });
+  textarea.spellcheck = false;
+  textarea.value = draft.markdown;
+  markdownField.append(markdownLabel, textarea);
+  writeSurface.appendChild(markdownField);
+
+  var previewSurface = document.createElement("div");
+  previewSurface.id = "reader-edit-preview";
+  previewSurface.className = "reader-edit-compact-preview";
+  previewSurface.setAttribute("role", "tabpanel");
+  previewSurface.hidden = true;
+
+  var status = document.createElement("div");
+  status.className = "reader-edit-status";
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+
+  body.append(titleField, modeSwitch, writeSurface, previewSurface, status);
+
   var actions = document.createElement("div");
-  actions.className = "reader-answer-editor-actions";
+  actions.className = "reader-edit-actions";
   actions.innerHTML =
-    buttonMarkup({ bare: true, className: "reader-answer-editor-button", label: "Cancel" }) +
-    buttonMarkup({ bare: true, className: "reader-answer-editor-button primary", label: "Save answer", svgIconHtml: iconSvg("check") });
+    buttonMarkup({ bare: true, className: "reader-edit-button", label: "Cancel" }) +
+    buttonMarkup({ bare: true, className: "reader-edit-button primary", label: "Save answer", svgIconHtml: iconSvg("check") });
   var cancel = actions.querySelector("button");
   var save = actions.querySelector(".primary");
-  form.append(textarea, actions);
-  if (draft) draft.textarea = textarea;
-  cancel.addEventListener("click", function(){ closeReaderAnswerDraft(true); });
+  var retry = document.createElement("button");
+  retry.type = "button";
+  retry.className = "reader-edit-retry";
+  retry.textContent = "Retry save";
+  retry.hidden = true;
+  actions.appendChild(retry);
+
+  var discard = document.createElement("div");
+  discard.className = "reader-edit-discard-confirm";
+  discard.hidden = true;
+  discard.setAttribute("role", "alertdialog");
+  discard.setAttribute("aria-label", "Discard unsaved draft");
+  var discardMessage = document.createElement("p");
+  discardMessage.textContent = "Discard this unsaved draft?";
+  var discardActions = document.createElement("div");
+  discardActions.className = "reader-edit-discard-actions";
+  discardActions.innerHTML =
+    buttonMarkup({ bare: true, className: "reader-edit-button", label: "Keep editing" }) +
+    buttonMarkup({ bare: true, className: "reader-edit-button danger", label: "Discard draft" });
+  var keepEditing = discardActions.querySelector("button");
+  var discardDraft = discardActions.querySelector(".danger");
+  discard.append(discardMessage, discardActions);
+
+  form.append(head, body, actions, discard);
+  rail.appendChild(form);
+
+  draft.form = form;
+  draft.titleInput = titleInput;
+  draft.textarea = textarea;
+  draft.saveButton = save;
+  draft.cancelButton = cancel;
+  draft.retryButton = retry;
+  draft.status = status;
+  draft.compactPreview = previewSurface;
+
+  titleInput.addEventListener("input", function(){
+    if (readerDraft !== draft) return;
+    draft.title = titleInput.value;
+    draft.error = "";
+    renderBreadcrumb();
+    syncReaderEditPanel(draft);
+  });
+  textarea.addEventListener("input", function(){
+    if (readerDraft !== draft) return;
+    draft.markdown = textarea.value;
+    draft.error = "";
+    if (!isCompactReader()) replaceReaderDraftPreview();
+    if (draft.mobileMode === "preview") renderCompactDraftPreview(draft);
+    syncReaderEditPanel(draft);
+  });
+  cancel.addEventListener("click", function(){ requestCloseReaderAnswerDraft("cancel"); });
   save.addEventListener("click", function(){ form.requestSubmit(); });
+  retry.addEventListener("click", function(){ form.requestSubmit(); });
   form.addEventListener("submit", function(e){ e.preventDefault(); saveReaderAnswerDraft(); });
   form.addEventListener("keydown", function(e){
-    if (e.key === "Escape") { e.preventDefault(); closeReaderAnswerDraft(true); }
-    else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); form.requestSubmit(); }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      requestCloseReaderAnswerDraft("escape");
+    } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      form.requestSubmit();
+    }
+  });
+  writeTab.addEventListener("click", function(){ setReaderEditMode("write"); });
+  previewTab.addEventListener("click", function(){ setReaderEditMode("preview"); });
+  keepEditing.addEventListener("click", function(){ hideReaderDiscardConfirmation(); });
+  discardDraft.addEventListener("click", function(){ discardReaderAnswerDraft(); });
+
+  draft.writeTab = writeTab;
+  draft.previewTab = previewTab;
+  draft.discard = discard;
+  draft.keepEditing = keepEditing;
+  syncReaderEditPanel(draft);
+  setReaderEditMode(draft.mobileMode);
+  draft.unregisterLayer = registerLayer({
+    element: form,
+    trigger: draft.trigger,
+    closeOnOutsidePointer: true,
+    preventOutsidePointerDefault: true,
+    restoreFocus: false,
+    onClose: function(reason){
+      if (reason === "escape") closeReaderAnswerDraft(true);
+      else requestCloseReaderAnswerDraft(reason || "outside");
+    }
   });
   requestAnimationFrame(function(){
     if (readerDraft !== draft) return;
-    var target = draft.titleInput || textarea;
+    var target = isCompactReader() ? textarea : titleInput;
     if (target && target.isConnected) target.focus({ preventScroll: true });
   });
-  return form;
+}
+
+function syncReaderEditPanel(draft){
+  if (!draft || !draft.form) return;
+  var dirty = isReaderAnswerDraftDirty(draft);
+  draft.form.classList.toggle("has-error", !!draft.error);
+  draft.saveButton.disabled = draft.saving;
+  draft.cancelButton.disabled = false;
+  draft.retryButton.hidden = !draft.error || draft.saving;
+  draft.saveButton.setAttribute("aria-busy", draft.saving ? "true" : "false");
+  draft.status.classList.toggle("error", !!draft.error);
+  draft.status.textContent = draft.saving
+    ? "Saving answer…"
+    : draft.error
+      ? "Couldn't save the answer. Your draft is still here. Check the connection and try again."
+      : (dirty ? "Unsaved draft" : "Draft changes stay local until you save.");
+}
+
+function setReaderEditMode(nextMode){
+  var draft = readerDraft;
+  if (!draft || !draft.form) return;
+  draft.mobileMode = nextMode === "preview" ? "preview" : "write";
+  var preview = draft.mobileMode === "preview";
+  draft.writeTab.setAttribute("aria-selected", preview ? "false" : "true");
+  draft.previewTab.setAttribute("aria-selected", preview ? "true" : "false");
+  draft.writeTab.classList.toggle("active", !preview);
+  draft.previewTab.classList.toggle("active", preview);
+  draft.form.classList.toggle("preview-mode", preview);
+  draft.form.querySelector(".reader-edit-write").hidden = preview;
+  draft.compactPreview.hidden = !preview;
+  if (preview) renderCompactDraftPreview(draft);
+}
+
+function renderCompactDraftPreview(draft){
+  if (!draft || !draft.compactPreview || draft.mobileMode !== "preview") return;
+  var node = nodes[draft.nodeId];
+  if (!node) return;
+  var previous = draft.compactPreview.querySelector(".doc-content");
+  if (previous && previous._rhDispose) previous._rhDispose();
+  var preview = buildReaderAnswerPreview(node);
+  applyChildHighlights(preview, node);
+  draft.compactPreview.replaceChildren(preview);
+}
+
+function isReaderAnswerDraftDirty(draft){
+  var node = draft && nodes[draft.nodeId];
+  if (!draft || !node) return false;
+  return String(draft.title ?? "") !== String(node.title || "")
+    || String(draft.markdown ?? "") !== String(node.md || "");
+}
+
+function hideReaderDiscardConfirmation(){
+  if (!readerDraft || !readerDraft.discard) return;
+  readerDraft.pendingClose = null;
+  readerDraft.discard.hidden = true;
+  if (readerDraft.titleInput && readerDraft.titleInput.isConnected) readerDraft.titleInput.focus({ preventScroll: true });
+}
+
+function discardReaderAnswerDraft(){
+  var draft = readerDraft;
+  if (!draft) return;
+  var continuation = draft.pendingClose;
+  draft.pendingClose = null;
+  closeReaderAnswerDraft(!continuation);
+  if (typeof continuation === "function") continuation();
+}
+
+function requestCloseReaderAnswerDraft(reason, continuation){
+  var draft = readerDraft;
+  if (!draft){ if (typeof continuation === "function") continuation(); return true; }
+  if (draft.saving){
+    flashHint("Wait for the answer to finish saving.");
+    return false;
+  }
+  if (!isReaderAnswerDraftDirty(draft)){
+    closeReaderAnswerDraft(!continuation);
+    if (typeof continuation === "function") continuation();
+    return true;
+  }
+  draft.pendingClose = typeof continuation === "function" ? continuation : null;
+  if (draft.discard){
+    draft.discard.hidden = false;
+    draft.keepEditing?.focus({ preventScroll: true });
+  }
+  return false;
 }
 
 function closeReaderAnswerDraft(restoreFocus){
   var draft = readerDraft;
   readerDraft = null;
   if (!draft) return;
+  if (draft.unregisterLayer) draft.unregisterLayer({ restoreFocus: false });
+  document.body.classList.remove("reader-editing", "reader-editing-compact");
   var node = nodes[draft.nodeId];
   if (!node || mode !== "reader" || currentNodeId !== node.id) return;
   node._scrollTop = draft.scrollTop;
   renderBreadcrumb();
   renderReaderBody();
+  renderMarginNotes();
   if (restoreFocus) requestAnimationFrame(function(){
     readerMain.querySelector(".reader-answer-edit")?.focus({ preventScroll: true });
   });
@@ -365,53 +650,40 @@ function closeReaderAnswerDraft(restoreFocus){
 function saveReaderAnswerDraft(){
   var draft = readerDraft;
   var node = draft && nodes[draft.nodeId];
-  if (!draft || !node) return;
+  if (!draft || !node || draft.saving) return;
   if (!isAnswerNodeEditable(node)) { closeReaderAnswerDraft(true); return; }
   var title = String(draft.title ?? node.title ?? "").trim() || "Untitled";
   var markdown = String(draft.markdown ?? draft.textarea?.value ?? "").trim();
-  readerDraft = null;
-  node._scrollTop = draft.scrollTop;
-  updateReaderAnswerContent(node, title, markdown);
-}
-
-function updateReaderAnswerContent(node, title, markdown){
-  var previous = { title: node.title, markdown: node.md };
-  node.title = title;
-  node.md = markdown;
-  refreshNodeHtml(node);
-  refreshCanvasNodeContent(node);
-  if (node.titleEl){ node.titleEl.textContent = title; node.titleEl.title = title; }
-  if (mode === "reader" && currentNodeId === node.id){
-    renderBreadcrumb();
-    renderReaderBody();
-    renderMarginNotes();
-  }
+  if (!isReaderAnswerDraftDirty(draft)) { closeReaderAnswerDraft(true); return; }
+  draft.title = title;
+  draft.markdown = markdown;
+  draft.error = "";
+  draft.saving = true;
+  syncReaderEditPanel(draft);
   var payload = { type: "answer_node_content", node_id: node.id, title: title, markdown: markdown };
   Promise.resolve(readerLifecycle.hooks.post(payload)).then(function(result){
-    if (result && result.ok !== false) return;
-    restoreReaderAnswerContent(node, previous, title, markdown);
-  }, function(){ restoreReaderAnswerContent(node, previous, title, markdown); });
-}
-
-function restoreReaderAnswerContent(node, previous, expectedTitle, expectedMarkdown){
-  if (nodes[node.id] !== node || node.title !== expectedTitle || node.md !== expectedMarkdown) return;
-  node.title = previous.title;
-  node.md = previous.markdown;
-  refreshNodeHtml(node);
-  refreshCanvasNodeContent(node);
-  if (node.titleEl){ node.titleEl.textContent = node.title; node.titleEl.title = node.title; }
-  if (mode === "reader" && currentNodeId === node.id){
-    renderBreadcrumb();
-    renderReaderBody();
-    renderMarginNotes();
-  }
-  flashHint("Couldn't save the answer.");
+    if (!result || result.ok === false) throw new Error(result?.error || "The answer could not be saved.");
+    if (readerDraft !== draft || nodes[node.id] !== node) return;
+    node.title = title;
+    node.md = markdown;
+    refreshNodeHtml(node);
+    refreshCanvasNodeContent(node);
+    if (node.titleEl){ node.titleEl.textContent = title; node.titleEl.title = title; }
+    node._scrollTop = draft.scrollTop;
+    closeReaderAnswerDraft(true);
+  }).catch(function(error){
+    if (readerDraft !== draft) return;
+    draft.saving = false;
+    draft.error = error?.message || "The answer could not be saved.";
+    syncReaderEditPanel(draft);
+    flashHint("Couldn't save the answer. Your draft is still here.");
+  });
 }
   // Open the parent and land on the exact origin when this branch is anchored.
 export function jumpToOrigin(node, source){
     var parent = nodes[node.parent_id];
     if (!parent) return;
-    openNode(parent.id);
+    if (!openNode(parent.id)) return;
     var target = readerMain.querySelector('[data-child="' + node.id + '"].rh-pdf-mark, mark[data-child="' + node.id + '"]');
     if (!target) return;
     scrollMarkIntoView(target, 0.38, source);
@@ -428,6 +700,10 @@ function scrollMarkIntoView(mark, viewportRatio, source){
   function onReaderScroll(){
     var n = nodes[currentNodeId];
     if (n) n._scrollTop = readerMain.scrollTop;
+    if (readerDraft && readerDraft.nodeId === currentNodeId){
+      readerDraft.scrollTop = readerMain.scrollTop;
+      readerDraft.contentPosition = captureContentPosition(readerMain);
+    }
     readerLifecycle.hooks.scheduleViewSave();
   }
 
@@ -469,6 +745,17 @@ function scrollMarkIntoView(mark, viewportRatio, source){
   // order. Keeping one surface for both is especially important for PDFs,
   // whose own scroller cannot share an old absolute text margin.
 export function renderMarginNotes(){
+    if (readerDraft && readerDraft.nodeId === currentNodeId){
+      if (!readerDraft.form || !readerDraft.form.isConnected) renderReaderEditPanel();
+      return;
+    }
+    var rail = document.getElementById("reader-rail");
+    if (rail){
+      rail.classList.remove("reader-edit-panel-active");
+      rail.setAttribute("aria-labelledby", "reader-rail-title");
+      var editor = rail.querySelector(".reader-edit-panel");
+      if (editor) editor.remove();
+    }
     var layer = marginNotesLayer();
     if (!layer) return;
     var kids = childrenOf(currentNodeId).sort(function(a,b){

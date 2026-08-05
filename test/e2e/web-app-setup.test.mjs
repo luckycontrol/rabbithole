@@ -957,40 +957,167 @@ async function verifyAskKeyUxAndRail() {
   const answerDraft = page.locator(".canvas-answer-draft");
   assert.match(await answerDraft.getByRole("textbox", { name: "Answer content" }).inputValue(), /This answer is ready to edit\./,
     "the answer editor should start with the generated Markdown source");
-  await answerDraft.getByRole("textbox", { name: "Answer content" }).fill("## Revised answer\n\nA **user-edited** Markdown answer.");
+  const canvasEditedMarkdown = [
+    "## Revised answer",
+    "A **user-edited** Markdown answer.",
+    ...Array.from({ length: 18 }, (_, index) => `Reader position paragraph ${index + 1} keeps the rendered document comfortably scrollable.`),
+  ].join("\n\n");
+  await answerDraft.getByRole("textbox", { name: "Answer content" }).fill(canvasEditedMarkdown);
   await answerDraft.getByRole("button", { name: "Save answer" }).click();
   await page.locator(`.node[data-id="${editedAnswerId}"]`).getByText("user-edited Markdown answer.").waitFor();
-  await page.locator(`.node[data-id="${editedAnswerId}"] .node-head`).dblclick();
-  await page.waitForSelector("body:not(.mode-canvas) #reader-main");
-  await page.getByRole("button", { name: "Edit answer Markdown" }).click();
-  const readerAnswerDraft = page.locator(".reader-answer-editor");
-  assert.equal(await page.locator(".reader-answer-editor-head").count(), 0,
-    "Reader editing should stay inline instead of opening an Edit answer panel");
-  const readerTitleInput = page.getByRole("textbox", { name: "Card title" });
-  assert.equal(await readerTitleInput.count(), 1, "Reader editing should expose the current card title in place");
-  assert.equal(await readerTitleInput.inputValue(), "Can I revise this answer?",
-    "Reader title editing should start with the current card title");
-  assert.match(await readerAnswerDraft.getByRole("textbox", { name: "Answer content" }).inputValue(), /\*\*user-edited\*\*/,
-    "opening a card in Reader should preserve its current Markdown in the answer editor");
-  await readerTitleInput.fill("Reader title revision");
-  await readerAnswerDraft.getByRole("textbox", { name: "Answer content" }).fill("## Reader revision\n\nA **Reader-edited** Markdown answer.");
-  await readerAnswerDraft.getByRole("button", { name: "Save answer" }).click();
-  await page.locator("#reader-main").getByText("Reader-edited Markdown answer.").waitFor();
-  assert.equal(await page.locator('.crumb[aria-current="page"]').innerText(), "Reader title revision",
-    "Reader should render the saved card title in the breadcrumb");
-  await page.click("#t-canvas");
-  await page.waitForSelector("body.mode-canvas");
-  const readerEditedCard = page.locator(".node[data-id=\"" + editedAnswerId + "\"]");
-  await readerEditedCard.getByText("Reader title revision").waitFor();
-  await page.locator(`.node[data-id="${editedAnswerId}"]`).getByText("Reader-edited Markdown answer.").waitFor();
   await page.waitForFunction(async ({ nodeId, markdown }) => {
     const hole = await window.__rabbitholeTest.readStoredHole();
     return hole?.nodes?.find((node) => node.id === nodeId)?.markdown === markdown;
-  }, { nodeId: editedAnswerId, markdown: "## Reader revision\n\nA **Reader-edited** Markdown answer." });
+  }, { nodeId: editedAnswerId, markdown: canvasEditedMarkdown });
+  await page.locator(`.node[data-id="${editedAnswerId}"] .node-head`).dblclick();
+  await page.waitForSelector("body:not(.mode-canvas) #reader-main");
+  const originalReaderTitle = "Can I revise this answer?";
+  const originalReaderMarkdown = await page.evaluate(async (nodeId) => {
+    const hole = await window.__rabbitholeTest.readStoredHole();
+    return hole?.nodes?.find((node) => node.id === nodeId)?.markdown || "";
+  }, editedAnswerId);
+  const readerMarkdown = "## Reader revision\n\nA **Reader-edited** Markdown answer.\n\nThe saved Reader preview keeps Markdown rendering intact.";
+  const readerPositionBeforeEdit = await page.locator("#reader-main").evaluate((scroller) => {
+    scroller.scrollTop = Math.min(140, scroller.scrollHeight - scroller.clientHeight);
+    const content = scroller.querySelector(".doc-content");
+    const viewportTop = scroller.getBoundingClientRect().top;
+    const blocks = [...content.children];
+    const block = blocks.findIndex((candidate) => candidate.getBoundingClientRect().bottom > viewportTop);
+    const rect = blocks[block].getBoundingClientRect();
+    return { scrollTop: scroller.scrollTop, block, offset: (viewportTop - rect.top) / rect.height };
+  });
+  await page.getByRole("button", { name: "Edit answer Markdown" }).click();
+  const readerAnswerDraft = page.locator(".reader-edit-panel");
+  assert.equal(await readerAnswerDraft.count(), 1, "Reader editing should open the dedicated answer panel");
+  assert.equal(await page.locator("#reader-main .doc-content").count(), 1,
+    "desktop Reader editing should keep the rendered document visible");
+  assert.equal(await page.locator("#reader-rail.reader-edit-panel-active").count(), 1,
+    "desktop Reader editing should repurpose the branch rail");
+  const readerPositionAfterEdit = await page.locator("#reader-main").evaluate((scroller) => {
+    const content = scroller.querySelector(".doc-content");
+    const viewportTop = scroller.getBoundingClientRect().top;
+    const blocks = [...content.children];
+    const block = blocks.findIndex((candidate) => candidate.getBoundingClientRect().bottom > viewportTop);
+    const rect = blocks[block].getBoundingClientRect();
+    return { scrollTop: scroller.scrollTop, block, offset: (viewportTop - rect.top) / rect.height };
+  });
+  assert.equal(readerPositionAfterEdit.block, readerPositionBeforeEdit.block,
+    "opening Reader editing should preserve the visible rendered content block");
+  assert(Math.abs(readerPositionAfterEdit.offset - readerPositionBeforeEdit.offset) < 0.2,
+    `opening Reader editing should preserve the visible content offset (${JSON.stringify({ readerPositionBeforeEdit, readerPositionAfterEdit })})`);
+  const readerTitleInput = readerAnswerDraft.getByRole("textbox", { name: "Answer title" });
+  assert.equal(await readerTitleInput.inputValue(), originalReaderTitle,
+    "Reader edit panel should start with the current answer title");
+  assert.match(await readerAnswerDraft.getByRole("textbox", { name: "Answer content" }).inputValue(), /\*\*user-edited\*\*/,
+    "opening a card in Reader should preserve its current Markdown in the answer editor");
+  await readerTitleInput.fill("Draft-only title");
+  await readerAnswerDraft.getByRole("textbox", { name: "Answer content" }).fill("## Draft-only preview\n\nThis draft should render immediately without persistence.");
+  await page.locator("#reader-main").getByText("Draft-only preview").waitFor();
+  const beforeExplicitSave = await page.evaluate(async ({ nodeId, markdown, title }) => {
+    const node = (await window.__rabbitholeTest.readStoredHole()).nodes.find((candidate) => candidate.id === nodeId);
+    return { markdown: node?.markdown, title: node?.title, expectedMarkdown: markdown, expectedTitle: title };
+  }, { nodeId: editedAnswerId, markdown: originalReaderMarkdown, title: originalReaderTitle });
+  assert.equal(beforeExplicitSave.markdown, beforeExplicitSave.expectedMarkdown,
+    "typing a Reader draft must not persist Markdown before Save");
+  assert.equal(beforeExplicitSave.title, beforeExplicitSave.expectedTitle,
+    "typing a Reader draft must not persist the title before Save");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".reader-edit-panel", { state: "detached" });
+  assert.equal(await page.locator("#reader-main").getByText("Draft-only preview").count(), 0,
+    "Cancel should restore the original rendered content");
+  assert.equal(await page.locator('.crumb[aria-current="page"]').innerText(), originalReaderTitle,
+    "Cancel should restore the original title preview");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Edit answer Markdown");
+
+  await page.getByRole("button", { name: "Edit answer Markdown" }).click();
+  const readerEditorForSave = page.locator(".reader-edit-panel");
+  await readerEditorForSave.getByRole("textbox", { name: "Answer title" }).fill("Reader title revision");
+  await readerEditorForSave.getByRole("textbox", { name: "Answer content" }).fill(readerMarkdown);
+  await page.keyboard.press("Control+Enter");
+  await page.waitForSelector(".reader-edit-panel", { state: "detached" });
+  await page.locator("#reader-main").getByText("Reader-edited Markdown answer.", { exact: false }).waitFor();
+  assert.equal(await page.locator('.crumb[aria-current="page"]').innerText(), "Reader title revision",
+    "Reader should render the saved card title in the breadcrumb");
+  await page.waitForFunction(async ({ nodeId, markdown, title }) => {
+    const node = (await window.__rabbitholeTest.readStoredHole()).nodes.find((candidate) => candidate.id === nodeId);
+    return node?.markdown === markdown && node?.title === title;
+  }, { nodeId: editedAnswerId, markdown: readerMarkdown, title: "Reader title revision" });
+
+  const failureMarkdown = "## Failure recovery draft\n\nThis preview stays available while the save is retried.";
+  await page.getByRole("button", { name: "Edit answer Markdown" }).click();
+  const failureEditor = page.locator(".reader-edit-panel");
+  await failureEditor.getByRole("textbox", { name: "Answer title" }).fill("Failure recovery title");
+  await failureEditor.getByRole("textbox", { name: "Answer content" }).fill(failureMarkdown);
+  await page.evaluate(() => window.__rabbitholeTest.failNextAnswerSave());
+  await failureEditor.getByRole("button", { name: "Save answer" }).click();
+  await failureEditor.locator(".reader-edit-status.error").waitFor();
+  assert.equal(await failureEditor.getByRole("button", { name: "Retry save" }).isVisible(), true,
+    "a failed Reader save should expose an actionable retry");
+  await page.locator("#reader-main").getByText("Failure recovery draft").waitFor();
+  const afterFailedSave = await page.evaluate(async (nodeId) => {
+    const node = (await window.__rabbitholeTest.readStoredHole()).nodes.find((candidate) => candidate.id === nodeId);
+    return { markdown: node?.markdown, title: node?.title };
+  }, editedAnswerId);
+  assert.equal(afterFailedSave.markdown, readerMarkdown, "a failed save must not replace persisted Markdown");
+  assert.equal(afterFailedSave.title, "Reader title revision", "a failed save must not replace the persisted title");
+  await failureEditor.getByRole("button", { name: "Retry save" }).click();
+  await page.waitForSelector(".reader-edit-panel", { state: "detached" });
+  await page.locator("#reader-main").getByText("Failure recovery draft").waitFor();
+
+  await page.getByRole("button", { name: "Edit answer Markdown" }).click();
+  const guardedEditor = page.locator(".reader-edit-panel");
+  await guardedEditor.getByRole("textbox", { name: "Answer content" }).fill("## Unsaved navigation draft");
+  await page.click("#t-canvas");
+  await page.waitForSelector(".reader-edit-discard-confirm:not([hidden])");
+  assert.equal(await page.evaluate(() => document.body.classList.contains("mode-canvas")), false,
+    "navigation should remain in Reader while an unsaved draft is awaiting a decision");
+  await guardedEditor.getByRole("button", { name: "Keep editing" }).click();
+  assert.equal(await page.locator(".reader-edit-discard-confirm:not([hidden])").count(), 0,
+    "Keep editing should dismiss the unsaved-draft safeguard");
+  await page.click("#t-canvas");
+  await page.waitForSelector(".reader-edit-discard-confirm:not([hidden])");
+  await guardedEditor.getByRole("button", { name: "Discard draft" }).click();
+  await page.waitForSelector("body.mode-canvas");
+  const readerEditedCard = page.locator(".node[data-id=\"" + editedAnswerId + "\"]");
+  await readerEditedCard.getByText("Failure recovery title").waitFor();
+  await page.locator(`.node[data-id="${editedAnswerId}"]`).getByText("Failure recovery draft", { exact: false }).waitFor();
+  await page.waitForFunction(async ({ nodeId, markdown }) => {
+    const hole = await window.__rabbitholeTest.readStoredHole();
+    return hole?.nodes?.find((node) => node.id === nodeId)?.markdown === markdown;
+  }, { nodeId: editedAnswerId, markdown: failureMarkdown });
   await page.waitForFunction(async ({ nodeId, title }) => {
     const hole = await window.__rabbitholeTest.readStoredHole();
     return hole?.nodes?.find((node) => node.id === nodeId)?.title === title;
-  }, { nodeId: editedAnswerId, title: "Reader title revision" });
+  }, { nodeId: editedAnswerId, title: "Failure recovery title" });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.click("#t-reader");
+  await page.waitForSelector("body:not(.mode-canvas) #reader-main");
+  await page.getByRole("button", { name: "Edit answer Markdown" }).click();
+  const compactEditor = page.locator(".reader-edit-panel");
+  await compactEditor.waitFor();
+  assert.equal(await page.evaluate(() => document.body.classList.contains("reader-editing-compact")), true,
+    "compact Reader editing should use the focused full-screen surface");
+  assert.deepEqual(await compactEditor.getByRole("tab").evaluateAll((tabs) => tabs.map((tab) => tab.textContent.trim())), ["Write", "Preview"],
+    "compact Reader editing should expose Write and Preview modes");
+  const compactMarkdown = compactEditor.getByRole("textbox", { name: "Answer content" });
+  await compactMarkdown.fill(readerMarkdown);
+  await compactEditor.getByRole("tab", { name: "Preview" }).click();
+  await compactEditor.locator("#reader-edit-preview").getByText("Reader-edited Markdown answer.", { exact: false }).waitFor();
+  assert.equal(await compactMarkdown.isVisible(), false, "Preview mode should hide the Markdown writer");
+  const compactActions = await compactEditor.locator(".reader-edit-actions").evaluate((actions) => {
+    const rect = actions.getBoundingClientRect();
+    return { bottom: rect.bottom, viewport: innerHeight, visible: rect.width > 0 && rect.height > 0 };
+  });
+  assert.equal(compactActions.visible, true, "compact save actions should remain reachable in Preview mode");
+  assert(compactActions.bottom <= compactActions.viewport + 1, `compact save actions should stay inside the visual viewport (${JSON.stringify(compactActions)})`);
+  await compactEditor.getByRole("tab", { name: "Write" }).click();
+  assert.equal(await compactMarkdown.isVisible(), true, "Write mode should restore the Markdown writer");
+  await page.keyboard.press("Control+Enter");
+  await page.waitForSelector(".reader-edit-panel", { state: "detached" });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.click("#t-canvas");
+  await page.waitForSelector("body.mode-canvas");
   await page.waitForTimeout(1200); // view-state debounce + IndexedDB save debounce
   const hole = await page.evaluate(async () => window.__rabbitholeTest.readStoredHole());
   assert.equal(hole.root_id, rootIdWhileLoading, "the loading node should remain the root after streaming completes");

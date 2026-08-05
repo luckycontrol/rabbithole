@@ -45,6 +45,7 @@ export class DirectRabbitholeHost {
     this.lastEventId = 0;
     this.disposed = false;
     this.subscriptions = new Set();
+    this.answerSaveFailurePending = false;
     for (const node of this.state.nodes.values()) {
       // Raw read on purpose: a mid-run save persists the streamed body, which
       // normalizePdfExtension would reject against the original line offsets —
@@ -101,6 +102,10 @@ export class DirectRabbitholeHost {
     };
   }
 
+  injectAnswerSaveFailure() {
+    this.answerSaveFailurePending = true;
+  }
+
   async handleBrowserEvent(payload) {
     if (this.disposed) return { ok: false, error: "This Rabbithole is no longer active." };
     try {
@@ -113,7 +118,15 @@ export class DirectRabbitholeHost {
             return { ...result, node_id: String(event.node_id || "") };
           },
           canvas_node_content: (event) => this.applyPersistedBrowserEvent(event),
-          answer_node_content: (event) => this.applyPersistedBrowserEvent(event),
+          answer_node_content: async (event) => {
+            if (this.answerSaveFailurePending){
+              this.answerSaveFailurePending = false;
+              return { ok: false, error: "The test transport rejected this answer save." };
+            }
+            const result = this.applyPersistedBrowserEvent(event);
+            await this.flushSave();
+            return result;
+          },
           retry_branch: (event) => this.handleRetry(event),
           node_update: (event) => this.applyPersistedBrowserEvent(event),
           nodes_update: (event) => this.applyPersistedBrowserEvent(event),

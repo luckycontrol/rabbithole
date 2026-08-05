@@ -85,6 +85,7 @@ async function boot() {
       await currentHost?.flushSave();
       return buildRabbitholeExport(store, currentHoleId);
     },
+    failNextAnswerSave: () => currentHost?.injectAnswerSaveFailure(),
   });
 }
 
