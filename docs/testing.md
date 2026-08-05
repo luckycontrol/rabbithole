@@ -163,6 +163,16 @@ Each budget records its baseline, tolerance, ceiling, rationale, and measurement
 commit. A faster or smaller result does not require recalibration; a regression
 must not be hidden by raising a ceiling without explanation.
 
+#### Recorded trade-offs
+
+- **Byte gauges re-baselined at `885cd5b`.** The AI card revision workflow, the
+  Reader answer edit panel, and canvas text formatting each add UI surface to the
+  single self-contained bundle, pushing the client, frozen client, initial web JS,
+  and snapshot byte gauges past their previous ceilings. The self-contained page
+  constraint means this weight cannot be split into a lazily loaded chunk. Accepted
+  deliberately: these are local-first, single-user surfaces where load weight is not
+  the binding constraint. Trim the bundle before adding the next comparable surface.
+
 ### Packaging tests
 
 `test/packaging/install-smoke.test.mjs` packs the repository, installs the tarball
