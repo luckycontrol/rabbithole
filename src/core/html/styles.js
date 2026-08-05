@@ -243,12 +243,11 @@ body.mode-canvas #reader { display: none; }
 .reader-draft-preview { min-height: 0; }
 #reader-rail.reader-edit-panel-active { background: var(--bar-bg); }
 #reader-rail.reader-edit-panel-active .reader-rail-head, #reader-rail.reader-edit-panel-active #margin-notes { display: none; }
-/* The resize grip sits on the rail's left edge while an edit is open. It acts
-   as a resizable separator: focusable, arrow-key driven, double-click resets.
-   Created once in the static rail; visibility follows the editing class. */
-.reader-edit-grip { position: absolute; left: 0; top: 0; bottom: 0; width: 8px; z-index: 1; display: none;
+/* The resize grip sits on the rail's left edge, always visible on desktop. It
+   acts as a resizable separator: focusable, arrow-key driven, double-click
+   resets. Created once in the static rail; the compact query hides it. */
+.reader-edit-grip { position: absolute; left: 0; top: 0; bottom: 0; width: 8px; z-index: 1; display: block;
   cursor: col-resize; touch-action: none; }
-#reader-rail.reader-edit-panel-active .reader-edit-grip { display: block; }
 .reader-edit-grip::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 1px;
   background: var(--border); transition: background var(--duration-fast) var(--ease-standard); }
 .reader-edit-grip:hover::after, .reader-edit-grip:focus-visible::after, body.reader-resizing .reader-edit-grip::after { background: var(--accent); }

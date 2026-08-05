@@ -347,14 +347,14 @@ function isCompactReader(){
 }
 
 // ---------------------------------------------------------------------------
-// Edit-panel width grip. A vertical handle on the rail's left edge appears only
-// while an edit is open. It moves that left boundary: dragging it left (away
-// from the rail) widens the panel, dragging it right narrows it, and the arrow
-// keys follow the same sense. Dragging overrides --reader-branch-rail on the rail
-// element (which is what both #reader-rail and the full-width panel measure
-// against), so one inline property resizes the whole edit surface. The element
-// is created once and stays in the static rail; CSS visibility (editing class,
-// compact query) decides when it is interactive.
+// Branch-rail width grip. A vertical handle on the rail's left edge, always
+// visible on desktop (hidden on compact). It moves that left boundary: dragging
+// it left (away from the rail) widens the rail, dragging it right narrows it,
+// and the arrow keys follow the same sense. Dragging overrides
+// --reader-branch-rail on the rail element (which is what both #reader-rail and
+// the full-width edit panel measure against), so one inline property resizes
+// the surface in branch browsing and while editing. The element is created once
+// and stays in the static rail; the compact query hides it.
 // ---------------------------------------------------------------------------
 
 function currentReaderEditPanelWidth(){
@@ -390,7 +390,7 @@ function ensureReaderEditResizeGrip(){
   grip.className = "reader-edit-grip";
   grip.setAttribute("role", "separator");
   grip.setAttribute("aria-orientation", "vertical");
-  grip.setAttribute("aria-label", "Resize edit panel width");
+  grip.setAttribute("aria-label", "Resize branch panel width");
   grip.setAttribute("aria-valuemin", String(READER_EDIT_MIN_WIDTH));
   grip.setAttribute("aria-valuemax", String(READER_EDIT_MAX_WIDTH));
   grip.tabIndex = 0;
@@ -858,6 +858,9 @@ export function renderMarginNotes(){
     }
     var rail = document.getElementById("reader-rail");
     if (rail){
+      // The width grip serves branch browsing too, so make sure it exists even
+      // when no edit is open (idempotent).
+      ensureReaderEditResizeGrip();
       rail.classList.remove("reader-edit-panel-active");
       rail.setAttribute("aria-labelledby", "reader-rail-title");
       var editor = rail.querySelector(".reader-edit-panel");

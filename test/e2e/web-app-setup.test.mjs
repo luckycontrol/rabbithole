@@ -1429,7 +1429,7 @@ async function verifyAskKeyUxAndRail() {
   assert.equal(await readRailWidth(), widthBeforeKey - 24, "arrow keys should narrow the panel when moving the boundary right");
   await page.keyboard.press("Escape");
   await page.waitForSelector(".reader-edit-panel", { state: "detached" });
-  assert.equal(await grip.isVisible(), false, "closing the edit should hide the resize grip");
+  assert.equal(await grip.isVisible(), true, "closing the edit should keep the resize grip for branch browsing");
   const persistedWidth = await readRailWidth();
   await page.getByRole("button", { name: "Edit answer Markdown" }).click();
   await page.waitForSelector(".reader-edit-panel");
@@ -1437,6 +1437,15 @@ async function verifyAskKeyUxAndRail() {
   await grip.dblclick();
   await page.keyboard.press("Escape");
   await page.waitForSelector(".reader-edit-panel", { state: "detached" });
+  // The same grip resizes the rail during normal branch browsing, with no edit open.
+  const branchGripBox = await grip.boundingBox();
+  const branchWidthBefore = await readRailWidth();
+  await page.mouse.move(branchGripBox.x + branchGripBox.width / 2, branchGripBox.y + branchGripBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(branchGripBox.x + branchGripBox.width / 2 - 90, branchGripBox.y + branchGripBox.height / 2, { steps: 8 });
+  await page.mouse.up();
+  assert((await readRailWidth()) > branchWidthBefore + 60, "the grip should resize the rail during branch browsing");
+  await grip.dblclick();
   await page.click("#t-canvas");
   await page.waitForSelector("body.mode-canvas");
 
