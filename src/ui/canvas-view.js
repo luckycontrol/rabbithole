@@ -53,6 +53,8 @@ import {
   CANVAS_NODE_ORIGIN_VERSION,
   CANVAS_NODE_TEXT,
   canvasNodeKind,
+  canvasTextWeight,
+  CANVAS_TEXT_WEIGHTS,
   lensLabel,
   truncate
 } from "../core/model.js";
@@ -65,6 +67,7 @@ import { BUNNY_MARK_SVG, iconSvg } from "../core/html/icons.js";
 import { createModuleLifecycle } from "./lifecycle.js";
 import { captureContentPosition, restoreContentPosition } from "./scroll-position.js";
 import { applyComposerState } from "./composer-state.js";
+import { buildAiRevisionSurface, canReviseWithAi, openAiRevision, updateAiRevisionControl } from "./ai-revision.js";
 import { ENTER_SEND_HINT, isSubmitEnter } from "./input-intent.js";
 import { openAnchoredSurface } from "./overlay/anchor.js";
 import { registerLayer } from "./overlay/layer-stack.js";
@@ -195,8 +198,9 @@ function applyTransform(){
   }
 function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy - view.y) / view.scale }; }
 
-  var CANVAS_TEXT_SIZE = { w: 300, h: 160 };
+  var CANVAS_TEXT_SIZE = { w: 300, h: 64 };
   var CANVAS_CARD_SIZE = { w: 420, h: 360 };
+  var CANVAS_TEXT_FONT_SIZES = [12, 14, 18, 24, 32, 48];
   var ANSWER_DRAFT_KIND = "answer";
 
   function closeCanvasInsertToolbar(){
@@ -285,13 +289,14 @@ function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy -
     closeCanvasInsertToolbar();
     closeCanvasDraft();
     var isAnswerDraft = kind === ANSWER_DRAFT_KIND;
+    var isTextDraft = kind === CANVAS_NODE_TEXT;
     var size = node ? { w: node.w, h: node.h } : (kind === CANVAS_NODE_TEXT ? CANVAS_TEXT_SIZE : CANVAS_CARD_SIZE);
     var form = document.createElement("form");
     form.className = "node canvas-insert-draft canvas-insert-ui canvas-" + kind + "-draft";
     form.setAttribute("role", "dialog");
     form.setAttribute("aria-label", node ? (isAnswerDraft ? "Edit answer" : "Edit canvas " + kind) : "Add canvas " + kind);
     form.style.left = position.x + "px"; form.style.top = position.y + "px";
-    form.style.width = size.w + "px"; form.style.height = size.h + "px";
+    form.style.width = size.w + "px"; form.style.height = isTextDraft ? "auto" : size.h + "px";
     var head = document.createElement("div"); head.className = "canvas-draft-head";
     head.textContent = node ? (isAnswerDraft ? "Edit answer" : "Edit " + kind) : (kind === CANVAS_NODE_TEXT ? "Add text" : "Add card");
     var titleInput = null;
@@ -301,14 +306,17 @@ function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy -
       titleInput.value = node ? (node.title || "") : "";
     }
     var textarea = document.createElement("textarea"); textarea.className = "canvas-draft-content";
+    if (isTextDraft) textarea.rows = 1;
     textarea.placeholder = kind === CANVAS_NODE_TEXT ? "Type text…" : "Write Markdown…";
     textarea.setAttribute("aria-label", kind === CANVAS_NODE_TEXT ? "Text" : (isAnswerDraft ? "Answer content" : "Card content"));
     textarea.value = node ? (node.md || "") : "";
     var actions = document.createElement("div"); actions.className = "canvas-draft-actions";
     var cancel = cardButton(buttonMarkup({ bare: true, className: "canvas-draft-button", label: "Cancel" }));
-    var save = cardButton(buttonMarkup({ bare: true, className: "canvas-draft-button primary", label: kind === CANVAS_NODE_TEXT ? "Add text" : (isAnswerDraft ? "Save answer" : "Save card"), svgIconHtml: iconSvg("check") }));
+    var save = cardButton(buttonMarkup({ bare: true, className: "canvas-draft-button primary", label: isTextDraft ? (node ? "Save text" : "Add text") : (isAnswerDraft ? "Save answer" : "Save card"), svgIconHtml: iconSvg("check") }));
     actions.appendChild(cancel); actions.appendChild(save);
-    form.appendChild(head); if (titleInput) form.appendChild(titleInput); form.appendChild(textarea); form.appendChild(actions);
+    if (!isTextDraft) form.appendChild(head);
+    if (titleInput) form.appendChild(titleInput);
+    form.appendChild(textarea); form.appendChild(actions);
     world.appendChild(form);
     if (node && node.el) node.el.classList.add("canvas-content-editing");
     var unregisterLayer = registerLayer({
@@ -325,7 +333,16 @@ function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy -
     form.addEventListener("keydown", function(e){
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)){ e.preventDefault(); form.requestSubmit(); }
     });
-    requestAnimationFrame(function(){ (titleInput || textarea).focus({ preventScroll: true }); });
+    if (isTextDraft) textarea.addEventListener("input", function(){ sizeCanvasTextDraft(textarea); });
+    requestAnimationFrame(function(){
+      if (isTextDraft) sizeCanvasTextDraft(textarea);
+      (titleInput || textarea).focus({ preventScroll: true });
+    });
+  }
+
+  function sizeCanvasTextDraft(textarea){
+    textarea.style.height = "auto";
+    textarea.style.height = Math.max(38, textarea.scrollHeight) + "px";
   }
 
   function textNodeTitle(markdown){
@@ -360,7 +377,7 @@ function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy -
       title: title,
       markdown: markdown,
       position: { x: active.position.x, y: active.position.y },
-      size: { w: active.size.w, h: active.size.h }
+      size: { w: active.size.w, h: active.kind === CANVAS_NODE_TEXT ? Math.max(38, active.textarea.scrollHeight) : active.size.h }
     };
     closeCanvasDraft();
     createManualNode(payload);
@@ -390,6 +407,7 @@ function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy -
     var previous = { title: node.title, markdown: node.md };
     node.title = title; node.md = markdown; refreshNodeHtml(node);
     if (node.titleEl){ node.titleEl.textContent = title; node.titleEl.title = title; }
+    if (canvasNodeKind(node) === CANVAS_NODE_TEXT && node.el) node.el.setAttribute("aria-label", "Canvas text: " + title);
     fillBody(node); scheduleEdges();
     var payload = { type: "canvas_node_content", node_id: node.id, title: title, markdown: markdown };
     Promise.resolve(canvasLifecycle.hooks.post(payload)).then(function(result){
@@ -419,6 +437,7 @@ function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy -
     if (nodes[node.id] !== node || node.title !== expectedTitle || node.md !== expectedMarkdown) return;
     node.title = previous.title; node.md = previous.markdown; refreshNodeHtml(node);
     if (node.titleEl){ node.titleEl.textContent = node.title; node.titleEl.title = node.title; }
+    if (canvasNodeKind(node) === CANVAS_NODE_TEXT && node.el) node.el.setAttribute("aria-label", "Canvas text: " + node.title);
     fillBody(node); scheduleEdges(); flashHint("Couldn't save the canvas item.");
   }
 
@@ -450,10 +469,12 @@ function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy -
 
 export function updateAnswerEditControl(node){
     var button = node && node.answerEditBtn;
-    if (!button) return;
     var editable = isAnswerNodeEditable(node);
-    button.hidden = !editable;
-    button.disabled = !editable;
+    if (button){
+      button.hidden = !editable || !!node._revision;
+      button.disabled = !editable || !!node._revision;
+    }
+    updateAiRevisionControl(node);
   }
 
 export function createNodeEl(node, enter){
@@ -461,6 +482,7 @@ export function createNodeEl(node, enter){
     var el = document.createElement("div");
     el.className = "node" + (node.id === rootId ? " root" : "");
     if (manualKind) el.className += " canvas-manual-node canvas-" + manualKind + "-node";
+    if (manualKind === CANVAS_NODE_TEXT){ el.tabIndex = 0; el.setAttribute("aria-label", "Canvas text: " + (node.title || "Text")); }
     if (enter && !document.hidden && !shouldReduceMotion()) el.className += " node-enter";
     el.dataset.id = node.id;
 
@@ -475,6 +497,8 @@ export function createNodeEl(node, enter){
     titleEl.title = node.title || "";
     var aDown = cardButton(buttonMarkup({ bare: true, className: "node-btn node-font-btn", label: "A−", ariaLabel: "Smaller text", title: "Smaller text" }));
     var aUp = cardButton(buttonMarkup({ bare: true, className: "node-btn node-font-btn", label: "A+", ariaLabel: "Larger text", title: "Larger text" }));
+    var textSizeSelect = manualKind === CANVAS_NODE_TEXT ? buildTextFormatSelect("node-font-size", "Text size", CANVAS_TEXT_FONT_SIZES.map(function(size){ return { value: size, label: size + " px" }; }), fontPx(node, CANVAS_BASE)) : null;
+    var textWeightSelect = manualKind === CANVAS_NODE_TEXT ? buildTextFormatSelect("node-font-weight", "Text weight", CANVAS_TEXT_WEIGHTS.map(function(weight){ return { value: weight, label: textWeightLabel(weight) }; }), canvasTextWeight(node)) : null;
     var collapseBtn = cardButton(iconButtonMarkup({ bare: true, className: "node-btn", svgIconHtml: NODE_COLLAPSE_ICON, ariaLabel: "Collapse document", title: "Collapse document" }));
     syncCollapseButton(node, collapseBtn);
     var openBtn = cardButton(iconButtonMarkup({ bare: true, className: "node-btn", svgIconHtml: NODE_EXPAND_ICON, ariaLabel: "Expand document", title: "Expand document" }));
@@ -492,6 +516,7 @@ export function createNodeEl(node, enter){
       acts.appendChild(editBtn);
     }
     var answerEditBtn = null;
+    var aiRevisionBtn = null;
     if (!manualKind && node.parent_id != null){
       answerEditBtn = cardButton(iconButtonMarkup({ bare: true, className: "node-btn canvas-answer-edit", svgIconHtml: iconSvg("edit"), ariaLabel: "Edit answer Markdown", title: "Edit answer Markdown" }));
       answerEditBtn.addEventListener("click", function(e){
@@ -499,8 +524,18 @@ export function createNodeEl(node, enter){
         if (isAnswerNodeEditable(node)) openCanvasDraft(ANSWER_DRAFT_KIND, { x: node.x, y: node.y }, node);
       });
       acts.appendChild(answerEditBtn);
+      aiRevisionBtn = cardButton(iconButtonMarkup({ bare: true, className: "node-btn canvas-ai-revise", svgIconHtml: iconSvg("sparkles"), ariaLabel: "Revise this card with AI", title: "Revise this card with AI" }));
+      aiRevisionBtn.addEventListener("click", function(e){
+        e.stopPropagation();
+        if (canReviseWithAi(node)) openAiRevision(node);
+      });
+      acts.appendChild(aiRevisionBtn);
     }
-    if (manualKind !== CANVAS_NODE_TEXT){
+    if (manualKind === CANVAS_NODE_TEXT){
+      aDown.classList.add("canvas-text-format"); aUp.classList.add("canvas-text-format");
+      textSizeSelect.classList.add("canvas-text-format"); textWeightSelect.classList.add("canvas-text-format");
+      acts.appendChild(aDown); acts.appendChild(textSizeSelect); acts.appendChild(aUp); acts.appendChild(textWeightSelect);
+    } else {
       acts.appendChild(aDown); acts.appendChild(aUp); acts.appendChild(divider); acts.appendChild(collapseBtn); acts.appendChild(openBtn);
     }
     head.appendChild(titleEl); head.appendChild(acts);
@@ -511,22 +546,25 @@ export function createNodeEl(node, enter){
     el.appendChild(head); el.appendChild(body); if (comp) el.appendChild(comp); el.appendChild(resize);
     world.appendChild(el);
 
-    node.el = el; node.bodyEl = body; node.titleEl = titleEl; node.answerEditBtn = answerEditBtn;
+    node.el = el; node.bodyEl = body; node.titleEl = titleEl; node.answerEditBtn = answerEditBtn; node.aiRevisionBtn = aiRevisionBtn;
+    node.textSizeSelect = textSizeSelect; node.textWeightSelect = textWeightSelect;
     updateAnswerEditControl(node);
     if (cardResizeObserver) cardResizeObserver.observe(el);
     fillBody(node);
     if (comp) updateCardComposer(node);
     if (node.collapsed) el.classList.add("collapsed");
 
-    if (manualKind) enableDrag(node, el, { threshold: 4, canStart: manualNodeDragAllowed });
+    if (manualKind === CANVAS_NODE_TEXT) enableDrag(node, head);
+    else if (manualKind) enableDrag(node, el, { threshold: 4, canStart: manualNodeDragAllowed });
     else enableDrag(node, head);
-    enableResize(node, resize);
+    enableResize(node, resize, { widthOnly: manualKind === CANVAS_NODE_TEXT, minWidth: manualKind === CANVAS_NODE_TEXT ? 120 : 240 });
     head.addEventListener("dblclick", function(e){
       if (onCardControl(e)) return;
       if (manualKind === CANVAS_NODE_TEXT) openCanvasDraft(manualKind, { x: node.x, y: node.y }, node);
       else openNode(node.id);
     });
     if (manualKind || answerEditBtn) body.addEventListener("dblclick", function(e){
+      if (node._revision) return;
       if (e.target.closest("a, button, input, textarea, select, [contenteditable='true']")) return;
       if (manualKind){
         e.preventDefault(); e.stopPropagation(); openCanvasDraft(manualKind, { x: node.x, y: node.y }, node);
@@ -538,6 +576,13 @@ export function createNodeEl(node, enter){
     collapseBtn.addEventListener("click", function(e){ e.stopPropagation(); toggleCollapse(node, collapseBtn); });
     aDown.addEventListener("click", function(e){ e.stopPropagation(); setNodeFontScale(node, -0.1); });
     aUp.addEventListener("click", function(e){ e.stopPropagation(); setNodeFontScale(node, 0.1); });
+    if (textSizeSelect) textSizeSelect.addEventListener("change", function(e){ e.stopPropagation(); setCanvasTextFontSize(node, Number(textSizeSelect.value)); });
+    if (textWeightSelect) textWeightSelect.addEventListener("change", function(e){ e.stopPropagation(); setCanvasTextFontWeight(node, Number(textWeightSelect.value)); });
+    if (manualKind === CANVAS_NODE_TEXT) el.addEventListener("click", function(e){
+      if (e.target.closest("a, button, input, textarea, select")) return;
+      var selection = window.getSelection && window.getSelection();
+      if (!selection || selection.isCollapsed) el.focus({ preventScroll: true });
+    });
     // Scrolling a card moves the inline marks its children's edges start from.
     body.addEventListener("scroll", scheduleEdges, { passive: true });
     // Hovering a card lights up its edge and the exact text it branched from.
@@ -569,6 +614,26 @@ function diveToNode(node, source){
     var template = document.createElement("template");
     template.innerHTML = markup;
     return template.content.firstElementChild;
+  }
+
+  function buildTextFormatSelect(className, label, options, selected){
+    var select = document.createElement("select");
+    select.className = "node-font-select " + className;
+    select.setAttribute("aria-label", label); select.title = label;
+    options.forEach(function(option){
+      var el = document.createElement("option"); el.value = String(option.value); el.textContent = option.label;
+      select.appendChild(el);
+    });
+    if (!options.some(function(option){ return option.value === selected; })){
+      var custom = document.createElement("option"); custom.value = String(selected); custom.textContent = selected + " px";
+      select.appendChild(custom);
+    }
+    select.value = String(selected);
+    return select;
+  }
+
+  function textWeightLabel(weight){
+    return weight === 700 ? "Bold" : weight === 600 ? "Semibold" : weight === 500 ? "Medium" : "Regular";
   }
 
   // ---------- per-card follow-up composer ----------
@@ -697,6 +762,14 @@ export function fillBody(node){
     var previous = body.querySelector(".doc-content"); if (previous && previous._rhDispose) previous._rhDispose();
     body.classList.remove("pdf-body");
     body.innerHTML = "";
+    if (node._revision){
+      var revision = buildAiRevisionSurface(node, CANVAS_BASE);
+      if (revision) body.appendChild(revision);
+      if (node.el) node.el.classList.add("ai-revising");
+      scheduleEdges();
+      return;
+    }
+    if (node.el) node.el.classList.remove("ai-revising");
     if (node.origin && node.origin.selected_text){
       var q = document.createElement("div"); q.className = "origin-quote"; q.textContent = "“" + node.origin.selected_text + "”";
       body.appendChild(q);
@@ -708,6 +781,7 @@ export function fillBody(node){
     var crop = buildOriginCrop(node, "card");
     if (crop) body.appendChild(crop);
     var dc = buildDocContent(node, CANVAS_BASE);
+    if (canvasNodeKind(node) === CANVAS_NODE_TEXT) dc.style.fontWeight = String(canvasTextWeight(node));
     body.appendChild(dc);
     body.classList.toggle("pdf-body", dc.classList.contains("rh-pdf"));
     applyChildHighlights(dc, node);
@@ -720,11 +794,55 @@ export function fillBody(node){
   }
 
   function setNodeFontScale(node, delta){
+    if (canvasNodeKind(node) === CANVAS_NODE_TEXT){
+      var current = fontPx(node, CANVAS_BASE);
+      var index = CANVAS_TEXT_FONT_SIZES.indexOf(current);
+      if (index < 0){
+        index = CANVAS_TEXT_FONT_SIZES.findIndex(function(size){ return size > current; });
+        if (index < 0) index = CANVAS_TEXT_FONT_SIZES.length;
+        if (delta < 0) index -= 1;
+      } else index += delta > 0 ? 1 : -1;
+      index = Math.max(0, Math.min(CANVAS_TEXT_FONT_SIZES.length - 1, index));
+      setCanvasTextFontSize(node, CANVAS_TEXT_FONT_SIZES[index]);
+      return;
+    }
     node.font_scale = Math.min(MAX_FS, Math.max(MIN_FS, (node.font_scale || 1) + delta));
     var dc = node.bodyEl && node.bodyEl.querySelector(".doc-content"); if (dc) dc.style.fontSize = fontPx(node, CANVAS_BASE) + "px";
     if (mode === "reader" && currentNodeId === node.id){ var rdc = readerMain.querySelector(".doc-content"); if (rdc) rdc.style.fontSize = fontPx(node, READER_BASE) + "px"; }
     scheduleEdges();
     canvasLifecycle.hooks.persistNode(node);
+  }
+
+  function setCanvasTextFontSize(node, size){
+    if (!CANVAS_TEXT_FONT_SIZES.includes(size)) return;
+    node.font_scale = size / CANVAS_BASE;
+    var dc = node.bodyEl && node.bodyEl.querySelector(".doc-content");
+    if (dc) dc.style.fontSize = size + "px";
+    if (node.textSizeSelect) node.textSizeSelect.value = String(size);
+    scheduleEdges(); canvasLifecycle.hooks.persistNode(node);
+  }
+
+  function setCanvasTextFontWeight(node, weight){
+    if (!CANVAS_TEXT_WEIGHTS.includes(weight)) return;
+    var previous = canvasTextWeight(node), canvas = node.origin.canvas;
+    node.origin = { ...node.origin, canvas: { ...canvas, style: { ...(canvas.style || {}), font_weight: weight } } };
+    var dc = node.bodyEl && node.bodyEl.querySelector(".doc-content");
+    if (dc) dc.style.fontWeight = String(weight);
+    scheduleEdges();
+    Promise.resolve(canvasLifecycle.hooks.post({ type: "canvas_node_content", node_id: node.id, font_weight: weight })).then(function(result){
+      if (result && result.ok !== false) return;
+      restoreCanvasTextFontWeight(node, previous, weight);
+    }, function(){ restoreCanvasTextFontWeight(node, previous, weight); });
+  }
+
+  function restoreCanvasTextFontWeight(node, previous, expected){
+    if (canvasTextWeight(node) !== expected) return;
+    var canvas = node.origin.canvas;
+    node.origin = { ...node.origin, canvas: { ...canvas, style: { ...(canvas.style || {}), font_weight: previous } } };
+    var dc = node.bodyEl && node.bodyEl.querySelector(".doc-content");
+    if (dc) dc.style.fontWeight = String(previous);
+    if (node.textWeightSelect) node.textWeightSelect.value = String(previous);
+    scheduleEdges(); flashHint("Couldn't save the text style.");
   }
 
 function layoutNode(node){
@@ -734,7 +852,10 @@ function layoutNode(node){
       // Short answers therefore hug their content while longer answers retain
       // the existing scrollable viewport. Keep the root's established fixed
       // document window; it is the canvas anchor rather than a branch.
-      if (node.id === rootId || canvasNodeKind(node)){
+      if (canvasNodeKind(node) === CANVAS_NODE_TEXT){
+        el.style.height = "auto";
+        el.style.maxHeight = "";
+      } else if (node.id === rootId || canvasNodeKind(node)){
         el.style.height = node.h + "px";
         el.style.maxHeight = "";
       } else {
@@ -775,7 +896,7 @@ function layoutNode(node){
   // The head carries the card's own gestures — drag it, double-click to open — but it also
   // holds the controls, and a pointer that lands on one of those is operating the control,
   // not the card. Every head gesture owes that distinction the same answer.
-  function onCardControl(e){ return !!e.target.closest(".node-btn"); }
+  function onCardControl(e){ return !!e.target.closest(".node-btn, .node-font-select"); }
   function manualNodeDragAllowed(e){
     if (onCardControl(e) || e.target.closest("a, button, input, textarea, select, [contenteditable='true'], .node-resize, .rh-pdf-scroll")) return false;
     // A touch that starts in a manual card's body belongs to the card's native
@@ -816,11 +937,16 @@ function layoutNode(node){
         drawEdges(); canvasLifecycle.hooks.persistNode(node);
       });
   }
-  function enableResize(node, handle){
+  function enableResize(node, handle, options){
+    options = options || {};
     var sx, sy, ow, oh;
     onPointerGesture(handle,
       function(e){ if (e.button !== 0) return false; e.preventDefault(); e.stopPropagation(); sx=e.clientX; sy=e.clientY; ow=node.w; oh=node.h; return true; },
-      function(ev){ node.w = Math.max(240, ow + (ev.clientX - sx)/view.scale); node.h = Math.max(160, oh + (ev.clientY - sy)/view.scale); layoutNode(node); scheduleEdges(); },
+      function(ev){
+        node.w = Math.max(options.minWidth || 240, ow + (ev.clientX - sx)/view.scale);
+        if (!options.widthOnly) node.h = Math.max(160, oh + (ev.clientY - sy)/view.scale);
+        layoutNode(node); scheduleEdges();
+      },
       function(){ drawEdges(); canvasLifecycle.hooks.persistNode(node); });
   }
 function toggleCollapse(node, btn){

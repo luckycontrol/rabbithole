@@ -25,6 +25,11 @@ export async function runWatchLoop({ holeId, driver, signal, onStatus = () => {}
         event = assertEvent(await driver.answer(event, answer, { signal }));
         break;
       }
+      case "revision_request": {
+        const answer = await driver.generateRevision(event, { signal });
+        event = assertEvent(await driver.answer(event, answer, { signal }));
+        break;
+      }
       case "convert_request":
         event = assertEvent(await driver.convert(event, { signal }));
         break;

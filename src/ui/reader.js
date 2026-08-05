@@ -40,6 +40,7 @@ import { buttonMarkup } from "../core/html/button-markup.js";
 import { iconSvg } from "../core/html/icons.js";
 import { refreshNodeHtml } from "./renderer.js";
 import { registerLayer } from "./overlay/layer-stack.js";
+import { buildAiRevisionSurface, canReviseWithAi, openAiRevision } from "./ai-revision.js";
 
 function anchorStart(node) {
   return node.origin?.anchor?.offset_start ?? 1e9;
@@ -245,10 +246,11 @@ export function renderReaderBody(){
     var crop = buildOriginCrop(node, "reader");
     if (crop) col.appendChild(crop);
     var editing = readerDraft && readerDraft.nodeId === node.id && !isCompactReader();
-    if (!editing && isAnswerNodeEditable(node)) col.appendChild(buildReaderAnswerActions(node));
-    var dc = editing ? buildReaderAnswerPreview(node) : buildDocContent(node, READER_BASE);
+    var revising = !!node._revision;
+    if (!editing && !revising && isAnswerNodeEditable(node)) col.appendChild(buildReaderAnswerActions(node));
+    var dc = editing ? buildReaderAnswerPreview(node) : (revising ? buildAiRevisionSurface(node, READER_BASE) : buildDocContent(node, READER_BASE));
     col.appendChild(dc);
-    applyChildHighlights(dc, node);
+    if (!revising) applyChildHighlights(dc, node);
     var isPdfReader = dc.classList.contains("rh-pdf");
     var isPdfViewport = isPdfReader && !node.parent_id && !crop;
     readerMain.classList.toggle("pdf-reader", isPdfReader);
@@ -276,8 +278,18 @@ function buildReaderAnswerActions(node){
     ariaLabel: "Edit answer Markdown",
     title: "Edit answer Markdown",
     svgIconHtml: iconSvg("edit")
+  }) + buttonMarkup({
+    bare: true,
+    className: "reader-ai-revise",
+    label: "Revise with AI",
+    ariaLabel: "Revise this card with AI",
+    title: "Revise this card with AI",
+    svgIconHtml: iconSvg("sparkles")
   });
-  actions.querySelector("button").addEventListener("click", function(){ openReaderAnswerDraft(node); });
+  actions.querySelector(".reader-answer-edit").addEventListener("click", function(){ openReaderAnswerDraft(node); });
+  var revise = actions.querySelector(".reader-ai-revise");
+  revise.hidden = !canReviseWithAi(node);
+  revise.addEventListener("click", function(){ openAiRevision(node); });
   return actions;
 }
 

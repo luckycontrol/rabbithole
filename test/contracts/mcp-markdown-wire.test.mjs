@@ -216,12 +216,13 @@ async function runMarkdownWireFixture() {
     markdown: "Manual note", position: { x: 40, y: 80 }, size: { w: 300, h: 160 },
   }), { ok: true, node_id: canvasNodeId });
   assert.deepEqual(await postEvent(session, {
-    type: "canvas_node_content", node_id: canvasNodeId, title: "Edited canvas note", markdown: "Edited manual note",
+    type: "canvas_node_content", node_id: canvasNodeId, title: "Edited canvas note", markdown: "Edited manual note", font_weight: 600,
   }), { ok: true });
   await session.flushSave();
   const persistedCanvasNode = (await new FsStore().loadHole(session.holeId)).nodes.find((node) => node.id === canvasNodeId);
   assert.equal(persistedCanvasNode.markdown, "Edited manual note", "MCP browser transport should persist manual canvas edits");
-  assert.deepEqual(persistedCanvasNode.origin, { canvas: { version: 1, kind: "text" } }, "manual canvas kind should use durable origin metadata");
+  assert.deepEqual(persistedCanvasNode.origin, { canvas: { version: 1, kind: "text", style: { font_weight: 600 } } },
+    "manual canvas kind and text style should use durable origin metadata");
 
   const requestId = "req-markdown-wire";
   const nodeId = "node-markdown-wire";
@@ -290,6 +291,45 @@ async function runMarkdownWireFixture() {
   assert.equal(persistedAfterAnswer.nodes.find((node) => node.id === nodeId).markdown, editedAnswerMarkdown,
     "MCP browser transport should persist revised answer Markdown");
 
+  const revisionRequestId = "revise-markdown-wire";
+  assert.deepEqual(await postEvent(session, {
+    type: "revision_request", request_id: revisionRequestId, node_id: nodeId, instruction: "Make the answer clearer",
+  }), { ok: true, node_id: nodeId, request_id: revisionRequestId });
+  const revisionRequest = await openRabbithole({ holeId: session.holeId });
+  assert.equal(revisionRequest.status, "revision_request");
+  assert.equal(revisionRequest.node_id, nodeId);
+  assert.equal(revisionRequest.current_title, editedAnswerTitle);
+  assert.equal(revisionRequest.current_markdown, editedAnswerMarkdown);
+  assert.equal(revisionRequest.instruction, "Make the answer clearer");
+  const revisionPartial = await answerBranch({ sessionId: session.id, requestId: revisionRequestId,
+    content: "## AI revision\n\nClearer", partial: true });
+  assert.deepEqual(revisionPartial, { ok: true, node_id: nodeId, request_id: revisionRequestId,
+    partial: true, revision: true });
+  const revisionProgress = session.outboundEvents.at(-1).data;
+  assert.equal(revisionProgress.type, "revision_progress");
+  assert.equal(revisionProgress.markdown, "## AI revision\n\nClearer");
+  assert.equal(session.nodes.get(nodeId).markdown, editedAnswerMarkdown,
+    "revision streaming must not overwrite the current answer before Apply");
+  const afterRevision = await answerBranch({ sessionId: session.id, requestId: revisionRequestId,
+    title: "AI revised title", content: " and complete." });
+  assertKeepListeningShape(afterRevision, session);
+  const revisionReady = session.outboundEvents.at(-1).data;
+  assert.equal(revisionReady.type, "revision_ready");
+  assert.equal(revisionReady.title, "AI revised title");
+  assert.equal(revisionReady.markdown, "## AI revision\n\nClearer and complete.");
+  assert.equal(session.nodes.get(nodeId).markdown, editedAnswerMarkdown,
+    "a ready revision remains a preview until the browser applies it");
+  const revisionBranchId = "revision-as-branch";
+  assert.deepEqual(await postEvent(session, {
+    type: "revision_save_as_branch", node_id: nodeId, child_id: revisionBranchId,
+    title: revisionReady.title, markdown: revisionReady.markdown, instruction: "Make the answer clearer",
+    position: { x: 940, y: 0 }, size: { w: 420, h: 360 },
+  }), { ok: true, node_id: revisionBranchId });
+  assert.equal(session.nodes.get(revisionBranchId).parent_id, nodeId);
+  assert.equal(session.nodes.get(revisionBranchId).markdown, revisionReady.markdown);
+  assert.equal(session.nodes.get(revisionBranchId).origin.revision_of, nodeId,
+    "keeping a preview as a branch should preserve its revision provenance");
+
   const reloaded = await fetch(session.url);
   const rehydration = parseHydration(await reloaded.text());
   assertNoContentHtml(rehydration, "reloaded hydration");
@@ -305,7 +345,7 @@ async function runMarkdownWireFixture() {
   assertNoContentHtml(projection, "export projection");
   assert(projection.hole.nodes.every((node) => Object.keys(node.extensions).length === 0), "snapshot payload clears learner extensions");
   assert.deepEqual(projection.hole.nodes.find((node) => node.id === canvasNodeId)?.origin,
-    { canvas: { version: 1, kind: "text" } }, "MCP snapshots should preserve manual canvas item presentation");
+    { canvas: { version: 1, kind: "text", style: { font_weight: 600 } } }, "MCP snapshots should preserve manual canvas item presentation");
   assertIncludes(exportHtml, "RabbitholeFrozenClient.startPortableSnapshot", "export should use the portable snapshot bootstrap");
   assert.deepEqual(Object.keys(projection.assets), ["diagram-1.png"], "export should include referenced assets only");
   assert.equal(projection.assets["diagram-1.png"], PNG_BYTES.toString("base64"));

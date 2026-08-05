@@ -1,7 +1,7 @@
-import { disposeCore, initCore, nodes, registerCoreHooks } from "./core.js";
+import { currentNodeId, disposeCore, initCore, mode, nodes, refreshCanvasNodeContent, registerCoreHooks } from "./core.js";
 import { disposeVisuals, registerVisualHooks } from "./visuals.js";
 import { disposeImageUx, mountDocImages } from "./image-ux.js";
-import { disposeReader, initReader, openNode, registerReaderHooks } from "./reader.js";
+import { disposeReader, initReader, openNode, registerReaderHooks, renderBreadcrumb, renderMarginNotes, renderReaderBody } from "./reader.js";
 import {
   disposeCanvasView,
   initCanvasView,
@@ -29,6 +29,7 @@ import {
 } from "./branch-surfaces.js";
 import { disposeChrome, initChrome } from "./chrome-init.js";
 import { ensureNodeHtml, setRendererAssetData } from "./renderer.js";
+import { disposeAiRevision, registerAiRevisionHooks } from "./ai-revision.js";
 
 var activeRuntime = null;
 
@@ -100,6 +101,19 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
       exportSnapshot: capabilities.exportSnapshot || null,
       exportPortable: capabilities.exportPortable || null
     });
+    registerAiRevisionHooks({
+      post: post,
+      refresh: function(node){
+        refreshCanvasNodeContent(node);
+        if (mode === "reader" && currentNodeId === node.id) {
+          renderBreadcrumb();
+          renderReaderBody();
+          renderMarginNotes();
+          updateComposerState();
+        }
+      }
+    });
+    own(disposeAiRevision);
 
     initReader(); own(disposeReader);
     initCanvasView(); own(disposeCanvasView);

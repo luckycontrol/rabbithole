@@ -7,6 +7,7 @@ import {
   CANVAS_NODE_CARD,
   CANVAS_NODE_ORIGIN_VERSION,
   CANVAS_NODE_TEXT,
+  normalizeCanvasTextWeight,
   collectSubtreeIds,
   createPendingBranchNode,
   normalizePosition,
@@ -162,10 +163,24 @@ function reduceCanvasNodeContent(state, event, options) {
   const node = state.nodes.get(nodeId);
   if (!node || !canvasNodeKind(node)) return withState(state);
   const nodes = cloneNodes(state, options);
+  const weight = canvasNodeKind(node) === CANVAS_NODE_TEXT && event.font_weight != null
+    ? normalizeCanvasTextWeight(event.font_weight)
+    : null;
+  const origin = weight == null ? node.origin : {
+    .../** @type {Record<string, any>} */ (node.origin),
+    canvas: {
+      .../** @type {Record<string, any>} */ (/** @type {Record<string, any>} */ (node.origin).canvas),
+      style: {
+        .../** @type {Record<string, any>} */ (/** @type {Record<string, any>} */ (node.origin).canvas?.style || {}),
+        font_weight: weight,
+      },
+    },
+  };
   nodes.set(nodeId, {
     ...node,
     title: String(event.title ?? node.title ?? "Untitled").trim() || "Untitled",
     markdown: normalizeBlockIds(String(event.markdown ?? node.markdown ?? ""), { idFactory: options.idFactory }).markdown,
+    origin,
   });
   return withState({ ...state, nodes }, { node_id: nodeId });
 }

@@ -8,7 +8,7 @@ import { maybeUpgradeBaseUrlFromFrontmatter, normalizeBaseUrl } from "../../core
 import { extractNodeAssetRefs } from "../../core/assets.js";
 import { createHoleState, holeStateToHole, holeStateToHydrationNodes, reduceHoleEvent } from "../../core/reducer.js";
 import { toPersistedHole } from "../../core/schema.js";
-import { lineageTitlesFromMap, normalizePdfAnchor } from "../../core/model.js";
+import { canvasNodeKind, lineageTitlesFromMap, normalizePdfAnchor } from "../../core/model.js";
 import { buildJsonError, closeServerGracefully, CLOSE_TIMEOUT_MS } from "./http.js";
 import { writeSseEvent } from "./sse.js";
 import { handleSessionRequest } from "./session-router.js";
@@ -82,6 +82,7 @@ export class RabbitHoleSession {
 
     this.pendingByRequest = new Map(); // request_id -> node_id
     this.generationByRequest = new Map(); // request_id -> active MCP generation ingress
+    this.revisionRequests = new Map(); // request_id -> transient in-place revision preview
     // Requests whose node was deleted mid-answer: a late answer_branch for one
     // of these is absorbed gracefully instead of erroring at the agent.
     this.cancelledRequests = new Set();
@@ -226,6 +227,7 @@ export class RabbitHoleSession {
     this.queue.length = 0;
     this.inFlightBranchRequests.clear();
     this.generationByRequest.clear();
+    this.revisionRequests.clear();
     const waiters = this.waiters.splice(0);
     for (const waiter of waiters) {
       waiter.cleanup?.();
@@ -333,7 +335,7 @@ export class RabbitHoleSession {
   // Every branch_request handed to the agent arms the watchdog; any subsequent
   // agent activity (answer_branch, another waitForEvent) clears or re-arms it.
   deliverToAgent(event) {
-    if (event && (event.status === "branch_request" || event.status === "convert_request")) {
+    if (event && (event.status === "branch_request" || event.status === "revision_request" || event.status === "convert_request")) {
       this.inFlightBranchRequests.set(event.request_id, event);
       this.startAnswerWatchdog();
     }
@@ -346,6 +348,11 @@ export class RabbitHoleSession {
       // as its run is live, so a keep_listening re-arm can't drop it.
       if (event.status === "convert_request") {
         if (this.convertRequests.has(requestId)) return event;
+        this.inFlightBranchRequests.delete(requestId);
+        continue;
+      }
+      if (event.status === "revision_request") {
+        if (this.revisionRequests.has(requestId)) return event;
         this.inFlightBranchRequests.delete(requestId);
         continue;
       }
@@ -611,6 +618,10 @@ export class RabbitHoleSession {
       return this.waitForEvent(signal);
     }
 
+    if (this.revisionRequests.has(requestId)) {
+      return this.answerRevision({ requestId, title, content, partial, assets, signal, inFlightEvent });
+    }
+
     // A partial call streams a chunk into the pending node and returns right
     // away — the request stays claimable, the watchdog stays armed (a death
     // mid-stream should still surface as stalled), and nothing persists yet.
@@ -653,6 +664,35 @@ export class RabbitHoleSession {
     }
 
     await this.finalizeBranchAnswer({ requestId, title, content, baseUrl, assets });
+    return this.waitForEvent(signal);
+  }
+
+  async answerRevision({ requestId, title, content, partial, assets, signal, inFlightEvent }) {
+    const request = this.revisionRequests.get(requestId);
+    if (!request) throw buildJsonError(`No pending revision request ${requestId}`, 404);
+    const node = this.nodes.get(request.node_id);
+    if (!isRevisableAnswer(node)) {
+      this.revisionRequests.delete(requestId);
+      throw buildJsonError("The answer being revised is no longer available", 409);
+    }
+    let ingress = request.ingress;
+    if (!ingress) {
+      ingress = this.createGenerationIngress(node);
+      request.ingress = ingress;
+    }
+    const addedAssets = await addAssetsToHole(this.holeId, assets);
+    for (const asset of addedAssets) this.assetNames.add(asset.name);
+    const result = ingress.acceptChunk(content, { final: !partial, title });
+    if (partial) {
+      if (inFlightEvent) this.inFlightBranchRequests.set(requestId, inFlightEvent);
+      this.startAnswerWatchdog();
+      this.broadcast({ type: "revision_progress", request_id: requestId, node_id: node.id,
+        title: ingress.run.snapshot().title, markdown: result.markdown });
+      return { ok: true, node_id: node.id, request_id: requestId, partial: true, revision: true };
+    }
+    this.revisionRequests.delete(requestId);
+    this.broadcast({ type: "revision_ready", request_id: requestId, node_id: node.id,
+      title: result.title, markdown: result.markdown });
     return this.waitForEvent(signal);
   }
 
@@ -888,6 +928,72 @@ export class RabbitHoleSession {
     return { ok: true, node_id: nodeId, request_id: requestId };
   }
 
+  handleRevisionRequest(payload) {
+    const node = this.nodes.get(String(payload.node_id || ""));
+    if (!isRevisableAnswer(node)) throw buildJsonError("Only completed answer cards can be revised with AI", 409);
+    const instruction = String(payload.instruction || "").trim();
+    if (!instruction) throw buildJsonError("Tell AI how to revise this card", 400);
+    const requestId = String(payload.request_id || randomUUID());
+    for (const [id, request] of this.revisionRequests) {
+      if (request.node_id !== node.id) continue;
+      this.revisionRequests.delete(id);
+      this.inFlightBranchRequests.delete(id);
+      this.queue = this.queue.filter((event) => event.request_id !== id);
+      this.cancelledRequests.add(id);
+    }
+    this.revisionRequests.set(requestId, { node_id: node.id, instruction, ingress: null });
+    const event = {
+      status: "revision_request",
+      session_id: this.id,
+      request_id: requestId,
+      node_id: node.id,
+      current_title: node.title || "Untitled",
+      current_markdown: node.markdown || "",
+      instruction,
+      lineage: this.lineageTitles(node.id),
+      response_contract: "Return the complete replacement Markdown. Stream with answer_branch partial=true, then finish with the revised card title.",
+    };
+    if (this.needsRehydration) {
+      this.needsRehydration = false;
+      event.rehydration = this.buildRehydrationPayload();
+    }
+    this.pushEvent(event);
+    return { ok: true, node_id: node.id, request_id: requestId };
+  }
+
+  handleRevisionCancel(payload) {
+    const requestId = String(payload.request_id || "");
+    if (this.revisionRequests.delete(requestId)) this.cancelledRequests.add(requestId);
+    this.inFlightBranchRequests.delete(requestId);
+    this.queue = this.queue.filter((event) => event.request_id !== requestId);
+    return { ok: true, request_id: requestId };
+  }
+
+  async handleRevisionSaveAsBranch(payload) {
+    const parent = this.nodes.get(String(payload.node_id || ""));
+    if (!isRevisableAnswer(parent)) throw buildJsonError("The source answer is no longer available", 409);
+    const nodeId = String(payload.child_id || randomUUID());
+    const position = payload.position || {
+      x: Number(parent.position?.x || 0) + Number(parent.size?.w || 420) + 80,
+      y: Number(parent.position?.y || 0),
+    };
+    const event = {
+      type: "node_answered", node_id: nodeId, parent_id: parent.id,
+      title: String(payload.title || parent.title || "Revision").trim() || "Revision",
+      markdown: String(payload.markdown || ""),
+      base_url: parent.base_url || null,
+      base_url_source: parent.base_url ? "inherited" : null,
+      origin: { selected_text: "", question: String(payload.instruction || "AI revision"), lens: null,
+        anchor: null, branch_type: "followup", revision_of: parent.id },
+      position, size: payload.size || { w: 420, h: 360 }, font_scale: 1, collapsed: false, read: false,
+    };
+    this.dispatchHoleEvent(event, { now: new Date().toISOString() });
+    const child = this.nodes.get(nodeId);
+    this.broadcast(buildNodeAnsweredEvent(child));
+    await this.flushSave();
+    return { ok: true, node_id: nodeId };
+  }
+
   async preparePdfCrop(payload) {
     const parent = this.nodes.get(String(payload.parent_id || ""));
     const anchor = normalizePdfAnchor(payload.anchor?.pdf);
@@ -944,6 +1050,12 @@ export class RabbitHoleSession {
         this.discardRegionFile(reqId);
       }
     }
+    for (const [reqId, request] of [...this.revisionRequests]) {
+      if (!doomed.has(request.node_id)) continue;
+      this.revisionRequests.delete(reqId);
+      this.inFlightBranchRequests.delete(reqId);
+      this.cancelledRequests.add(reqId);
+    }
     this.queue = this.queue.filter((ev) => !(ev.node_id && doomed.has(ev.node_id)));
     this.outboundEvents = this.outboundEvents.filter((e) => !(e.data.node_id && doomed.has(e.data.node_id)));
     await this.gcAssetsForDeletedNodes(effects.deletedNodes || []);
@@ -992,6 +1104,9 @@ export class RabbitHoleSession {
           await this.flushSave();
           return result;
         },
+        revision_request: (event) => this.handleRevisionRequest(event),
+        revision_cancel: (event) => this.handleRevisionCancel(event),
+        revision_save_as_branch: (event) => this.handleRevisionSaveAsBranch(event),
         canvas_node_create: async (event) => {
           const result = this.applyPersistedBrowserEvent(event);
           await this.flushSave();
@@ -1022,4 +1137,9 @@ export class RabbitHoleSession {
   async handleRequest(req, res) {
     return handleSessionRequest(this, req, res);
   }
+}
+
+function isRevisableAnswer(node) {
+  return !!node && node.parent_id != null && node.status === "answered"
+    && !canvasNodeKind(node) && !normalizePdfExtension(node);
 }

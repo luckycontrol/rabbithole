@@ -23,6 +23,8 @@ const server = new McpServer(
       "   returns immediately and appears live), then the remaining final chunk in a normal call",
       "   with a short node title. Chunks concatenate verbatim — never repeat text already sent.",
       "4. Keep looping answer_branch until status='session_closed'.",
+      "A revision_request means the human asked AI to replace the current card instead of creating a branch.",
+      "Use current_title/current_markdown plus instruction, and stream the complete replacement through answer_branch.",
       "A convert_request means the human clicked Create text version. Read pages[].image_path in order,",
       "follow its inline rules, and stream the transcription through answer_branch with that request_id.",
       "The host crops figure: references; never crop or send page images back.",

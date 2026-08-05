@@ -137,7 +137,7 @@ async function resumeRabbithole(holeId, signal, assets) {
 }
 
 /**
- * Answer a pending branch request. A final call blocks until the next browser
+ * Answer a pending branch, revision, or conversion request. A final call blocks until the next browser
  * event; a partial call streams a chunk into the pending node and returns
  * immediately so the human watches the answer arrive.
  */

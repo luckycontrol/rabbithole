@@ -99,5 +99,5 @@ export const CANVAS_SHELL = `
 </div>
 
 <div id="banner"><div class="banner-body"><span class="banner-title" id="banner-title" data-notice-title></span><span id="banner-msg" data-notice-message></span></div>${iconButtonMarkup({ bare: true, id: "banner-x", title: "Dismiss", ariaLabel: "Dismiss banner", icon: "×", dataAttrs: { noticeDismiss: "" } })}</div>
-<div id="hint" data-notice-message></div>
+<div id="hint"><span data-notice-message></span><button type="button" data-notice-action hidden></button></div>
 `;

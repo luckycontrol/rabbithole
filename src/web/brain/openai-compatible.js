@@ -1,6 +1,7 @@
 import { buildAnswerMessages } from "../../core/prompts/answering-v1.js";
 import { buildAuthorMessages } from "../../core/prompts/authoring-v1.js";
 import { buildExplainerMessages } from "../../core/prompts/explainer-v1.js";
+import { buildRevisionMessages } from "../../core/prompts/revision-v1.js";
 import { buildTranscribeMessages } from "../../core/prompts/transcribe-v1.js";
 import { ProviderError, normalizeProviderError } from "./errors.js";
 import { addressSpaceHint } from "./model-endpoint.js";
@@ -77,6 +78,23 @@ export class OpenAICompatibleBrain {
       extraHeaders: this.extraHeaders,
       title: this.title,
     }), { fallbackTitle: context?.fallbackTitle });
+  }
+
+  async *reviseCard(context, signal) {
+    const body = {
+      model: this.model,
+      messages: buildRevisionMessages(context),
+      stream: true,
+      temperature: 0.25,
+    };
+    yield* adaptBranchGeneration(streamOpenAICompatible({
+      url: chatCompletionsUrl(this.baseUrl),
+      apiKey: this.apiKey,
+      body,
+      signal,
+      extraHeaders: this.extraHeaders,
+      title: this.title,
+    }), { fallbackTitle: context?.title || "Untitled" });
   }
 
   async *transcribePages(input, signal) {

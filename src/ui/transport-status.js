@@ -45,6 +45,7 @@ import { updateComposerState } from "./ask-followups.js";
 import { removeNodesLocal } from "./branch-surfaces.js";
 import { refreshNodeHtml } from "./renderer.js";
 import { cancelFrame, nextFrame } from "./lifecycle.js";
+import { handleRevisionError, handleRevisionProgress, handleRevisionReady } from "./ai-revision.js";
 
   // ===========================================================================
   // transport
@@ -338,6 +339,12 @@ function handleServer(msg){
         sn.base_url_source = msg.base_url_source || sn.base_url_source || null;
         scheduleStreamRender(sn, firstChunk);
       }
+    } else if (msg.type === "revision_progress"){
+      handleRevisionProgress(msg);
+    } else if (msg.type === "revision_ready"){
+      handleRevisionReady(msg);
+    } else if (msg.type === "revision_error"){
+      handleRevisionError(msg);
     } else if (msg.type === "node_extensions_patch"){
       var pn = nodes[msg.node_id];
       if (pn){

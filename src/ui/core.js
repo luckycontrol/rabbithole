@@ -470,3 +470,7 @@ function toggleTheme(){
 export function flashHint(msg){
   hintNotice.show({ message: msg, duration: 4000 });
 }
+
+export function showHint(options){
+  hintNotice.show(options || {});
+}

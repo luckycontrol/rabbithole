@@ -105,6 +105,8 @@ export interface CanvasNodeContentEvent extends NodeTarget {
   type: "canvas_node_content";
   title?: unknown;
   markdown?: unknown;
+  /** Whole-object text weight for a standalone canvas text node. */
+  font_weight?: unknown;
 }
 /** User-authored title and Markdown replacement for a settled branch answer. */
 export interface AnswerNodeContentEvent extends NodeTarget {

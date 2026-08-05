@@ -35,6 +35,18 @@ import { runWatchLoop, splitMarkdownChunks } from "../../src/node/watch/runner.j
 }
 
 {
+  const calls = [];
+  const driver = {
+    async open() { return { status: "revision_request", session_id: "session", request_id: "revision", instruction: "Shorten it" }; },
+    async generateRevision(event) { calls.push(["revise", event.request_id]); return { title: "Short", content: "Shorter." }; },
+    async answer(event, answer) { calls.push(["answer", event.request_id, answer.title]); return { status: "session_closed" }; },
+  };
+  const result = await runWatchLoop({ holeId: "revision-rabbit", driver });
+  assert.equal(result.status, "session_closed");
+  assert.deepEqual(calls, [["revise", "revision"], ["answer", "revision", "Short"]]);
+}
+
+{
   let opens = 0;
   const result = await runWatchLoop({
     holeId: "recover-rabbit",
