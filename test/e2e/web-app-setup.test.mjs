@@ -1015,14 +1015,17 @@ async function verifyAskKeyUxAndRail() {
   await page.waitForSelector("#ask.visible");
   await page.fill("#ask-text", "Can I revise this answer?");
   await page.click("#ask-go");
-  const answerCard = page.locator(".node:not(.root)", { hasText: "This answer is ready to edit." });
-  await answerCard.waitFor();
+  const generatedAnswer = page.locator(".node:not(.root)", { hasText: "This answer is ready to edit." });
+  await generatedAnswer.waitFor();
+  // Revision swaps the card body between the original and the AI preview, so hold
+  // the card by identity — a body-text locator stops matching mid-preview.
+  const revisionTargetId = await generatedAnswer.getAttribute("data-id");
+  const answerCard = page.locator(`.node[data-id="${revisionTargetId}"]`);
   await answerCard.getByRole("button", { name: "Revise this card with AI" }).click();
   const revision = answerCard.locator(".ai-revision");
   await revision.getByRole("textbox", { name: "AI revision instruction" }).fill("Make this answer clearer");
   await revision.getByRole("button", { name: "Generate revision" }).click();
   await revision.getByText("This replacement is only applied after preview.").waitFor();
-  const revisionTargetId = await answerCard.getAttribute("data-id");
   assert.match((await page.evaluate(async (nodeId) => (await window.__rabbitholeTest.readStoredHole()).nodes.find((node) => node.id === nodeId).markdown, revisionTargetId)),
     /ready to edit/, "AI revision preview must not overwrite the stored card");
   await revision.getByRole("button", { name: "Show original" }).click();
