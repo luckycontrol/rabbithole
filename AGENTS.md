@@ -36,41 +36,17 @@ Storage is JSON files under `~/.rabbithole/` (`RABBITHOLE_DIR` overrides).
 Logs go to stderr — stdout is reserved for the MCP protocol; never print to
 stdout.
 
-## Workflow
+## Development workflow
 
-For any feature addition, removal, or modification, the implementation work
-must be performed by a **subagent** in a dedicated **git worktree**. The main
-agent coordinates the task, reviews the subagent's changes, runs verification,
-and integrates the result; it must not directly edit the implementation for
-that task.
+For every code change that adds, modifies, or removes Rabbithole functionality:
 
-Always work in a **git worktree** — never edit directly on `main`:
-
-1. Create a worktree on a new branch before making changes
-   (`git worktree add ../rabbithole-<topic> -b <topic>`).
-2. Create a dedicated pane for the subagent in tmux session `rabbithole`,
-   window `0`, and start the subagent from the new worktree:
-   ```bash
-   tmux split-window -t rabbithole:0 -c <absolute-worktree-path>
-   ```
-   Do not substitute another session or window. If `rabbithole:0` is not
-   available, stop and report the environment issue before editing files.
-3. Run the subagent in that pane with model **GPT-5.6-luna** and
-   `reasoning_effort=max`. For the Codex CLI, use the installed CLI's
-   equivalent of:
-   ```bash
-   codex -C <absolute-worktree-path> -m gpt-5.6-luna -c 'model_reasoning_effort="max"'
-   ```
-4. Give the subagent the implementation task and require it to make all
-   changes, tests, and the commit inside the dedicated worktree. After
-   committing, the subagent reports the commit hash and stops; it must not
-   merge, push, or remove the worktree.
-5. The main agent reviews the subagent's diff and test results, then merges the
-   branch back into `main`.
-6. The main agent pushes the updated `main` branch to its configured upstream
-   and verifies that the push succeeds.
-7. Only the main agent, and only after the push succeeds, removes the worktree
-   (`git worktree remove ../rabbithole-<topic>`) and deletes the branch.
+1. Before editing code, create a dedicated Git branch and worktree. Do not make
+   the implementation changes directly in the primary worktree or on `main`.
+2. Make and verify all implementation changes in that dedicated worktree.
+3. When the work is complete, commit the changes on the worktree branch and
+   merge that branch into `main`.
+4. After confirming that the merge into `main` succeeded, remove the dedicated
+   worktree and delete its branch.
 
 ## Conventions
 

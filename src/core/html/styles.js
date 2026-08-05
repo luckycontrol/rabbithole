@@ -404,19 +404,33 @@ body.mode-canvas #viewport { display: block; }
 .canvas-manual-edit, .canvas-answer-edit { color: var(--fg-dim); }
 .canvas-ai-revise { color: var(--accent); }
 .node.ai-revising .node-composer { display: none; }
-.canvas-text-node { background: transparent; border-color: transparent; box-shadow: none; }
-.canvas-text-node::after { border: 1px solid var(--border-focus); }
-.canvas-text-node .node-head { position: absolute; left: 0; right: 0; top: -30px; min-height: 26px; padding: 0 4px 0 8px;
-  background: var(--node-head); border: var(--border-default); border-radius: 7px; box-shadow: var(--shadow-card); opacity: 0; pointer-events: none;
+.canvas-text-node { display: block; min-height: 1.72em; overflow: visible; background: transparent; border-color: transparent; border-radius: var(--radius-inline); box-shadow: none; }
+.canvas-text-node:focus { outline: none; }
+.canvas-text-node::after { inset: -4px; border: 1px solid var(--border-focus); border-radius: var(--radius-inline); }
+.canvas-text-node:hover::after, .canvas-text-node:focus-within::after { opacity: 1; }
+.canvas-text-node .node-head { position: absolute; left: 0; right: auto; top: -36px; width: max-content; max-width: none; min-height: 28px; padding: 3px;
+  background: var(--popover-bg); border: var(--popover-border); border-radius: 7px; box-shadow: var(--shadow-popover); opacity: 0; pointer-events: none;
   transform: translateY(3px); transition: opacity var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard); }
 .canvas-text-node:hover .node-head, .canvas-text-node:focus-within .node-head { opacity: 1; pointer-events: auto; transform: translateY(0); }
-.canvas-text-node .node-title { color: var(--fg-dim); font-size: 10.5px; }
-.canvas-text-node .node-acts { position: static; margin-left: auto; padding: 0; background: none; }
-.canvas-text-node .node-body { padding: 8px; overflow: auto; }
+.canvas-text-node .node-title { display: none; }
+.canvas-text-node .node-acts { position: static; margin: 0; padding: 0; gap: 1px; background: none; }
+.node-font-select { appearance: none; height: var(--control-h-xs); padding: 0 20px 0 7px; flex: 0 0 auto; color: var(--fg-dim); background: transparent;
+  border: 0; border-radius: var(--radius-control); font-family: var(--font-ui); font-size: 10.5px; font-weight: var(--weight-medium); line-height: 1; cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 9px) 10px, calc(100% - 6px) 10px; background-size: 3px 3px, 3px 3px; background-repeat: no-repeat; }
+.node-font-select:hover { color: var(--fg-bold); background-color: color-mix(in srgb, currentColor 8%, transparent); }
+.node-font-select:focus { outline: none; }
+.node-font-select:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.node-font-size { width: 58px; }
+.node-font-weight { width: 82px; }
+.canvas-text-node .node-body { padding: 0; overflow: visible; min-height: 1.72em; cursor: text; touch-action: auto; }
+.canvas-text-node .doc-content { min-height: 1.72em; }
 .canvas-manual-node .node-body { cursor: grab; }
 .canvas-manual-node .node-body:active { cursor: grabbing; }
-.canvas-text-node .node-resize { opacity: 0; }
-.canvas-text-node:hover .node-resize { opacity: .55; }
+.canvas-text-node .node-body, .canvas-text-node .node-body:active { cursor: text; }
+.canvas-text-node .node-resize { top: 0; right: -7px; bottom: 0; width: 10px; height: auto; border-radius: 0; background: none; cursor: ew-resize; opacity: 0; }
+.canvas-text-node .node-resize::after { content: ""; position: absolute; top: 4px; right: 4px; bottom: 4px; width: 1px; background: var(--border-focus); }
+.canvas-text-node:hover .node-resize, .canvas-text-node:focus-within .node-resize { opacity: .7; }
 
 .canvas-insert-draft { z-index: 20; padding: 0; overflow: hidden; border-color: var(--accent); box-shadow: var(--focus-field-shadow), var(--shadow-card); }
 .canvas-draft-head { flex: 0 0 auto; padding: 9px 12px; color: var(--fg-dim); background: var(--node-head); border-bottom: var(--border-default);
@@ -470,9 +484,23 @@ body.frozen .canvas-ai-revise { display: none !important; }
   .ai-revision-composer textarea { min-height: 80px; font-size: 16px; }
 }
 
+.canvas-text-draft { display: block; min-height: 38px; overflow: visible; background: transparent; border: 0; border-radius: var(--radius-inline); box-shadow: none; }
+.canvas-text-draft .canvas-draft-content { display: block; width: 100%; min-height: 38px; padding: 6px 7px; overflow: hidden; color: var(--fg); background: transparent;
+  border: 1px dashed var(--accent); border-radius: var(--radius-inline); box-shadow: var(--focus-field-shadow); font-family: var(--font-doc); font-size: 14px; line-height: 1.72; }
+.canvas-text-draft .canvas-draft-actions { position: absolute; right: 0; bottom: calc(100% + 7px); width: max-content; padding: 3px; gap: 2px;
+  background: var(--popover-bg); border: var(--popover-border); border-radius: 7px; box-shadow: var(--shadow-popover); }
+.canvas-text-draft .canvas-draft-button { min-height: 26px; }
+body.frozen .canvas-text-node .node-head { display: none !important; }
+
 @media (hover: none), (pointer: coarse), (max-width: 760px) {
   .canvas-insert-action { width: 44px; height: 44px; }
-  .canvas-text-node .node-head { opacity: 1; pointer-events: auto; }
+  .canvas-text-node .node-head { top: -52px; min-height: 44px; opacity: 1; pointer-events: auto; }
+  .canvas-text-node .node-head .node-btn { width: 44px; height: 44px; }
+  .canvas-text-node .node-head .node-font-btn { display: none; }
+  .canvas-text-node .node-font-select { height: 44px; padding-right: 24px; font-size: var(--text-ui);
+    background-position: calc(100% - 11px) 20px, calc(100% - 8px) 20px; }
+  .canvas-text-node .node-font-size { width: 72px; }
+  .canvas-text-node .node-font-weight { width: 104px; }
 }
 
 /* Follow-ups live in a drawer tucked under each card. Hovering the card makes a

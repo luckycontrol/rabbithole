@@ -216,12 +216,13 @@ async function runMarkdownWireFixture() {
     markdown: "Manual note", position: { x: 40, y: 80 }, size: { w: 300, h: 160 },
   }), { ok: true, node_id: canvasNodeId });
   assert.deepEqual(await postEvent(session, {
-    type: "canvas_node_content", node_id: canvasNodeId, title: "Edited canvas note", markdown: "Edited manual note",
+    type: "canvas_node_content", node_id: canvasNodeId, title: "Edited canvas note", markdown: "Edited manual note", font_weight: 600,
   }), { ok: true });
   await session.flushSave();
   const persistedCanvasNode = (await new FsStore().loadHole(session.holeId)).nodes.find((node) => node.id === canvasNodeId);
   assert.equal(persistedCanvasNode.markdown, "Edited manual note", "MCP browser transport should persist manual canvas edits");
-  assert.deepEqual(persistedCanvasNode.origin, { canvas: { version: 1, kind: "text" } }, "manual canvas kind should use durable origin metadata");
+  assert.deepEqual(persistedCanvasNode.origin, { canvas: { version: 1, kind: "text", style: { font_weight: 600 } } },
+    "manual canvas kind and text style should use durable origin metadata");
 
   const requestId = "req-markdown-wire";
   const nodeId = "node-markdown-wire";
@@ -344,7 +345,7 @@ async function runMarkdownWireFixture() {
   assertNoContentHtml(projection, "export projection");
   assert(projection.hole.nodes.every((node) => Object.keys(node.extensions).length === 0), "snapshot payload clears learner extensions");
   assert.deepEqual(projection.hole.nodes.find((node) => node.id === canvasNodeId)?.origin,
-    { canvas: { version: 1, kind: "text" } }, "MCP snapshots should preserve manual canvas item presentation");
+    { canvas: { version: 1, kind: "text", style: { font_weight: 600 } } }, "MCP snapshots should preserve manual canvas item presentation");
   assertIncludes(exportHtml, "RabbitholeFrozenClient.startPortableSnapshot", "export should use the portable snapshot bootstrap");
   assert.deepEqual(Object.keys(projection.assets), ["diagram-1.png"], "export should include referenced assets only");
   assert.equal(projection.assets["diagram-1.png"], PNG_BYTES.toString("base64"));

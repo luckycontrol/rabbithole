@@ -58,18 +58,51 @@ async function verifyCanvasInsertToolbar() {
     await toolbar.waitFor();
     await toolbar.getByRole("button", { name: "Add text" }).click();
     const textDraft = page.locator(".canvas-text-draft");
-    await textDraft.getByRole("textbox", { name: "Text" }).fill("A **manual note** on the canvas.");
+    assert.equal(await textDraft.locator(".canvas-draft-head").count(), 0,
+      "text authoring should be an inline field without card chrome");
+    const textDraftInput = textDraft.getByRole("textbox", { name: "Text" });
+    const draftHeightBefore = await textDraftInput.evaluate((input) => input.getBoundingClientRect().height);
+    await textDraftInput.fill("A **manual note** on the canvas.\n\nA second line keeps the editor growing.");
+    const draftHeightAfter = await textDraftInput.evaluate((input) => input.getBoundingClientRect().height);
+    assert(draftHeightAfter > draftHeightBefore, "the inline text editor should grow with its content");
     await textDraft.getByRole("button", { name: "Add text" }).click();
     await page.waitForSelector(".canvas-text-node", { state: "visible" });
-    assert.equal(await page.locator(".canvas-text-node").innerText().then((text) => text.includes("manual note")), true,
+    const textNode = page.locator(".canvas-text-node");
+    assert.equal(await textNode.innerText().then((text) => text.includes("manual note")), true,
       "saved text should render through the shared Markdown path");
+    const restingTextStyle = await textNode.evaluate((node) => {
+      const style = getComputedStyle(node), body = getComputedStyle(node.querySelector(".node-body"));
+      return { background: style.backgroundColor, border: style.borderColor, shadow: style.boxShadow,
+        height: node.getBoundingClientRect().height, overflow: body.overflow };
+    });
+    assert.match(restingTextStyle.background, /rgba\([^)]*, 0\)|transparent/, "canvas text should have no resting background");
+    assert.match(restingTextStyle.border, /rgba\([^)]*, 0\)|transparent/, "canvas text should have no resting border");
+    assert.equal(restingTextStyle.shadow, "none", "canvas text should have no card shadow");
+    assert.equal(restingTextStyle.overflow, "visible", "canvas text should grow instead of scrolling inside a card");
+    assert(restingTextStyle.height < 120, `canvas text should hug its content, got ${restingTextStyle.height}px`);
+
+    await textNode.hover();
+    const sizeSelect = textNode.getByRole("combobox", { name: "Text size" });
+    const weightSelect = textNode.getByRole("combobox", { name: "Text weight" });
+    await sizeSelect.selectOption("24");
+    await weightSelect.selectOption("600");
+    assert.deepEqual(await textNode.locator(".doc-content").evaluate((content) => ({
+      size: getComputedStyle(content).fontSize, weight: getComputedStyle(content).fontWeight,
+    })), { size: "24px", weight: "600" }, "text formatting controls should update the selected text object");
+
     const textPositionBefore = await canvasNodePosition(page, ".canvas-text-node");
-    await dragCanvasNodeBody(page, ".canvas-text-node", 64, 42);
+    await dragCanvasNodeToolbar(page, ".canvas-text-node", 64, 42);
     const textPositionAfter = await canvasNodePosition(page, ".canvas-text-node");
     assert(Math.abs(textPositionAfter.left - textPositionBefore.left) > 1
       && Math.abs(textPositionAfter.top - textPositionBefore.top) > 1,
-    `the body of a manually-created text node should move it (${JSON.stringify({ textPositionBefore, textPositionAfter })})`);
+    `the contextual toolbar should move a manually-created text node (${JSON.stringify({ textPositionBefore, textPositionAfter })})`);
     await assertStoredCanvasNodePosition(page, ".canvas-text-node", textPositionAfter);
+
+    await textNode.locator(".node-body").dblclick();
+    const editTextDraft = page.locator(".canvas-text-draft");
+    await editTextDraft.getByRole("textbox", { name: "Text" }).fill("Edited inline canvas text.");
+    await editTextDraft.getByRole("button", { name: "Save text" }).click();
+    await textNode.locator(".doc-content").getByText("Edited inline canvas text.", { exact: true }).waitFor();
 
     const cardPoint = await emptyCanvasPoint(page);
     await page.mouse.dblclick(cardPoint.x, cardPoint.y);
@@ -94,21 +127,38 @@ async function verifyCanvasInsertToolbar() {
 
     await page.waitForFunction(async () => {
       const hole = await window.__rabbitholeTest.readStoredHole();
-      return hole.nodes.some((node) => node.origin?.canvas?.kind === "text" && node.markdown.includes("manual note"))
+      return hole.nodes.some((node) => node.origin?.canvas?.kind === "text" && node.markdown === "Edited inline canvas text."
+          && node.origin.canvas.style?.font_weight === 600 && Math.abs(node.font_scale - (24 / 14)) < 0.001)
         && hole.nodes.some((node) => node.origin?.canvas?.kind === "card" && node.markdown === "Edited card body.");
     });
     const portable = await page.evaluate(() => window.__rabbitholeTest.exportPortable());
     const manualNodes = portable.hole.nodes.filter((node) => node.origin?.canvas);
     assert.deepEqual(manualNodes.map((node) => node.origin.canvas.kind).sort(), ["card", "text"],
       "portable exports should preserve manual canvas item kinds without a schema change");
+    assert.equal(manualNodes.find((node) => node.origin.canvas.kind === "text").origin.canvas.style.font_weight, 600,
+      "portable exports should preserve canvas text weight");
     const snapshot = JSON.parse(extractSnapshotPayload(await page.evaluate(() => window.__rabbitholeTest.exportSnapshot())));
     assert.deepEqual(snapshot.hole.nodes.filter((node) => node.origin?.canvas).map((node) => node.origin.canvas.kind).sort(), ["card", "text"],
       "self-contained snapshots should preserve manual canvas item kinds");
+    assert.equal(snapshot.hole.nodes.find((node) => node.origin?.canvas?.kind === "text").origin.canvas.style.font_weight, 600,
+      "self-contained snapshots should preserve canvas text weight");
 
     await page.reload({ waitUntil: "networkidle" });
     await page.waitForSelector(".canvas-text-node");
+    assert.deepEqual(await page.locator(".canvas-text-node .doc-content").evaluate((content) => ({
+      size: getComputedStyle(content).fontSize, weight: getComputedStyle(content).fontWeight,
+    })), { size: "24px", weight: "600" }, "saved text formatting should restore after reload");
     assert.equal(await page.locator(".canvas-card-node", { hasText: "Edited card body." }).count(), 1,
       "manual text and cards should restore from IndexedDB after reload");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(180);
+    assert.deepEqual(await page.locator(".canvas-text-node").evaluate((node) => {
+      const head = getComputedStyle(node.querySelector(".node-head"));
+      const size = getComputedStyle(node.querySelector(".node-font-size"));
+      const weight = getComputedStyle(node.querySelector(".node-font-weight"));
+      return { opacity: head.opacity, pointerEvents: head.pointerEvents, sizeHeight: size.height, weightHeight: weight.height };
+    }), { opacity: "1", pointerEvents: "auto", sizeHeight: "44px", weightHeight: "44px" },
+    "compact canvases should expose persistent touch-sized text formatting controls");
   } finally {
     await context.close();
   }
@@ -137,6 +187,18 @@ async function dragCanvasNodeBody(page, selector, dx, dy) {
   const point = await page.locator(`${selector} .node-body`).evaluate((body) => {
     const rect = body.getBoundingClientRect();
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  });
+  await page.mouse.move(point.x, point.y);
+  await page.mouse.down();
+  await page.mouse.move(point.x + dx, point.y + dy);
+  await page.mouse.up();
+}
+
+async function dragCanvasNodeToolbar(page, selector, dx, dy) {
+  await page.locator(selector).hover();
+  const point = await page.locator(`${selector} .node-head`).evaluate((head) => {
+    const rect = head.getBoundingClientRect();
+    return { x: rect.left + 1, y: rect.top + rect.height / 2 };
   });
   await page.mouse.move(point.x, point.y);
   await page.mouse.down();

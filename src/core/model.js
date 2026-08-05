@@ -14,6 +14,8 @@ export const BRANCH_FOLLOWUP = "followup";
 export const CANVAS_NODE_ORIGIN_VERSION = 1;
 export const CANVAS_NODE_TEXT = "text";
 export const CANVAS_NODE_CARD = "card";
+export const CANVAS_TEXT_DEFAULT_WEIGHT = 400;
+export const CANVAS_TEXT_WEIGHTS = Object.freeze([400, 500, 600, 700]);
 
 /** @type {Readonly<Record<PropertyKey, { label: string, q: string }>>} */
 export const LENSES = Object.freeze({
@@ -73,6 +75,19 @@ export function canvasNodeKind(node) {
   const record = /** @type {{ version?: unknown, kind?: unknown }} */ (canvas);
   if (record.version !== CANVAS_NODE_ORIGIN_VERSION) return null;
   return record.kind === CANVAS_NODE_TEXT || record.kind === CANVAS_NODE_CARD ? record.kind : null;
+}
+
+/** @param {unknown} value */
+export function normalizeCanvasTextWeight(value) {
+  const weight = Number(value);
+  return CANVAS_TEXT_WEIGHTS.includes(weight) ? weight : CANVAS_TEXT_DEFAULT_WEIGHT;
+}
+
+/** @param {{ origin?: unknown } | null | undefined} node */
+export function canvasTextWeight(node) {
+  if (canvasNodeKind(node) !== CANVAS_NODE_TEXT) return CANVAS_TEXT_DEFAULT_WEIGHT;
+  const canvas = /** @type {{ canvas?: { style?: { font_weight?: unknown } } } | null | undefined} */ (node?.origin)?.canvas;
+  return normalizeCanvasTextWeight(canvas?.style?.font_weight);
 }
 
 /** @param {unknown} pos @returns {Position} */

@@ -150,6 +150,13 @@
     "expected_effects": { "node_id": "card" }
   },
   {
+    "name": "canvas text weight is normalized into portable canvas style metadata",
+    "initial": { "root_id": "root", "nodes": [{ "id": "root" }, { "id": "note", "title": "Note", "markdown": "Keep", "origin": { "canvas": { "version": 1, "kind": "text", "future": { "keep": true } } } }] },
+    "events": [{ "event": { "type": "canvas_node_content", "node_id": "note", "font_weight": "600" } }],
+    "expected": { "hole_id": "", "title": "Untitled", "root_id": "root", "created_at": null, "view_state": null, "nodes": [{ "id": "root" }, { "id": "note", "title": "Note", "markdown": "Keep", "origin": { "canvas": { "version": 1, "kind": "text", "future": { "keep": true }, "style": { "font_weight": 600 } } } }] },
+    "expected_effects": { "node_id": "note" }
+  },
+  {
     "name": "answer_node_content edits only settled branch answers",
     "initial": { "root_id": "root", "nodes": [{ "id": "root", "title": "Root", "markdown": "Keep" }, { "id": "pending", "parent_id": "root", "title": "Pending", "markdown": "Before", "status": "pending" }, { "id": "answer", "parent_id": "root", "title": "Answer", "markdown": "Before", "status": "answered" }, { "id": "note", "title": "Note", "markdown": "Before", "origin": { "canvas": { "version": 1, "kind": "text" } } }] },
     "events": [{ "event": { "type": "answer_node_content", "node_id": "root", "title": "No root", "markdown": "No" } }, { "event": { "type": "answer_node_content", "node_id": "pending", "title": "No pending", "markdown": "No" } }, { "event": { "type": "answer_node_content", "node_id": "note", "title": "No note", "markdown": "No" } }, { "event": { "type": "answer_node_content", "node_id": "answer", "title": "  Revised title  ", "markdown": "After" } }],
