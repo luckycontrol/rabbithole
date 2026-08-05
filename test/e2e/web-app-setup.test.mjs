@@ -1403,21 +1403,30 @@ async function verifyAskKeyUxAndRail() {
   const readRailWidth = () => page.locator("#reader-rail").evaluate((rail) => Math.round(rail.getBoundingClientRect().width));
   const defaultRailWidth = await readRailWidth();
   const gripBox = await grip.boundingBox();
+  // The grip moves the rail's left boundary: dragging it LEFT widens the panel,
+  // dragging it RIGHT narrows it.
   await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2);
   await page.mouse.down();
-  await page.mouse.move(gripBox.x + gripBox.width / 2 + 140, gripBox.y + gripBox.height / 2, { steps: 8 });
+  await page.mouse.move(gripBox.x + gripBox.width / 2 - 140, gripBox.y + gripBox.height / 2, { steps: 8 });
   await page.mouse.up();
   const widenedRailWidth = await readRailWidth();
-  assert(widenedRailWidth > defaultRailWidth + 100, `dragging the grip should widen the edit panel (${defaultRailWidth} -> ${widenedRailWidth})`);
+  assert(widenedRailWidth > defaultRailWidth + 100, `dragging the grip left should widen the edit panel (${defaultRailWidth} -> ${widenedRailWidth})`);
   assert.equal(Number(await grip.getAttribute("aria-valuenow")), widenedRailWidth,
     "the grip should report the current width through aria-valuenow");
+  const gripBoxAfterWiden = await grip.boundingBox();
+  await page.mouse.move(gripBoxAfterWiden.x + gripBoxAfterWiden.width / 2, gripBoxAfterWiden.y + gripBoxAfterWiden.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(gripBoxAfterWiden.x + gripBoxAfterWiden.width / 2 + 140, gripBoxAfterWiden.y + gripBoxAfterWiden.height / 2, { steps: 8 });
+  await page.mouse.up();
+  assert(Math.abs(await readRailWidth() - defaultRailWidth) <= 1,
+    "dragging the grip right should narrow the panel back to its start width");
   await grip.dblclick();
   const resetRailWidth = await readRailWidth();
   assert(Math.abs(resetRailWidth - defaultRailWidth) <= 1, `double-click should reset the panel to its default width (${resetRailWidth} vs ${defaultRailWidth})`);
   await grip.focus();
   const widthBeforeKey = await readRailWidth();
   await page.keyboard.press("ArrowRight");
-  assert.equal(await readRailWidth(), widthBeforeKey + 24, "arrow keys should nudge the panel width");
+  assert.equal(await readRailWidth(), widthBeforeKey - 24, "arrow keys should narrow the panel when moving the boundary right");
   await page.keyboard.press("Escape");
   await page.waitForSelector(".reader-edit-panel", { state: "detached" });
   assert.equal(await grip.isVisible(), false, "closing the edit should hide the resize grip");

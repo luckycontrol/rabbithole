@@ -348,7 +348,9 @@ function isCompactReader(){
 
 // ---------------------------------------------------------------------------
 // Edit-panel width grip. A vertical handle on the rail's left edge appears only
-// while an edit is open. Dragging it overrides --reader-branch-rail on the rail
+// while an edit is open. It moves that left boundary: dragging it left (away
+// from the rail) widens the panel, dragging it right narrows it, and the arrow
+// keys follow the same sense. Dragging overrides --reader-branch-rail on the rail
 // element (which is what both #reader-rail and the full-width panel measure
 // against), so one inline property resizes the whole edit surface. The element
 // is created once and stays in the static rail; CSS visibility (editing class,
@@ -405,7 +407,7 @@ function ensureReaderEditResizeGrip(){
       return true;
     },
     function(ev){
-      setReaderEditPanelWidth(grip._rhStartW + (ev.clientX - grip._rhStartX));
+      setReaderEditPanelWidth(grip._rhStartW - (ev.clientX - grip._rhStartX));
     },
     function(){
       document.body.classList.remove("reader-resizing");
@@ -416,8 +418,8 @@ function ensureReaderEditResizeGrip(){
   grip.addEventListener("dblclick", function(){ resetReaderEditPanelWidth(); });
   grip.addEventListener("keydown", function(e){
     var width = currentReaderEditPanelWidth();
-    if (e.key === "ArrowLeft"){ setReaderEditPanelWidth(width - READER_EDIT_WIDTH_STEP); e.preventDefault(); }
-    else if (e.key === "ArrowRight"){ setReaderEditPanelWidth(width + READER_EDIT_WIDTH_STEP); e.preventDefault(); }
+    if (e.key === "ArrowLeft"){ setReaderEditPanelWidth(width + READER_EDIT_WIDTH_STEP); e.preventDefault(); }
+    else if (e.key === "ArrowRight"){ setReaderEditPanelWidth(width - READER_EDIT_WIDTH_STEP); e.preventDefault(); }
     else if (e.key === "Home"){ setReaderEditPanelWidth(READER_EDIT_MIN_WIDTH); e.preventDefault(); }
     else if (e.key === "End"){ setReaderEditPanelWidth(READER_EDIT_MAX_WIDTH); e.preventDefault(); }
   });
