@@ -37,11 +37,13 @@ try {
     "reader composing Enter must not make a follow-up request");
 
   await finishCompositionAndSubmit(page, "#composer-text", "테스트");
-  const readerBranch = page.locator("#margin-notes .side-item", { hasText: "테스트" });
-  await readerBranch.waitFor();
-  assert.equal(await page.locator("#margin-notes .side-item").count(), 1,
-    "reader normal Enter after composition must create exactly one follow-up branch");
-  assert.match(await readerBranch.innerText(), /테스트/);
+  const readerTurn = page.locator("#reader-chat-log .reader-chat-turn", { hasText: "Reader follow-up answer." });
+  await readerTurn.waitFor();
+  assert.equal(await page.locator("#reader-chat-log .reader-chat-turn").count(), 1,
+    "reader normal Enter after composition must create exactly one chat turn");
+  assert.match(await readerTurn.innerText(), /테스트/);
+  assert.equal(await page.locator("#margin-notes .side-item").count(), 0,
+    "reader chat turns must not appear in the branch rail");
   await waitForRequestCount(page, providerBodies, 1);
   assert.match(JSON.stringify(providerBodies[0]), /테스트/,
     "reader follow-up request must contain the complete composed text");

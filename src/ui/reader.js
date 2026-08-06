@@ -26,6 +26,7 @@ import {
   BRANCH_FOLLOWUP,
   branchTypeOfNode,
   canvasNodeKind,
+  isChatContextNode,
   lensLabel,
   lineageNodesFromMap,
   truncate
@@ -940,7 +941,9 @@ export function renderMarginNotes(){
     }
     var layer = marginNotesLayer();
     if (!layer) return;
-    var kids = childrenOf(currentNodeId).sort(function(a,b){
+    var kids = childrenOf(currentNodeId).filter(function(k){
+      return !isChatContextNode(k);
+    }).sort(function(a,b){
       var aAnchored = !!(a.origin && a.origin.anchor), bAnchored = !!(b.origin && b.origin.anchor);
       if (aAnchored !== bAnchored) return aAnchored ? -1 : 1;
       return (aAnchored ? anchorStart(a) - anchorStart(b) : 0) || ((a._order||0) - (b._order||0));

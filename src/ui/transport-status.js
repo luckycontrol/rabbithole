@@ -26,6 +26,7 @@ import {
   viewAdjusted
 } from "./core.js";
 import { DEFAULT_CHILD } from "../core/layout.js";
+import { isChatContextNode } from "../core/model.js";
 import {
   renderBreadcrumb,
   renderReaderBody,
@@ -276,6 +277,7 @@ function renderStreamSurfaces(node, firstChunk){
         readerMain.scrollTop = keep;
       }
     } else if (currentNodeId === node.parent_id){
+      if (isChatContextNode(node)) return;
       // The branch streams live inside its rail card: the first chunk rebuilds
       // the card (Thinking… → Writing… + the live pane), later chunks patch it.
       var layer = document.getElementById("margin-notes");

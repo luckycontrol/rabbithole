@@ -38,6 +38,10 @@ try {
   await page.click("#composer-send");
   await page.locator("#reader-chat-log .reader-chat-turn", { hasText: "The first answer uses the root page." }).waitFor();
   assert.equal(await page.locator("#reader-chat-log .reader-chat-turn").count(), 1);
+  assert.equal(await page.locator("#margin-notes .side-item").count(), 0,
+    "reader chat answers must not appear in the branch rail");
+  assert.equal(await page.textContent("#reader-rail-count"), "0",
+    "reader chat answers must not increase the branch rail count");
 
   await page.fill("#composer-text", "How does that affect maintenance?");
   await page.click("#composer-send");

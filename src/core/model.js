@@ -69,6 +69,11 @@ export function branchTypeOfNode(node) {
   return type === BRANCH_SELECTION || type === BRANCH_FOLLOWUP ? type : null;
 }
 
+/** @param {{ origin?: { chat_context_id?: unknown, chat_thread_id?: unknown } | null } | null | undefined} node */
+export function isChatContextNode(node) {
+  return normalizeChatContextRef(node?.origin) != null;
+}
+
 /** @param {{ origin?: unknown } | null | undefined} node */
 export function canvasNodeKind(node) {
   const canvas = /** @type {{ canvas?: unknown } | null | undefined} */ (node?.origin)?.canvas;

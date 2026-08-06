@@ -39,12 +39,14 @@ try {
   await createDocument(page, "# Networking\n\nA root document to branch from.");
 
   // Revise is offered on answer cards, not on the root, so the card under test
-  // is one the model wrote.
+  // is one the model wrote. Create it from the canvas composer so it remains a
+  // regular branch in the reader rail rather than a reader-chat turn.
+  await page.locator(".node.root .nc-handle").focus();
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.activeElement?.matches(".node.root .nc-inner textarea"));
+  await page.keyboard.type("Explain the layers");
+  await page.keyboard.press("Enter");
   await page.click("#t-reader");
-  await page.click("#reader-chat-fab");
-  await page.waitForSelector("#composer-text:visible");
-  await page.fill("#composer-text", "Explain the layers");
-  await page.click("#composer-send");
   await page.locator("#margin-notes .side-item", { hasText: "Layers" }).waitFor();
   await page.click("#margin-notes .side-item");
   await page.waitForFunction(() => document.querySelector("#reader-main .doc-content")?.textContent.includes("presentation layer"));

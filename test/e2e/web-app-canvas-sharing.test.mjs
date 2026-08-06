@@ -1436,10 +1436,9 @@ async function verifyCanvasBranching() {
   await page.click("#reader-chat-fab");
   await page.fill("#composer-text", "Go one layer deeper.");
   await page.click("#composer-send");
-  const followupRailCard = page.locator("#margin-notes .side-item", { hasText: "Go one layer deeper." });
-  await followupRailCard.waitFor();
-  await followupRailCard.click();
-  await page.locator("#reader-main", { hasText: "Second branch explains the geometric view" }).waitFor();
+  await page.locator("#reader-chat-log .reader-chat-turn", { hasText: "Second branch explains the geometric view" }).waitFor();
+  assert.equal(await page.locator("#margin-notes .side-item", { hasText: "Go one layer deeper." }).count(), 0,
+    "reader chat answers must not appear in the branch rail");
   assert.equal(providerCalls, 3);
 
   await page.waitForTimeout(900);
