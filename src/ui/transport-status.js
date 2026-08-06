@@ -46,6 +46,11 @@ import { removeNodesLocal } from "./branch-surfaces.js";
 import { refreshNodeHtml } from "./renderer.js";
 import { cancelFrame, nextFrame } from "./lifecycle.js";
 import { handleRevisionError, handleRevisionProgress, handleRevisionReady } from "./ai-revision.js";
+import {
+  handleSelectionRevisionError,
+  handleSelectionRevisionProgress,
+  handleSelectionRevisionReady
+} from "./revise-selection.js";
 
   // ===========================================================================
   // transport
@@ -340,11 +345,11 @@ function handleServer(msg){
         scheduleStreamRender(sn, firstChunk);
       }
     } else if (msg.type === "revision_progress"){
-      handleRevisionProgress(msg);
+      if (!handleSelectionRevisionProgress(msg)) handleRevisionProgress(msg);
     } else if (msg.type === "revision_ready"){
-      handleRevisionReady(msg);
+      if (!handleSelectionRevisionReady(msg)) handleRevisionReady(msg);
     } else if (msg.type === "revision_error"){
-      handleRevisionError(msg);
+      if (!handleSelectionRevisionError(msg)) handleRevisionError(msg);
     } else if (msg.type === "node_extensions_patch"){
       var pn = nodes[msg.node_id];
       if (pn){

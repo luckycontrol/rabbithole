@@ -71,6 +71,10 @@ export const CANVAS_SHELL = `
 <div id="viewport"><div id="canvas-gesture-plane" aria-hidden="true"></div><div id="world"><svg id="edges"></svg></div></div>
 
 <div id="ask">
+  <div class="ask-modes" id="ask-modes" role="tablist" aria-label="What to do with this passage" hidden>
+    ${buttonMarkup({ bare: true, className: "ask-mode active", id: "ask-mode-ask", role: "tab", dataAttrs: { mode: "ask" }, label: "Ask" })}
+    ${buttonMarkup({ bare: true, className: "ask-mode", id: "ask-mode-revise", role: "tab", dataAttrs: { mode: "revise" }, label: "Revise", kbdHint: "e" })}
+  </div>
   <div class="ask-input">
     <textarea id="ask-text" rows="1" placeholder="Ask about this…"></textarea>
     ${iconButtonMarkup({ bare: true, className: "send-btn", id: "ask-go", title: "Send (Enter) · New line (Shift+Enter)", ariaLabel: "Ask", svgIconHtml: iconSvg("send") })}
@@ -81,6 +85,14 @@ export const CANVAS_SHELL = `
     ${buttonMarkup({ bare: true, className: "lens", dataAttrs: { lens: "example" }, label: "Example ", kbdHint: "3" })}
     ${buttonMarkup({ bare: true, className: "lens", dataAttrs: { lens: "deeper" }, label: "Go Deeper ", kbdHint: "4" })}
   </div>
+  <div class="ask-revise-chips" id="ask-revise-chips" hidden>
+    ${buttonMarkup({ bare: true, className: "ask-chip", dataAttrs: { instruction: "Make it shorter" }, label: "Shorter" })}
+    ${buttonMarkup({ bare: true, className: "ask-chip", dataAttrs: { instruction: "Explain this more clearly" }, label: "Clearer" })}
+    ${buttonMarkup({ bare: true, className: "ask-chip", dataAttrs: { instruction: "Fix any errors here" }, label: "Fix errors" })}
+    ${buttonMarkup({ bare: true, className: "ask-chip", dataAttrs: { instruction: "Add a concrete example" }, label: "Add example" })}
+  </div>
+  <p class="ask-revise-note" id="ask-revise-note" hidden></p>
+  <div class="ask-revision" id="ask-revision" hidden></div>
 </div>
 
 <div id="palette" hidden><div id="palette-panel">

@@ -16,6 +16,7 @@ import { GenerationIngress } from "./generation-ingress.js";
 import { applyPersistedBrowserEvent, assetsOrphanedByDeletion, buildNodeAnsweredEvent, createSaveChain, dispatchBrowserEvent } from "../../core/hole-host.js";
 import { MAX_PDF_FIGURE_ASSET_BYTES, normalizePdfExtension, parseFigureRefs, rewriteFigureRefs } from "../../core/pdf-shared.js";
 import { TRANSCRIBE_V1_RULES } from "../../core/prompts/transcribe-v1.js";
+import { normalizeRevisionFragment, readSelectionRegion, SELECTION_RESPONSE_CONTRACT, selectionRegionMatches } from "../../core/selection-revision.js";
 import { cropPdfFigureToAsset, cropPdfRegionToFile, renderPdfPageToFile, sweepPdfRegionFiles } from "../pdf-crop.js";
 
 const SESSION_TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2 hours
@@ -675,6 +676,9 @@ export class RabbitHoleSession {
       this.revisionRequests.delete(requestId);
       throw buildJsonError("The answer being revised is no longer available", 409);
     }
+    if (request.region) {
+      return this.answerSelectionRevision({ request, requestId, node, content, partial, assets, signal, inFlightEvent });
+    }
     let ingress = request.ingress;
     if (!ingress) {
       ingress = this.createGenerationIngress(node);
@@ -693,6 +697,32 @@ export class RabbitHoleSession {
     this.revisionRequests.delete(requestId);
     this.broadcast({ type: "revision_ready", request_id: requestId, node_id: node.id,
       title: result.title, markdown: result.markdown });
+    return this.waitForEvent(signal);
+  }
+
+  // A selection revision streams a fragment, not a card. It deliberately skips
+  // the generation ingress: that accumulator builds a whole document and mints
+  // block ids for it, both wrong for a span that will be spliced between two
+  // offsets of an existing one.
+  async answerSelectionRevision({ request, requestId, node, content, partial, assets, signal, inFlightEvent }) {
+    const addedAssets = await addAssetsToHole(this.holeId, assets);
+    for (const asset of addedAssets) this.assetNames.add(asset.name);
+    request.fragment += String(content ?? "");
+    if (partial) {
+      if (inFlightEvent) this.inFlightBranchRequests.set(requestId, inFlightEvent);
+      this.startAnswerWatchdog();
+      this.broadcast({ type: "revision_progress", request_id: requestId, node_id: node.id,
+        scope: "selection", selection: request.region, fragment: request.fragment });
+      return { ok: true, node_id: node.id, request_id: requestId, partial: true, revision: true };
+    }
+    this.revisionRequests.delete(requestId);
+    // Re-checked at the end as well as at the start: the card can be edited
+    // from another surface while the agent writes, and a span that moved in the
+    // meantime would splice this fragment over the wrong words.
+    this.broadcast({ type: "revision_ready", request_id: requestId, node_id: node.id,
+      scope: "selection", selection: request.region,
+      fragment: normalizeRevisionFragment(request.fragment, request.region.region_markdown),
+      stale: !selectionRegionMatches(node.markdown, request.region) });
     return this.waitForEvent(signal);
   }
 
@@ -933,6 +963,10 @@ export class RabbitHoleSession {
     if (!isRevisableAnswer(node)) throw buildJsonError("Only completed answer cards can be revised with AI", 409);
     const instruction = String(payload.instruction || "").trim();
     if (!instruction) throw buildJsonError("Tell AI how to revise this card", 400);
+    const region = readSelectionRegion(payload.selection);
+    if (region && !selectionRegionMatches(node.markdown, region)) {
+      throw buildJsonError("This card changed since that passage was selected — select it again", 409);
+    }
     const requestId = String(payload.request_id || randomUUID());
     for (const [id, request] of this.revisionRequests) {
       if (request.node_id !== node.id) continue;
@@ -941,7 +975,7 @@ export class RabbitHoleSession {
       this.queue = this.queue.filter((event) => event.request_id !== id);
       this.cancelledRequests.add(id);
     }
-    this.revisionRequests.set(requestId, { node_id: node.id, instruction, ingress: null });
+    this.revisionRequests.set(requestId, { node_id: node.id, instruction, ingress: null, region, fragment: "" });
     const event = {
       status: "revision_request",
       session_id: this.id,
@@ -951,8 +985,11 @@ export class RabbitHoleSession {
       current_markdown: node.markdown || "",
       instruction,
       lineage: this.lineageTitles(node.id),
-      response_contract: "Return the complete replacement Markdown. Stream with answer_branch partial=true, then finish with the revised card title.",
+      response_contract: region
+        ? SELECTION_RESPONSE_CONTRACT
+        : "Return the complete replacement Markdown. Stream with answer_branch partial=true, then finish with the revised card title.",
     };
+    if (region) event.selection = region;
     if (this.needsRehydration) {
       this.needsRehydration = false;
       event.rehydration = this.buildRehydrationPayload();
@@ -1114,6 +1151,9 @@ export class RabbitHoleSession {
         },
         canvas_node_content: (event) => this.applyPersistedBrowserEvent(event),
         answer_node_content: (event) => this.applyPersistedBrowserEvent(event),
+        // Anchors move when the text they point at is rewritten, so the
+        // surface that rewrites it also reports where they landed.
+        node_origin: (event) => this.applyPersistedBrowserEvent(event),
         node_update: (event) => this.handleNodeUpdate(event),
         nodes_update: (event) => this.handleNodesUpdate(event),
         block_state: (event) => this.applyPersistedBrowserEvent(event),

@@ -30,6 +30,7 @@ import {
 import { disposeChrome, initChrome } from "./chrome-init.js";
 import { ensureNodeHtml, setRendererAssetData } from "./renderer.js";
 import { disposeAiRevision, registerAiRevisionHooks } from "./ai-revision.js";
+import { disposeReviseSelection, registerReviseSelectionHooks } from "./revise-selection.js";
 
 var activeRuntime = null;
 
@@ -114,6 +115,18 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
       }
     });
     own(disposeAiRevision);
+
+    registerReviseSelectionHooks({
+      post: post,
+      refresh: function(node){
+        refreshCanvasNodeContent(node);
+        if (mode === "reader" && currentNodeId === node.id) {
+          renderReaderBody();
+          renderMarginNotes();
+        }
+      }
+    });
+    own(disposeReviseSelection);
 
     initReader(); own(disposeReader);
     initCanvasView(); own(disposeCanvasView);

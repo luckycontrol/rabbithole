@@ -700,6 +700,52 @@ body:not(.mode-canvas) .tb-group[data-mode="canvas"] { display: none; }
   background: color-mix(in srgb, var(--fg) 8%, transparent); border-radius: 4px; padding: 1px 4.5px; line-height: 1.6; }
 .lens:hover kbd { color: var(--fg-dim); background: color-mix(in srgb, var(--fg) 13%, transparent); }
 
+/* Ask / Revise. One drag, two things it can lead to: a branch off the passage
+   or a rewrite of it. The switch sits above the composer so the choice is made
+   before the instruction is typed, and it is absent entirely when the passage
+   cannot be revised. */
+.ask-modes { display: flex; gap: 2px; padding: 5px 5px 0; }
+.ask-mode { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  font-family: var(--font-ui); font-size: 11px; font-weight: 500; color: var(--fg-dim);
+  background: none; border: none; border-radius: 8px; padding: 5.5px 2px; cursor: pointer;
+  transition: color 0.12s, background 0.12s; }
+.ask-mode:hover { color: var(--fg-bold); background: var(--hl); }
+.ask-mode.active { color: var(--fg-bold); background: var(--hl-strong); }
+.ask-mode kbd { font-family: var(--font-ui); font-size: 9px; font-weight: 500; color: var(--fg-faint);
+  background: color-mix(in srgb, var(--fg) 8%, transparent); border-radius: 4px; padding: 1px 4.5px; line-height: 1.6; }
+.ask-revise-chips { display: flex; gap: 2px; padding: 5px; border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--fg) 2.5%, transparent); }
+.ask-chip { flex: 1; font-family: var(--font-ui); font-size: 11px; font-weight: 500; color: var(--fg-dim);
+  background: none; border: none; border-radius: 8px; padding: 5.5px 2px; cursor: pointer; white-space: nowrap;
+  transition: color 0.12s, background 0.12s; }
+.ask-chip:hover { color: var(--fg-bold); background: var(--hl); }
+.ask-revise-note { margin: 0; padding: 7px 14px 9px; font-family: var(--font-ui); font-size: 10.5px;
+  line-height: var(--leading-ui); color: var(--fg-faint); border-top: 1px solid var(--border); }
+.ask-revision { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
+  border-top: 1px solid var(--border); }
+.ask-revision-status { font-family: var(--font-ui); font-size: 11px; line-height: var(--leading-ui); color: var(--fg-dim); }
+.ask-revision-status.error { color: var(--warn); }
+.ask-revision-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.ask-revision-button { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-ui);
+  font-size: 11px; font-weight: 500; color: var(--fg-dim); background: none; border: 1px solid var(--border);
+  border-radius: 8px; padding: 5px 9px; cursor: pointer; transition: color 0.12s, background 0.12s, border-color 0.12s; }
+.ask-revision-button:hover { color: var(--fg-bold); background: var(--hl); }
+.ask-revision-button.primary { color: var(--accent-contrast); background: var(--accent); border-color: var(--accent); }
+.ask-revision-button.primary:hover { filter: brightness(1.08); }
+
+/* The passage under revision, in the document itself. While the agent writes,
+   the region is dimmed in place; once a replacement lands, the current text and
+   the replacement sit one above the other with only the changed words marked. */
+.rh-revise-pending { opacity: 0.55; transition: opacity 0.2s; }
+.rh-revise-before, .rh-revise-after { border-left: 2px solid var(--border); padding-left: 0.75em;
+  margin: 0.35em 0; }
+.rh-revise-before { opacity: 0.7; }
+.rh-revise-after { border-left-color: var(--accent); }
+.rh-revise-del { text-decoration: line-through; text-decoration-thickness: 1px;
+  background: color-mix(in srgb, var(--warn) 16%, transparent); border-radius: 3px; }
+.rh-revise-ins { text-decoration: none; background: color-mix(in srgb, var(--accent) 20%, transparent);
+  border-radius: 3px; }
+
 /* Mobile selection is a separate interaction model: keep the desktop palette
    anchored to the text, but give touch users a stable, thumb-reachable sheet. */
 #ask.mobile-sheet { width: min(420px, calc(var(--overlay-viewport-width, 100vw) - var(--surface-edge) * 2));

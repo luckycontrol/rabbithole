@@ -436,8 +436,8 @@ export function createMarkdownRenderer({ encodeBase64 = defaultEncodeBase64, res
     };
   }
 
-  /** @param {unknown} markdown @param {{ baseUrl?: string | null, assetNames?: Set<string> | null, resolveAssetUrl?: ((name: string) => string | null) | null }} [options] */
-  function renderMarkdownToHtml(markdown, { baseUrl = null, assetNames = null, resolveAssetUrl: perCallResolver = null } = {}) {
+  /** @param {{ baseUrl?: string | null, assetNames?: Set<string> | null, resolveAssetUrl?: ((name: string) => string | null) | null }} [options] */
+  function buildMarked({ baseUrl = null, assetNames = null, resolveAssetUrl: perCallResolver = null } = {}) {
     const context = {
       baseUrl,
       assetNames,
@@ -446,11 +446,70 @@ export function createMarkdownRenderer({ encodeBase64 = defaultEncodeBase64, res
     /** @type {any} */
     const marked = new Marked({ gfm: true, breaks: false });
     marked.use({ extensions: buildExtensions(), renderer: buildRenderer(context), tokenizer: buildTokenizer() });
-    const html = marked.parse(String(markdown ?? ""));
+    return marked;
+  }
+
+  /** @param {string} html */
+  function tightenHtml(html) {
     return html.replace(/>\n+</g, "><").replace(/\n<\/code>/g, "</code>");
+  }
+
+  /** @param {unknown} markdown @param {{ baseUrl?: string | null, assetNames?: Set<string> | null, resolveAssetUrl?: ((name: string) => string | null) | null }} [options] */
+  function renderMarkdownToHtml(markdown, options = {}) {
+    return tightenHtml(buildMarked(options).parse(String(markdown ?? "")));
+  }
+
+  /**
+   * Split Markdown into its top-level blocks, each carrying the exact source
+   * span it was lexed from and the untightened HTML it renders to. Splicing a
+   * replacement over one block's `[start, end)` leaves every neighbouring byte
+   * untouched, which is what lets a caller rewrite one region of a document
+   * without re-emitting the rest of it.
+   *
+   * Spans are located rather than accumulated because the lexer legitimately
+   * consumes source without emitting a token for it: a link reference
+   * definition becomes an entry in the link table and nothing else. Summing
+   * `raw` lengths would silently shift every span after such a definition.
+   * The blocks therefore tile the source in order but need not cover it.
+   *
+   * Concatenating `html` over every block reproduces this renderer's
+   * untightened whole-document output. A caller that finds otherwise is
+   * looking at input outside this projection and must fall back to
+   * whole-document editing rather than splice a span it cannot place.
+   *
+   * @param {unknown} markdown
+   * @param {{ baseUrl?: string | null, assetNames?: Set<string> | null, resolveAssetUrl?: ((name: string) => string | null) | null }} [options]
+   * @returns {{ start: number, end: number, source: string, html: string, type: string }[]}
+   */
+  function lexBlockRegions(markdown, options = {}) {
+    const source = String(markdown ?? "");
+    const marked = buildMarked(options);
+    const tokens = marked.lexer(source);
+    const blocks = [];
+    let cursor = 0;
+    for (const token of tokens) {
+      const raw = String(token.raw ?? "");
+      const found = raw ? source.indexOf(raw, cursor) : cursor;
+      const start = found === -1 ? cursor : found;
+      cursor = start + raw.length;
+      // A single-token slice keeps the document's reference-link table so a
+      // block using `[label][ref]` still resolves against a definition that
+      // lives outside it.
+      const slice = /** @type {any} */ ([token]);
+      slice.links = tokens.links || {};
+      blocks.push({
+        start,
+        end: cursor,
+        source: raw,
+        html: marked.parser(slice),
+        type: String(token.type || ""),
+      });
+    }
+    return blocks;
   }
 
   return {
     renderMarkdownToHtml,
+    lexBlockRegions,
   };
 }
