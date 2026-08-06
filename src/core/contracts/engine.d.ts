@@ -74,6 +74,10 @@ export interface BranchRequestEvent extends NodePresentationFields {
   branch_type?: unknown;
   /** Optional durable crop asset prepared by a host for a PDF region ask. */
   crop_asset?: unknown;
+  /** Optional reader-chat linkage: the node this conversation is about (must resolve to an ancestor). */
+  chat_context_id?: unknown;
+  /** Optional reader-chat linkage: groups this ask with prior turns of the same conversation. */
+  chat_thread_id?: unknown;
 }
 export interface NodeProgressEvent extends NodeTarget, BaseUrlFields {
   type: "node_progress";

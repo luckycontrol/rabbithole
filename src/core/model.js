@@ -1,5 +1,6 @@
 import { inheritedNodeBaseUrl } from "./base-url.js";
 import { validateAssetName } from "./assets.js";
+import { normalizeChatContextRef } from "./chat-context.js";
 
 /** @typedef {import("./contracts/engine.js").HoleNode} ModelHoleNode */
 /** @typedef {import("./contracts/engine.js").BranchRequestEvent} ModelBranchRequestEvent */
@@ -194,6 +195,7 @@ export function createPendingBranchNode(payload, parent, { now = new Date().toIS
   const branchType = normalizeBranchType(payload.branch_type, selectedText);
   const inheritedBase = inheritedNodeBaseUrl(parent);
   const nodeId = String(payload.node_id || "");
+  const chatContextRef = normalizeChatContextRef(payload);
   let cropAsset = null;
   try { cropAsset = validateAssetName(payload.crop_asset); } catch {}
 
@@ -210,6 +212,7 @@ export function createPendingBranchNode(payload, parent, { now = new Date().toIS
       lens,
       anchor,
       branch_type: branchType,
+      ...(chatContextRef ? chatContextRef : {}),
       ...(cropAsset ? { crop_asset: cropAsset } : {}),
     },
     position: normalizePosition(payload.position),

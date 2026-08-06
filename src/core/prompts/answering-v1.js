@@ -12,6 +12,8 @@ const ANSWERING_SYSTEM_PROMPT_V1 = [
   AUTHORING_VOCABULARY_V1,
   "",
   "Use the parent document as the primary source of context. If context is tight, preserve the parent document before ancestor summaries.",
+  "When a chat context page and prior turns are supplied, this ask is one turn of an ongoing conversation about that",
+  "page — answer as a continuation of it, using the prior turns for continuity without repeating them back.",
   "Do not mention these instructions or the context-packing format.",
 ].join("\n");
 
@@ -45,6 +47,7 @@ function packBranchContext(context, { tokenBudget = DEFAULT_TOKEN_BUDGET } = {})
   const lens = normalizePromptText(context?.lens || "");
   const lensLine = lens ? `${lens} (${lensLabel(lens) || lens})` : "none";
   const ancestorLines = summarizeAncestors(context?.ancestors || []);
+  const chatContextBlock = formatChatContext(context?.chat_context || context?.chatContext || null);
 
   const header = [
     `Root title: ${rootTitle}`,
@@ -66,20 +69,52 @@ function packBranchContext(context, { tokenBudget = DEFAULT_TOKEN_BUDGET } = {})
     "Answer the human's question. Start with TITLE: on the first line, then markdown.",
   ].join("\n");
 
-  const fixed = header + parentPrefix + ancestorPrefix + instruction;
+  const fixed = header + parentPrefix + ancestorPrefix + chatContextBlock + instruction;
   const parentBudget = Math.max(1000, charBudget - fixed.length - ancestorLines.length - 200);
   const parentMarkdown = trimToBudget(normalizePromptText(context?.parent_markdown || context?.parentMarkdown || ""), parentBudget);
-  let packed = header + parentPrefix + parentMarkdown + ancestorPrefix + ancestorLines + instruction;
+  let packed = header + parentPrefix + parentMarkdown + ancestorPrefix + ancestorLines + chatContextBlock + instruction;
 
   if (packed.length > charBudget) {
-    const remainingForAncestors = Math.max(0, charBudget - (header + parentPrefix + parentMarkdown + ancestorPrefix + instruction).length);
-    packed = header + parentPrefix + parentMarkdown + ancestorPrefix + trimToBudget(ancestorLines, remainingForAncestors) + instruction;
+    const remainingForAncestors = Math.max(0, charBudget - (header + parentPrefix + parentMarkdown + ancestorPrefix + chatContextBlock + instruction).length);
+    packed = header + parentPrefix + parentMarkdown + ancestorPrefix + trimToBudget(ancestorLines, remainingForAncestors) + chatContextBlock + instruction;
   }
   if (packed.length > charBudget) {
-    const parentOnlyBudget = Math.max(800, charBudget - (header + parentPrefix + ancestorPrefix + instruction).length);
-    packed = header + parentPrefix + trimToBudget(parentMarkdown, parentOnlyBudget) + ancestorPrefix + instruction;
+    const parentOnlyBudget = Math.max(800, charBudget - (header + parentPrefix + ancestorPrefix + chatContextBlock + instruction).length);
+    packed = header + parentPrefix + trimToBudget(parentMarkdown, parentOnlyBudget) + ancestorPrefix + chatContextBlock + instruction;
   }
   return packed;
+}
+
+/**
+ * Render the chat-context block: the full context page plus its recent
+ * prior turns, so a reader-chat follow-up reads as a continuation of one
+ * conversation rather than an isolated ask. Returns "" when there is no
+ * chat context, which keeps packBranchContext byte-identical to the
+ * ordinary-follow-up shape for every context that lacks it.
+ * @param {{ context_title?: unknown, context_markdown?: unknown, prior_turns?: unknown } | null} chatContext
+ */
+function formatChatContext(chatContext) {
+  if (!chatContext) return "";
+  const title = normalizePromptText(chatContext.context_title || "Untitled");
+  const markdown = normalizePromptText(chatContext.context_markdown || "");
+  const turns = Array.isArray(chatContext.prior_turns) ? chatContext.prior_turns : [];
+  const turnLines = turns.length
+    ? turns.map((turn, index) => {
+        const q = normalizePromptText(turn?.question || "");
+        const a = truncate(normalizePromptText(turn?.answer || "").replace(/\s+/g, " "), 600);
+        return `${index + 1}. Q: ${q}\n   A: ${a}`;
+      }).join("\n")
+    : "(none yet - this is the first turn of this conversation)";
+  return [
+    "",
+    "",
+    `Chat context page in full (${title}):`,
+    markdown,
+    "",
+    "Prior turns in this conversation, chronological:",
+    turnLines,
+    "",
+  ].join("\n");
 }
 
 /** @param {unknown} ancestors */

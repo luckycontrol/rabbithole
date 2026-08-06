@@ -9,6 +9,7 @@ import { extractNodeAssetRefs } from "../../core/assets.js";
 import { createHoleState, holeStateToHole, holeStateToHydrationNodes, reduceHoleEvent } from "../../core/reducer.js";
 import { toPersistedHole } from "../../core/schema.js";
 import { canvasNodeKind, lineageTitlesFromMap, normalizePdfAnchor } from "../../core/model.js";
+import { describeChatContext, normalizeChatContextRef, resolveChatContext } from "../../core/chat-context.js";
 import { buildJsonError, closeServerGracefully, CLOSE_TIMEOUT_MS } from "./http.js";
 import { writeSseEvent } from "./sse.js";
 import { handleSessionRequest } from "./session-router.js";
@@ -888,6 +889,7 @@ export class RabbitHoleSession {
       const requestId = randomUUID();
       this.pendingByRequest.set(requestId, node.id);
       const parent = this.nodes.get(node.parent_id);
+      const chatContext = resolveChatContext(this.nodes, node.parent_id, normalizeChatContextRef(node.origin));
       const event = {
         status: "branch_request",
         session_id: this.id,
@@ -900,6 +902,7 @@ export class RabbitHoleSession {
         lens: node.origin.lens || null,
         lineage: this.lineageTitles(node.parent_id),
         saved: true, // asked while the agent was away; answer it like any other
+        ...(chatContext ? { chat_context: describeChatContext(chatContext) } : {}),
       };
       if (this.needsRehydration) {
         this.needsRehydration = false;
@@ -928,6 +931,7 @@ export class RabbitHoleSession {
     );
     const node = effects.createdNode;
     this.pendingByRequest.set(requestId, nodeId);
+    const chatContext = resolveChatContext(this.nodes, parentId, normalizeChatContextRef(node.origin));
 
     const event = {
       status: "branch_request",
@@ -940,6 +944,7 @@ export class RabbitHoleSession {
       question: node.origin.question,
       lens: node.origin.lens,
       lineage: this.lineageTitles(parentId),
+      ...(chatContext ? { chat_context: describeChatContext(chatContext) } : {}),
     };
 
     if (this.needsRehydration) {

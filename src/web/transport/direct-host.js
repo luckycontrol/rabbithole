@@ -1,6 +1,7 @@
 import { createHoleState, holeStateToHole, holeStateToHydrationNodes, reduceHoleEvent } from "../../core/reducer.js";
 import { normalizeBlockIds } from "../../core/blocks.js";
 import { canvasNodeKind, lineageNodesFromMap, normalizePdfAnchor, truncate } from "../../core/model.js";
+import { describeChatContext, normalizeChatContextRef, resolveChatContext } from "../../core/chat-context.js";
 import { extractNodeAssetRefs } from "../../core/assets.js";
 import { GenerationRun } from "../../core/generation-run.js";
 import { applyPersistedBrowserEvent, assetsOrphanedByDeletion, buildNodeAnsweredEvent, createSaveChain, dispatchBrowserEvent } from "../../core/hole-host.js";
@@ -751,6 +752,7 @@ export class DirectRabbitholeHost {
       title: entry.title,
       markdown: entry.markdown,
     }));
+    const chatContext = resolveChatContext(this.state.nodes, node.parent_id, normalizeChatContextRef(node.origin));
     return {
       root_title: root?.title || this.state.title || "Untitled",
       parent_title: parent?.title || "Untitled",
@@ -759,6 +761,7 @@ export class DirectRabbitholeHost {
       selected_text: node.origin?.selected_text || "",
       question: node.origin?.question || "",
       lens: node.origin?.lens || null,
+      ...(chatContext ? { chat_context: describeChatContext(chatContext) } : {}),
     };
   }
 

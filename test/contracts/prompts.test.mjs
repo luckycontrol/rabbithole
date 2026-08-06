@@ -21,6 +21,19 @@ const inherited = buildAnswerMessages({ ...context, attachment: { kind: "image",
 assert(inherited[1].content[0].text.startsWith("Parent clip image: attached (page 7). Trust the image over extracted text for math, tables, and figures.\n"));
 assert.equal(inherited[1].content[1].image_url.url, dataUrl);
 
+const chatContext = {
+  chat_context: {
+    context_title: "Reader page",
+    context_markdown: "Full page markdown.",
+    prior_turns: [{ question: "Earlier question?", answer: "Earlier answer." }],
+  },
+};
+const withChatContext = buildAnswerMessages({ ...context, ...chatContext });
+assert.match(withChatContext[1].content, /Chat context page in full \(Reader page\):\nFull page markdown\./);
+assert.match(withChatContext[1].content, /Earlier question\?/);
+assert.match(withChatContext[1].content, /Earlier answer\./);
+assert.equal(JSON.stringify(buildAnswerMessages({ ...context })), baseline, "chat-context-less messages remain byte-identical after packBranchContext gained the field");
+
 const transcription = buildTranscribeMessages({ pages: [{ n: 7, data_url: dataUrl }], tail: "x".repeat(700) });
 assert.equal(transcription[0].content.at(-1).image_url.url, dataUrl);
 assert.match(TRANSCRIBE_V1_RULES, /GitHub-flavored Markdown/); assert.match(TRANSCRIBE_V1_RULES, /LaTeX/); assert.match(TRANSCRIBE_V1_RULES, /GFM tables/);
