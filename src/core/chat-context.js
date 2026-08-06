@@ -26,6 +26,7 @@
 const MAX_ID_LENGTH = 128;
 const DEFAULT_MAX_PRIOR_TURNS = 12;
 
+/** @param {unknown} value */
 function normalizeChatId(value) {
   const s = String(value ?? "").trim();
   return s ? s.slice(0, MAX_ID_LENGTH) : "";
@@ -115,14 +116,18 @@ export function describeChatContext(chatContext) {
   };
 }
 
+/** @param {NodeCollection} nodes @param {unknown} id */
 function nodeById(nodes, id) {
-  return nodes instanceof Map ? nodes.get(id) : nodes?.[id];
+  const key = String(id ?? "");
+  return nodes instanceof Map ? nodes.get(key) : nodes?.[key];
 }
 
+/** @param {NodeCollection} nodes */
 function allNodes(nodes) {
   return nodes instanceof Map ? nodes.values() : Object.values(nodes || {});
 }
 
+/** @param {NodeCollection} nodes @param {unknown} ancestorId @param {unknown} nodeId */
 function isAncestorOrSelf(nodes, ancestorId, nodeId) {
   const guard = new Set();
   let current = nodeById(nodes, nodeId);

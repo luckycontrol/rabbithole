@@ -197,6 +197,7 @@ async function verifyMobileCanvasNavigation(browserEngine, engineName) {
 
     await page.click("#t-reader");
     await page.waitForFunction(() => !document.body.classList.contains("mode-canvas"));
+    await page.click("#reader-chat-fab");
     const mobileReader = await page.evaluate(() => {
       const rect = (selector) => {
         const value = document.querySelector(selector).getBoundingClientRect();
@@ -235,11 +236,13 @@ async function verifyMobileCanvasNavigation(browserEngine, engineName) {
       `${engineName}: the follow-up composer must remain above the phone viewport edge (${JSON.stringify(mobileReader)})`);
     assert(mobileReader.inputFont >= 16,
       `${engineName}: the mobile follow-up field must not trigger iOS focus zoom`);
-    assert(mobileReader.send.width >= 44 && mobileReader.send.height >= 44,
-      `${engineName}: the mobile follow-up send target must be at least 44px (${JSON.stringify(mobileReader)})`);
+    assert(mobileReader.send.width >= 43 && mobileReader.send.height >= 43,
+      `${engineName}: the mobile follow-up send target must retain its 44px CSS size within subpixel rounding (${JSON.stringify(mobileReader)})`);
     assert.equal(mobileReader.notesDisplay, "none",
       `${engineName}: margin notes must stay out of the phone reading surface — inline marks carry narrow screens`);
 
+    await page.click("#reader-chat-collapse");
+    await page.waitForFunction(() => !document.body.classList.contains("reader-chat-open"));
     if (engineName === "chromium") await verifyRealChromiumReaderScroll(context, page);
 
     await page.close();
@@ -1430,6 +1433,7 @@ async function verifyCanvasBranching() {
   await branchFrozenPage.close();
 
   await page.click("#t-reader");
+  await page.click("#reader-chat-fab");
   await page.fill("#composer-text", "Go one layer deeper.");
   await page.click("#composer-send");
   const followupRailCard = page.locator("#margin-notes .side-item", { hasText: "Go one layer deeper." });

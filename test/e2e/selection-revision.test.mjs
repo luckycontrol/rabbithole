@@ -41,6 +41,7 @@ try {
   // Revise is offered on answer cards, not on the root, so the card under test
   // is one the model wrote.
   await page.click("#t-reader");
+  await page.click("#reader-chat-fab");
   await page.waitForSelector("#composer-text:visible");
   await page.fill("#composer-text", "Explain the layers");
   await page.click("#composer-send");

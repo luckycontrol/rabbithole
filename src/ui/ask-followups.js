@@ -5,9 +5,6 @@ import {
   canvasBuilt,
   childrenOf,
   closed,
-  composerInner,
-  composerSend,
-  composerText,
   currentNodeId,
   flashHint,
   frozen,
@@ -18,7 +15,6 @@ import {
   readerMain,
   registerNode,
   shouldReduceMotion,
-  sessionPhase,
   uuid
 } from "./core.js";
 import {
@@ -48,7 +44,6 @@ import { charOffset, mountPdfRectMark, wrapInContainer } from "./text-marks.js";
 import { easeOutMotion } from "./easing.js";
 import { openAnchoredSurface } from "./overlay/anchor.js";
 import { cancelFrame, createModuleLifecycle, nextFrame } from "./lifecycle.js";
-import { applyComposerState } from "./composer-state.js";
 import { teardownNode } from "./node-teardown.js";
 import { ENTER_SEND_HINT, isComposingText, isSubmitEnter } from "./input-intent.js";
 import { canReviseWithAi } from "./ai-revision.js";
@@ -78,7 +73,6 @@ export function registerAskHooks(hooks) {
 export function initAskFollowups(){
   disposeAskFollowupResources(false);
   var askScope = askLifecycle.beginInit();
-  composerSend.title = ENTER_SEND_HINT;
   askGo.title = ENTER_SEND_HINT;
   askScope.listen(document, "mouseup", function(e){
     if (inAsk(e)) return;
@@ -115,11 +109,6 @@ export function initAskFollowups(){
   askScope.listen(askText, "input", function(){ autoGrowEl(askText, 110); });
   askScope.listen(askText, "keydown", onAskTextKeydown);
   askScope.listen(ask, "transitionend", function(e){ if (e.target === ask && askPosition) askPosition.update(); });
-  askScope.listen(composerText, "input", function(){ autoGrowComposer(); updateComposerState(); });
-  askScope.listen(composerText, "keydown", function(e){
-    if (isSubmitEnter(e)){ e.preventDefault(); submitFollowup("keyboard"); }
-  });
-  askScope.listen(composerSend, "click", function(e){ submitFollowup(motionSourceFromEvent(e)); });
   askScope.listen(readerMain, "wheel", interruptScrollAnimation, { passive: true });
   askScope.listen(readerMain, "touchstart", interruptScrollAnimation, { passive: true });
   askScope.listen(readerMain, "pointerdown", interruptScrollAnimation, { passive: true });
@@ -312,7 +301,6 @@ export function disposeAskFollowups(){
     scrollAnimId = 0;
     scrollAnimIgnoreUntil = 0;
     askText.value = "";
-    composerText.value = "";
   }
   // Custom Highlight API — keeps the selected text visibly marked while the popup
   // has focus. Best-effort: browsers without it just fall back to today's look.
@@ -512,27 +500,16 @@ export function disposeAskFollowups(){
     }
   }
 
-  // ---------- follow-up composer ----------
-export function updateComposerState(){
-    var current = nodes[currentNodeId];
-    // A missing agent doesn't disable asking — questions queue server-side and
-    // are answered when it returns. Only a closed session (server gone) does.
-    applyComposerState(
-      { text: composerText, send: composerSend, wrap: composerInner },
-      { phase: sessionPhase(), pending: !current || current.status === "pending" || !!current.extensions?.pdf?.converting },
-      { frozen: "Read-only snapshot — open the live Rabbithole to keep asking",
-        closed: "Session ended — reopen this Rabbithole from your terminal; saved questions are answered there",
-        pending: "This answer is still being written…",
-        away: "The agent is away — questions are saved and answered when it returns…",
-        live: "Ask a follow-up about this document…" }
-    );
-  }
-  function autoGrowComposer(){ autoGrowEl(composerText, 140); }
-
-  // Shared follow-up submission: from the reader composer or a card's docked
-  // one. Every direct child uses the same Reader branch rail.
-export function sendFollowup(parent, question, lens){
+  // Shared follow-up submission: from the reader chat or a card's docked
+  // composer. Every direct child uses the same Reader branch rail.
+export function sendFollowup(parent, question, lens, options){
     if (parent?.extensions?.pdf?.converting) return null;
+    options = options || {};
+    var chatContextId = String(options.chat_context_id || "").trim();
+    var chatThreadId = String(options.chat_thread_id || "").trim();
+    var chatRef = chatContextId && chatThreadId
+      ? { chat_context_id: chatContextId, chat_thread_id: chatThreadId }
+      : null;
     var requestId = uuid(), childId = uuid();
     var pos = placeChild(parent, BRANCH_FOLLOWUP);
     var node = {
@@ -542,7 +519,10 @@ export function sendFollowup(parent, question, lens){
 	      base_url: parent.base_url || null,
 	      base_url_source: parent.base_url ? "inherited" : null,
 	      read: false,
-      origin: { selected_text: "", question: question, lens: lens, anchor: null, branch_type: BRANCH_FOLLOWUP },
+      origin: {
+        selected_text: "", question: question, lens: lens, anchor: null, branch_type: BRANCH_FOLLOWUP,
+        ...(chatRef || {})
+      },
       x: pos.x, y: pos.y, w: DEFAULT_CHILD.w, h: DEFAULT_CHILD.h, font_scale: 1, collapsed: false,
       status: "pending", _order: nextOrder(), _startTs: Date.now()
     };
@@ -553,8 +533,11 @@ export function sendFollowup(parent, question, lens){
     var payload = { type: "branch_request", request_id: requestId, node_id: childId, parent_id: parent.id,
            selected_text: "", question: question, lens: lens, anchor: null,
            branch_type: BRANCH_FOLLOWUP,
+           ...(chatRef || {}),
            position: { x: node.x, y: node.y }, size: { w: node.w, h: node.h } };
-    askLifecycle.hooks.post(payload).then(function(res){ if (!res || !res.ok) rollbackBranch(node); });
+    askLifecycle.hooks.post(payload).then(function(res){
+      if (!res || !res.ok) rollbackBranch(node, options.onRollback);
+    });
     return node;
   }
 
@@ -598,27 +581,14 @@ export function animateScroll(el, target, source){
     scheduleScrollFrame(step);
   }
   function interruptScrollAnimation(){ cancelScrollAnimation(); }
-  function submitFollowup(source){
-    if (closed){ flashHint(frozen ? "This is a read-only snapshot." : "Session ended — reopen this Rabbithole from your terminal to continue."); return; }
-    var parent = nodes[currentNodeId];
-    if (!parent || parent.status === "pending" || parent.extensions?.pdf?.converting) return;
-    var question = composerText.value.trim();
-    if (!question) return;
-    sendFollowup(parent, question, null);
-    composerText.value = "";
-    autoGrowComposer();
-    updateComposerState();
-    var notes = document.getElementById("margin-notes");
-    if (notes) animateScroll(notes, notes.scrollHeight, source);
-  }
-
   // Undo an optimistic branch whose request the server rejected/never received.
   // No-op if the node is already gone, or if an answer raced in ahead of the
   // failed-POST callback (don't delete a node the agent actually answered).
-function rollbackBranch(node){
+function rollbackBranch(node, onRollback){
     var live = nodes[node.id];
     if (!live || live.status === "answered") return;
     teardownNode(node.id);
+    if (typeof onRollback === "function") onRollback(node);
     if (canvasBuilt) drawEdges();
     if (mode === "reader" && currentNodeId === node.parent_id) renderMarginNotes();
     flashHint("Couldn't reach the agent — that ask was undone.");

@@ -145,7 +145,7 @@ try {
       toolbarParent: toolbar.parentElement.id,
       toolsRect: rect(document.querySelector("#tb-tools")),
       sessionRect: rect(document.querySelector("#tb-session")),
-      composerRect: rect(document.querySelector("#composer")),
+      chatFabRect: rect(document.querySelector("#reader-chat-fab")),
       railRect: rect(rail),
       railDisplay: getComputedStyle(rail).display,
       railCount: document.querySelectorAll("#margin-notes .side-item").length,
@@ -166,16 +166,17 @@ try {
   assert(readerContract.toolbarRect.left >= readerContract.toolsRect.right + 8 && readerContract.toolbarRect.right <= readerContract.sessionRect.left - 8,
     "docked PDF controls must never overlap application or session controls");
   assert(Math.abs(readerContract.scrollRect.top - readerContract.mainRect.top) <= 0.5, "the PDF surface must start at the top of the reader viewport");
-  assert(Math.abs(readerContract.scrollRect.bottom - readerContract.mainRect.bottom) <= 0.5, "the PDF surface must fill the reader viewport down to the composer");
+  assert(Math.abs(readerContract.scrollRect.bottom - readerContract.mainRect.bottom) <= 0.5, "the PDF surface must fill the reader viewport to its bottom edge");
   assert(Math.abs(readerContract.scrollRect.left - readerContract.mainRect.left) <= 0.5 && Math.abs(readerContract.scrollRect.right - readerContract.mainRect.right) <= 0.5,
     "Reader must give PDF zoom the full remaining document pane instead of a prose-column viewport");
   assert.equal(readerContract.railDisplay, "flex", "desktop Reader must reserve a persistent branch rail even before the first branch");
   assert.equal(readerContract.railCount, 0, "a new PDF must begin with an honest empty branch rail");
   assert(Math.abs(readerContract.mainRect.right - readerContract.railRect.left) <= 0.5 && Math.abs(readerContract.railRect.right - readerContract.viewportWidth) <= 0.5,
     "the PDF pane and right-edge branch rail must consume the viewport without overlap or dead space");
-  assert(Math.abs(readerContract.composerRect.right - readerContract.railRect.left) <= 0.5,
-    "the follow-up composer must belong to the document pane instead of running underneath the rail");
-  assert(Math.abs(readerContract.composerRect.top - readerContract.mainRect.bottom) <= 0.5, "the composer must follow the PDF viewport without a dead band");
+  assert(readerContract.chatFabRect.right <= readerContract.railRect.left - 10,
+    "the collapsed chat button must stay inside the document pane instead of running underneath the rail");
+  assert(readerContract.chatFabRect.bottom <= readerContract.mainRect.bottom - 10,
+    "the collapsed chat button must stay inside the PDF reader viewport");
   assert(readerContract.pageRect.top - readerContract.scrollRect.top <= 11, "paper must begin immediately below the shared chrome clearance");
   assert(readerContract.scrollHeight > readerContract.scrollClientHeight * 5, "the docked Reader PDF must retain its complete document scroll range");
 

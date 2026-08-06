@@ -28,6 +28,7 @@ import {
 import { openPopover } from "./primitives/popover.js";
 import { createModuleLifecycle } from "./lifecycle.js";
 import { teardownNode } from "./node-teardown.js";
+import { syncReaderChatDeleted } from "./reader-chat.js";
 
 function defaultBranchHooks(){
   return {
@@ -274,6 +275,7 @@ export function removeNodesLocal(ids, parentId){
       clearEdgeHighlight(id);
       teardownNode(id);
     }
+    syncReaderChatDeleted(ids);
     if (currentGone){
       setCurrentNodeId((parentId && nodes[parentId]) ? parentId : rootId);
       if (mode === "reader") openNode(currentNodeId);

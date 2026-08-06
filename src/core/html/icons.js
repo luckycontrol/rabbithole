@@ -32,6 +32,7 @@ const ICON_DEFINITIONS = Object.freeze({
   close: { size: 16, attrs: STROKE_16, body: '<path d="m3.5 3.5 9 9M12.5 3.5l-9 9"/>' },
   expand: { size: 16, attrs: STROKE_16, body: '<path d="M9.25 3.75h3v3"/><path d="M12.25 3.75 8.75 7.25"/><path d="M6.75 12.25h-3v-3"/><path d="M3.75 12.25l3.5-3.5"/>' },
   collapse: { size: 16, attrs: STROKE_16, body: '<path d="M3 8h10"/>' },
+  chat: { size: 18, attrs: 'viewBox="0 0 18 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"', body: '<path d="M3 4.75A2.25 2.25 0 0 1 5.25 2.5h7.5A2.25 2.25 0 0 1 15 4.75v5.5a2.25 2.25 0 0 1-2.25 2.25H8l-3.7 3v-3.08A2.25 2.25 0 0 1 3 10.25z"/><path d="M6.25 6.4h5.5M6.25 9h3.5"/>' },
   restore: { size: 16, attrs: STROKE_16, body: '<path d="M3 8h10M8 3v10"/>' },
   "area-select": { size: 16, attrs: 'viewBox="0 0 16 16"', body: '<rect x="2.5" y="2.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.6 2.1"/>' },
   "file-text": { size: 16, attrs: 'viewBox="0 0 16 16"', body: '<path d="M4 2.5h5l3 3v8H4z" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><path d="M9 2.5v3h3M6 8h4M6 10.5h4" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/>' },

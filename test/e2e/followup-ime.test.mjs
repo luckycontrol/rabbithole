@@ -29,6 +29,7 @@ try {
   await createDocument(page, "# IME follow-up probe\n\nA document for Korean input composition.");
 
   await page.click("#t-reader");
+  await page.click("#reader-chat-fab");
   await dispatchComposingEnter(page, "#composer-text", "트");
   assert.equal(await page.locator("#margin-notes .side-item").count(), 0,
     "reader composing Enter must not create an intermediate follow-up branch");

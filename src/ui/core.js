@@ -374,8 +374,8 @@ function buildConvertProgress(node, pdfExt, committed){
 function visualSurfaceKey(node, base){
     return (base === CANVAS_BASE ? "canvas:" : "reader:") + ((node && node.id) || "unknown");
   }
-  function mountDocMedia(dc, node, base){
-    var surfaceKey = visualSurfaceKey(node, base);
+  function mountDocMedia(dc, node, base, requestedSurfaceKey){
+    var surfaceKey = requestedSurfaceKey || visualSurfaceKey(node, base);
     mountVisuals(dc, surfaceKey);
     if (typeof coreHooks.mountDocImages === "function") coreHooks.mountDocImages(dc, surfaceKey);
     mountCodeCopy(dc);
@@ -426,7 +426,7 @@ export function disposeNodeContent(node){
     Array.from(node._contentDisposers).forEach(function(dispose){ dispose(); });
     node._contentDisposers.clear();
   }
-export function buildDocContent(node, base){
+export function buildDocContent(node, base, requestedSurfaceKey){
     coreHooks.ensureNodeHtml(node);
     var dc = document.createElement("div");
     dc.className = "doc-content md";
@@ -434,7 +434,7 @@ export function buildDocContent(node, base){
     dc.dataset.surface = base === CANVAS_BASE ? "canvas" : "reader";
     dc.style.fontSize = fontPx(node, base) + "px";
     if (node.status === "pending"){
-      if (node.html) fillStreaming(dc, node, visualSurfaceKey(node, base));
+      if (node.html) fillStreaming(dc, node, requestedSurfaceKey || visualSurfaceKey(node, base));
       else dc.appendChild(buildLoading(node));
     }
     else {
@@ -454,7 +454,7 @@ export function buildDocContent(node, base){
           if (!committed) dc.innerHTML = "";
           dc.prepend(buildConvertProgress(node, pdfExt, committed));
         }
-        mountDocMedia(dc, node, base);
+        mountDocMedia(dc, node, base, requestedSurfaceKey);
       }
     }
     return dc;

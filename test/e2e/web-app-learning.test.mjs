@@ -37,6 +37,7 @@ async function verifyBranchContentSizing() {
   await page.waitForFunction(() => !!window.__rabbitholeTest);
   await createDocument(page, "# Sizing root\n\nAsk two follow-ups from here.");
   await page.click("#t-reader");
+  await page.click("#reader-chat-fab");
   await page.waitForSelector("#composer-text:visible");
 
   await page.fill("#composer-text", "Give me a brief answer");

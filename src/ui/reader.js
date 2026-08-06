@@ -58,7 +58,8 @@ function lensBadgeHtml(key) {
 function defaultReaderHooks(){
   return {
     hideAsk: function(){},
-    updateComposerState: function(){},
+    syncReaderChatContext: function(){},
+    updateReaderChatState: function(){},
     scheduleViewSave: function(){},
     setMode: function(){},
     post: function(){ return Promise.resolve({ ok: true }); },
@@ -106,6 +107,7 @@ export function openNode(id){
     var prev = nodes[currentNodeId];
     if (prev && !document.body.classList.contains("mode-canvas")) prev._scrollTop = readerMain.scrollTop;
     setCurrentNodeId(id);
+    readerLifecycle.hooks.syncReaderChatContext(id);
     setModeValue("reader");
     document.body.classList.remove("mode-canvas");
     readerLifecycle.hooks.hideAsk();
@@ -117,7 +119,7 @@ export function openNode(id){
       nodes[id]._scrollTop = readerMain.scrollTop;
     }
     renderMarginNotes();
-    readerLifecycle.hooks.updateComposerState();
+    readerLifecycle.hooks.updateReaderChatState();
     readerLifecycle.hooks.scheduleViewSave();
     return true;
   }

@@ -41,7 +41,11 @@ import {
   updateAnswerEditControl,
   updateCardComposer
 } from "./canvas-view.js";
-import { updateComposerState } from "./ask-followups.js";
+import {
+  hasReaderChatNode,
+  syncReaderChatNode,
+  updateReaderChatState
+} from "./reader-chat.js";
 import { removeNodesLocal } from "./branch-surfaces.js";
 import { refreshNodeHtml } from "./renderer.js";
 import { cancelFrame, nextFrame } from "./lifecycle.js";
@@ -188,7 +192,8 @@ export function connectSse(){
   var streamRenderRaf = 0;
   var streamRenderQueue = {};
   function hasStreamSurface(node){
-    return !!node.bodyEl || (mode === "reader" && (currentNodeId === node.id || currentNodeId === node.parent_id));
+    return !!node.bodyEl || hasReaderChatNode(node)
+      || (mode === "reader" && (currentNodeId === node.id || currentNodeId === node.parent_id));
   }
   function cancelQueuedStreamRender(nodeId){
     delete streamRenderQueue[nodeId];
@@ -253,6 +258,7 @@ export function disposeTransportStatus(){
   // human's place (an innerHTML swap briefly collapses scrollHeight, which
   // would otherwise clamp the scroll and make the view jump).
 function renderStreamSurfaces(node, firstChunk){
+    if (hasReaderChatNode(node)) syncReaderChatNode(node);
     if (node.bodyEl){
       var cs = node.bodyEl.scrollTop;
       fillBody(node);
@@ -315,9 +321,10 @@ function handleServer(msg){
       if (node.bodyEl){ fillBody(node); scheduleEdges(); }
       updateAnswerEditControl(node);
       updateCardComposer(node);
+      syncReaderChatNode(node);
       if (mode === "reader"){
         // The answered node itself may be open (e.g. opened pending from canvas).
-        if (currentNodeId === node.id){ renderBreadcrumb(); renderReaderBody(); renderMarginNotes(); updateComposerState(); }
+        if (currentNodeId === node.id){ renderBreadcrumb(); renderReaderBody(); renderMarginNotes(); updateReaderChatState(); }
         else {
           // The parent doc may be on screen as the main document OR as a
           // follow-up answer in the thread — upgrade marks wherever they are.
@@ -381,7 +388,7 @@ function handleServer(msg){
         renderStreamSurfaces(en, !en.md);
         if (en.bodyEl){ fillBody(en); scheduleEdges(); }
         if (mode === "reader"){
-          if (currentNodeId === en.id){ renderReaderBody(); updateComposerState(); }
+          if (currentNodeId === en.id){ renderReaderBody(); updateReaderChatState(); }
           else if (currentNodeId === en.parent_id) renderMarginNotes();
         }
       }
@@ -451,6 +458,6 @@ export function refreshStatus(){
       bannerDismissed = {};
     }
     if (mode === "reader") renderMarginNotes();
-    updateComposerState();
+    updateReaderChatState();
     if (canvasBuilt) for (var cid in nodes) updateCardComposer(nodes[cid]);
   }

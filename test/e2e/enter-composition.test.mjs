@@ -97,6 +97,7 @@ async function verifySelectionAsk(page, calls) {
 async function verifyReaderComposer(page, calls) {
   await page.click("#t-reader");
   await page.waitForFunction(() => !document.body.classList.contains("mode-canvas"));
+  await page.click("#reader-chat-fab");
   await page.fill("#composer-text", "composing reader");
   assert.equal((await dispatchComposingEnter(page, "#composer-text")).defaultPrevented, false);
   assert.equal(calls(), 1, "IME Enter must not submit the reader follow-up composer");

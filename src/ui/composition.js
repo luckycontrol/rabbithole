@@ -15,9 +15,14 @@ import {
   hideAsk,
   initAskFollowups,
   registerAskHooks,
-  sendFollowup,
-  updateComposerState
+  sendFollowup
 } from "./ask-followups.js";
+import {
+  disposeReaderChat,
+  initReaderChat,
+  syncReaderChatContext,
+  updateReaderChatState
+} from "./reader-chat.js";
 import { disposePalette, initPalette, registerPaletteHooks } from "./palette.js";
 import {
   closeShare,
@@ -74,7 +79,8 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
     });
     registerReaderHooks({
       hideAsk: hideAsk,
-      updateComposerState: updateComposerState,
+      syncReaderChatContext: syncReaderChatContext,
+      updateReaderChatState: updateReaderChatState,
       scheduleViewSave: host.scheduleViewSave || noop,
       setMode: setMode,
       post: post,
@@ -110,7 +116,7 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
           renderBreadcrumb();
           renderReaderBody();
           renderMarginNotes();
-          updateComposerState();
+          updateReaderChatState();
         }
       }
     });
@@ -131,6 +137,7 @@ export function createRabbitholeUi({ hydration, host, capabilities } = {}) {
     initReader(); own(disposeReader);
     initCanvasView(); own(disposeCanvasView);
     initAskFollowups(); own(disposeAskFollowups);
+    initReaderChat(); own(disposeReaderChat);
     initPalette(); own(disposePalette);
     initBranchSurfaces(); own(disposeBranchSurfaces);
     if (typeof host.start === "function") host.start();

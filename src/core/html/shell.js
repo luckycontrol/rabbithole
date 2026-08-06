@@ -47,12 +47,28 @@ export const CANVAS_SHELL = `
   <div id="reader-workspace">
     <div id="reader-document">
       <div id="reader-main"></div>
-      <div id="composer">
-        <div class="composer-inner" id="composer-inner">
-          <textarea id="composer-text" rows="1" placeholder="Ask a follow-up about this document…"></textarea>
-          <button id="composer-send" class="send-btn" title="Send (Enter) · New line (Shift+Enter)" aria-label="Send follow-up" disabled>${iconSvg("send")}</button>
+      ${iconButtonMarkup({ bare: true, className: "reader-chat-fab", id: "reader-chat-fab", title: "Ask about this document", ariaLabel: "Open document chat", ariaExpanded: "false", ariaControls: "reader-chat-panel", svgIconHtml: iconSvg("chat") })}
+      <section id="reader-chat-panel" aria-labelledby="reader-chat-title" aria-hidden="true">
+        <header class="reader-chat-head">
+          <div class="reader-chat-heading">
+            <span class="reader-chat-eyebrow">Ask this document</span>
+            <h2 id="reader-chat-title">Untitled</h2>
+          </div>
+          <div class="reader-chat-actions">
+            ${buttonMarkup({ bare: true, className: "reader-chat-new", id: "reader-chat-new", title: "Start a new conversation", ariaLabel: "Start a new conversation", label: "New chat", svgIconHtml: iconSvg("plus") })}
+            ${iconButtonMarkup({ bare: true, className: "reader-chat-collapse", id: "reader-chat-collapse", title: "Collapse chat", ariaLabel: "Collapse chat", svgIconHtml: iconSvg("collapse") })}
+          </div>
+        </header>
+        <div id="reader-chat-log" role="log" aria-live="polite" aria-relevant="additions text">
+          <p class="reader-chat-empty">Ask a question about this document. Follow-ups remember this page and the conversation.</p>
         </div>
-      </div>
+        <div id="composer">
+          <div class="composer-inner" id="composer-inner">
+            <textarea id="composer-text" rows="1" placeholder="Ask about this document…" aria-label="Ask about this document"></textarea>
+            <button id="composer-send" class="send-btn" title="Send (Enter) · New line (Shift+Enter)" aria-label="Send follow-up" disabled>${iconSvg("send")}</button>
+          </div>
+        </div>
+      </section>
     </div>
     <aside id="reader-rail" aria-labelledby="reader-rail-title">
       <div class="reader-rail-head">
