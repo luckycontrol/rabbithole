@@ -43,6 +43,15 @@ try {
   assert.equal(await page.textContent("#reader-rail-count"), "0",
     "reader chat answers must not increase the branch rail count");
 
+  const firstChatNodeCount = (await page.evaluate(() => window.__rabbitholeTest.readStoredHole())).nodes.length;
+  assert.equal(firstChatNodeCount, 2, "the root and first reader-chat turn remain stored for conversation context");
+  await page.click("#t-canvas");
+  assert.equal(await page.locator(".node").count(), 1,
+    "opening Canvas after a reader-chat turn must create only the root card");
+  assert.equal(await page.locator(".node", { hasText: "The first answer uses the root page." }).count(), 0,
+    "a stored reader-chat answer must not become a Canvas card");
+  await page.click("#t-reader");
+
   await page.fill("#composer-text", "How does that affect maintenance?");
   await page.click("#composer-send");
   await page.locator("#reader-chat-log .reader-chat-turn", { hasText: "The second answer remembers the first turn." }).waitFor();
@@ -52,6 +61,12 @@ try {
   assert.match(secondPrompt, /orbital gardens/, "a later turn retains the original page");
   assert.match(secondPrompt, /What is special here\?/, "a later turn retains the earlier question");
   assert.match(secondPrompt, /first answer uses the root page/i, "a later turn retains the earlier answer");
+  await page.click("#t-canvas");
+  assert.equal(await page.locator(".node").count(), 1,
+    "a reader-chat turn created after Canvas initialization must not create a card");
+  assert.equal(await page.locator(".node", { hasText: "The second answer remembers the first turn." }).count(), 0,
+    "the later reader-chat answer must remain exclusive to the chat panel");
+  await page.click("#t-reader");
 
   const storedBeforeNew = await page.evaluate(() => window.__rabbitholeTest.readStoredHole());
   const branchCountBeforeNew = storedBeforeNew.nodes.length;
@@ -85,6 +100,11 @@ try {
   await frozen.click("#reader-chat-fab");
   assert.equal(await frozen.locator("#reader-chat-panel").isVisible(), true, "snapshot can open the chat panel");
   assert.equal(await frozen.locator("#composer-text").isDisabled(), true, "snapshot chat is read-only");
+  await frozen.click("#t-canvas");
+  assert.equal(await frozen.locator(".node").count(), 1,
+    "snapshot Canvas must omit every stored reader-chat turn");
+  assert.equal(await frozen.locator(".node", { hasText: "This belongs to a new conversation." }).count(), 0,
+    "snapshot reader-chat answers must not become cards");
   await frozen.close();
   await context.close();
   console.log("ok reader chat: two-state panel, multi-turn context, new chat, focus, and frozen behavior");

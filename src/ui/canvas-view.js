@@ -55,6 +55,7 @@ import {
   canvasNodeKind,
   canvasTextWeight,
   CANVAS_TEXT_WEIGHTS,
+  isChatContextNode,
   lensLabel,
   truncate
 } from "../core/model.js";
@@ -478,6 +479,9 @@ export function updateAnswerEditControl(node){
   }
 
 export function createNodeEl(node, enter){
+    // Reader-chat turns remain durable model nodes so later questions can reuse
+    // their context, but they are conversation state rather than canvas cards.
+    if (isChatContextNode(node)) return null;
     var manualKind = canvasNodeKind(node);
     var el = document.createElement("div");
     el.className = "node" + (node.id === rootId ? " root" : "");
@@ -1299,7 +1303,7 @@ function focusOrigin(node, on){
 
 export function frameAll(animate, source){
     var visCache = Object.create(null);
-    var ids = Object.keys(nodes).filter(function(id){ return isVisible(nodes[id], visCache); });
+    var ids = Object.keys(nodes).filter(function(id){ return nodes[id].el && isVisible(nodes[id], visCache); });
     if (!ids.length) return;
     var minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
     ids.forEach(function(id){ var n=nodes[id]; minX=Math.min(minX,n.x); minY=Math.min(minY,n.y); maxX=Math.max(maxX,n.x+n.w); maxY=Math.max(maxY,n.y+effH(n)); });
@@ -1327,7 +1331,7 @@ export function tidy(source){
     var visited={};
     function moveSubtree(node, dx, dy){
       node.x += dx; node.y += dy;
-      childrenOf(node.id).filter(function(k){ return visited[k.id]; }).sort(nodeOrder).forEach(function(k){ moveSubtree(k, dx, dy); });
+      childrenOf(node.id).filter(function(k){ return k.el && visited[k.id]; }).sort(nodeOrder).forEach(function(k){ moveSubtree(k, dx, dy); });
     }
     function place(node, x, y){
       visited[node.id] = true;
@@ -1335,7 +1339,7 @@ export function tidy(source){
       var bounds = nodeBounds(node, { effH: effH });
       if (node.collapsed) return bounds;
 
-      var kids = childrenOf(node.id).sort(nodeOrder);
+      var kids = childrenOf(node.id).filter(function(k){ return !!k.el; }).sort(nodeOrder);
       var selectionKids = kids.filter(isSelectionBranch);
       var followupKids = kids.filter(isFollowup);
       var sideBounds = null;
