@@ -27,6 +27,7 @@ import {
   branchTypeOfNode,
   canvasNodeKind,
   isChatContextNode,
+  isEditableAnswer,
   lensLabel,
   lineageNodesFromMap,
   truncate
@@ -279,8 +280,7 @@ export function renderReaderBody(){
   }
 
 function isAnswerNodeEditable(node){
-  return !!node && !closed && node.parent_id != null
-    && node.status === "answered" && !canvasNodeKind(node);
+  return !closed && isEditableAnswer(node);
 }
 
 function buildReaderAnswerActions(node){

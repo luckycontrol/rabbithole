@@ -17,6 +17,7 @@ export const CANVAS_NODE_TEXT = "text";
 export const CANVAS_NODE_CARD = "card";
 export const CANVAS_TEXT_DEFAULT_WEIGHT = 400;
 export const CANVAS_TEXT_WEIGHTS = Object.freeze([400, 500, 600, 700]);
+export const GENERATED_ROOT_ANSWER_VERSION = 1;
 
 /** @type {Readonly<Record<PropertyKey, { label: string, q: string }>>} */
 export const LENSES = Object.freeze({
@@ -81,6 +82,22 @@ export function canvasNodeKind(node) {
   const record = /** @type {{ version?: unknown, kind?: unknown }} */ (canvas);
   if (record.version !== CANVAS_NODE_ORIGIN_VERSION) return null;
   return record.kind === CANVAS_NODE_TEXT || record.kind === CANVAS_NODE_CARD ? record.kind : null;
+}
+
+/** @param {{ extensions?: unknown } | null | undefined} node */
+export function isGeneratedRootAnswer(node) {
+  const source = /** @type {{ generated_root_answer?: unknown } | null | undefined} */ (node?.extensions)?.generated_root_answer;
+  return !!source && typeof source === "object"
+    && /** @type {{ version?: unknown }} */ (source).version === GENERATED_ROOT_ANSWER_VERSION;
+}
+
+/**
+ * @param {{ parent_id?: unknown, status?: unknown, origin?: unknown, extensions?: unknown } | null | undefined} node
+ * @returns {node is ModelHoleNode}
+ */
+export function isEditableAnswer(node) {
+  return !!node && node.status === "answered" && !canvasNodeKind(node)
+    && (node.parent_id != null || isGeneratedRootAnswer(node));
 }
 
 /** @param {unknown} value */

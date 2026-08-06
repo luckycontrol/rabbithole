@@ -1,6 +1,6 @@
 import { createHoleState, holeStateToHole, holeStateToHydrationNodes, reduceHoleEvent } from "../../core/reducer.js";
 import { normalizeBlockIds } from "../../core/blocks.js";
-import { canvasNodeKind, lineageNodesFromMap, normalizePdfAnchor, truncate } from "../../core/model.js";
+import { GENERATED_ROOT_ANSWER_VERSION, isEditableAnswer, lineageNodesFromMap, normalizePdfAnchor, truncate } from "../../core/model.js";
 import { describeChatContext, normalizeChatContextRef, resolveChatContext } from "../../core/chat-context.js";
 import { extractNodeAssetRefs } from "../../core/assets.js";
 import { GenerationRun } from "../../core/generation-run.js";
@@ -31,6 +31,10 @@ export class DirectRabbitholeHost {
     this.mintGenerationRunId = mintGenerationRunId;
     this.registerAssetUrl = registerAssetUrl;
     this.state = createHoleState(hole);
+    const root = this.state.nodes.get(this.state.root_id);
+    if (rootQuestionForNode(root)) {
+      root.extensions = { ...root.extensions, generated_root_answer: { version: GENERATED_ROOT_ANSWER_VERSION } };
+    }
     this.holeId = this.state.hole_id;
     this.title = this.state.title;
     this.saveTimer = 0;
@@ -130,6 +134,7 @@ export class DirectRabbitholeHost {
               return { ok: false, error: "The test transport rejected this answer save." };
             }
             const result = this.applyPersistedBrowserEvent(event);
+            this.title = this.state.title;
             await this.flushSave();
             return result;
           },
@@ -803,8 +808,7 @@ export class DirectRabbitholeHost {
 }
 
 function isRevisableAnswer(node) {
-  return !!node && node.parent_id != null && node.status === "answered"
-    && !canvasNodeKind(node) && !normalizePdfExtension(node);
+  return isEditableAnswer(node) && !normalizePdfExtension(node);
 }
 
 /**
