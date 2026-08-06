@@ -113,13 +113,12 @@ record the rationale and use `npm run calibrate:budgets` deliberately.
 3. Add or update a focused regression test.
 4. Make the smallest coherent change; avoid mixing mechanical moves with
    behavior changes.
-5. Run the focused test while iterating, then the suite appropriate to the
-   touched boundary.
-6. Rebuild generated artifacts when browser code changes.
-7. Before opening a pull request, run the complete validation set appropriate
-   to the change.
+5. Rebuild generated artifacts when browser code changes.
+6. Do not run tests unless the user explicitly asks for them in their current
+   request. An implementation request alone is not permission to run tests.
 
-For most source changes, the full local validation set is:
+When the user explicitly requests full local validation, the validation set for
+most source changes is:
 
 ```bash
 npm run check:types

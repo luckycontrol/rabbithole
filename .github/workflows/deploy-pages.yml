@@ -36,17 +36,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install browser test runtimes
-        run: npx playwright install --with-deps chromium firefox webkit
-
       - name: Verify types, boundaries, and committed bundles
         run: |
           npm run check:types
           npm run check:purity
           npm run check:dist
-
-      - name: Run the full test suite
-        run: npm test
 
       - name: Build the production site
         run: npm run build:publish

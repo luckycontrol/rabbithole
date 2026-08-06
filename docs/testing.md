@@ -10,14 +10,20 @@ because they are slower or environment-dependent.
 
 ## Running tests
 
+Do not run tests unless the user explicitly requests them in their current
+request. An implementation request alone does not authorize test execution.
+Tests may still be added or updated and left unexecuted.
+
+When execution is explicitly requested:
+
 ```bash
 npm test
 npm run test:packaging
 npm run eval
 ```
 
-Individual files are ordinary Node programs and can be run directly while
-iterating:
+Individual files are ordinary Node programs and can be run directly when their
+execution is explicitly requested:
 
 ```bash
 node test/unit/reducer.test.mjs

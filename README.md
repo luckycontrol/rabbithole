@@ -336,9 +336,9 @@ GitHub `npx` installs use the committed artifacts.
 ### Production deployment
 
 The [`Deploy Cloudflare Pages`](./.github/workflows/deploy-pages.yml) workflow
-runs the complete test suite and deploys `publish/` to the `rabbithole` Pages
-project on every push to `main`. It can also be rerun manually from GitHub
-Actions. Each Cloudflare deployment is tagged with the exact Git commit.
+deploys `publish/` to the `rabbithole` Pages project on every push to `main`.
+Tests run only through the manually started [`CI`](./.github/workflows/ci.yml)
+workflow. Each Cloudflare deployment is tagged with the exact Git commit.
 
 The workflow requires:
 

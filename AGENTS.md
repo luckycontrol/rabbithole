@@ -36,6 +36,18 @@ Storage is JSON files under `~/.rabbithole/` (`RABBITHOLE_DIR` overrides).
 Logs go to stderr — stdout is reserved for the MCP protocol; never print to
 stdout.
 
+## Test execution policy
+
+Do not run tests unless the user explicitly asks for tests in their current
+request. An implementation request by itself does not authorize test execution.
+This applies to focused tests, test suites, packaging tests, performance tests,
+and live-provider evaluations.
+
+Tests may still be added or updated when a change requires coverage, but leave
+them unexecuted and state that clearly in the final report. Builds and static
+verification commands remain allowed; do not treat them as permission to run
+tests.
+
 ## Development workflow
 
 For every code change that adds, modifies, or removes Rabbithole functionality:
