@@ -976,6 +976,9 @@ async function verifyAskKeyUxAndRail() {
       "# Attention mechanism\n\n",
       "Attention compares tokens, scores their relevance, and mixes information according to those scores.",
     ], [
+      "TITLE: Revised first answer\n",
+      "## First answer revision\n\nThe generated root can be revised in place.",
+    ], [
       "## Branch answer\n\nThis answer is ready to edit.",
     ], [
       "TITLE: Revised in place\n",
@@ -1011,7 +1014,15 @@ async function verifyAskKeyUxAndRail() {
   assert.equal(await page.locator("#composer-modal").isVisible(), false, "the composer should close before the root begins streaming");
   assert(!/creating (?:the )?(?:root|first)|creating your starting point/i.test(await page.locator("body").innerText()), "root creation status copy should be absent");
   await waitForCanvasText(page, "Attention compares tokens");
-  await selectText(page, "Attention compares tokens");
+  const rootCard = page.locator(`.node[data-id="${rootIdWhileLoading}"]`);
+  await rootCard.getByRole("button", { name: "Revise this card with AI" }).click();
+  const rootRevision = rootCard.locator(".ai-revision");
+  await rootRevision.getByRole("textbox", { name: "AI revision instruction" }).fill("Clarify the first answer");
+  await rootRevision.getByRole("button", { name: "Generate revision" }).click();
+  await rootRevision.getByText("The generated root can be revised in place.").waitFor();
+  await rootRevision.getByRole("button", { name: "Apply revision" }).click();
+  await rootCard.getByText("The generated root can be revised in place.").waitFor();
+  await selectText(page, "generated root can be revised");
   await page.waitForSelector("#ask.visible");
   await page.fill("#ask-text", "Can I revise this answer?");
   await page.click("#ask-go");

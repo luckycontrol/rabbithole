@@ -7,7 +7,7 @@ import {
   showHint,
   uuid,
 } from "./core.js";
-import { canvasNodeKind } from "../core/model.js";
+import { isEditableAnswer } from "../core/model.js";
 import { buttonMarkup } from "../core/html/button-markup.js";
 import { iconSvg } from "../core/html/icons.js";
 import { refreshNodeHtml } from "./renderer.js";
@@ -31,8 +31,7 @@ export function disposeAiRevision() {
 }
 
 export function canReviseWithAi(node) {
-  return !!node && !closed && node.parent_id != null && node.status === "answered"
-    && !canvasNodeKind(node) && !node.extensions?.pdf;
+  return !closed && isEditableAnswer(node) && !node.extensions?.pdf;
 }
 
 export function updateAiRevisionControl(node) {

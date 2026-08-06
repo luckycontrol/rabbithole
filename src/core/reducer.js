@@ -5,6 +5,7 @@ import {
   applyNodeUpdateFields,
   canvasNodeKind,
   CANVAS_NODE_CARD,
+  isEditableAnswer,
   CANVAS_NODE_ORIGIN_VERSION,
   CANVAS_NODE_TEXT,
   normalizeCanvasTextWeight,
@@ -189,16 +190,17 @@ function reduceCanvasNodeContent(state, event, options) {
 function reduceAnswerNodeContent(state, event, options) {
   const nodeId = String(event.node_id || "");
   const node = state.nodes.get(nodeId);
-  // A generated branch answer is safe to revise only after generation settles.
-  // Root documents and manual canvas items retain their existing authoring paths.
-  if (!node || node.parent_id == null || node.status !== "answered" || canvasNodeKind(node)) return withState(state);
+  // Generated answers are safe to revise only after generation settles. An
+  // imported root document and manual canvas items retain their authoring paths.
+  if (!isEditableAnswer(node)) return withState(state);
   const nodes = cloneNodes(state, options);
-  nodes.set(nodeId, {
+  const next = {
     ...node,
     title: String(event.title ?? node.title ?? "Untitled").trim() || "Untitled",
     markdown: normalizeBlockIds(String(event.markdown ?? node.markdown ?? ""), { idFactory: options.idFactory }).markdown,
-  });
-  return withState({ ...state, nodes }, { node_id: nodeId });
+  };
+  nodes.set(nodeId, next);
+  return withState({ ...state, ...(nodeId === state.root_id ? { title: next.title } : {}), nodes }, { node_id: nodeId });
 }
 
 /** @param {HoleState} state @param {NodeExtensionsPatchEvent} event @param {ReduceOptions} options */

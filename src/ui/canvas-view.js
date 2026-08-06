@@ -56,6 +56,8 @@ import {
   canvasTextWeight,
   CANVAS_TEXT_WEIGHTS,
   isChatContextNode,
+  isEditableAnswer,
+  isGeneratedRootAnswer,
   lensLabel,
   truncate
 } from "../core/model.js";
@@ -464,8 +466,7 @@ function screenToWorld(sx, sy){ return { x: (sx - view.x) / view.scale, y: (sy -
   }
 
   function isAnswerNodeEditable(node){
-    return !!node && node.id !== rootId && node.parent_id != null
-      && !canvasNodeKind(node) && node.status === "answered";
+    return isEditableAnswer(node);
   }
 
 export function updateAnswerEditControl(node){
@@ -521,7 +522,7 @@ export function createNodeEl(node, enter){
     }
     var answerEditBtn = null;
     var aiRevisionBtn = null;
-    if (!manualKind && node.parent_id != null){
+    if (!manualKind && (node.parent_id != null || isGeneratedRootAnswer(node))){
       answerEditBtn = cardButton(iconButtonMarkup({ bare: true, className: "node-btn canvas-answer-edit", svgIconHtml: iconSvg("edit"), ariaLabel: "Edit answer Markdown", title: "Edit answer Markdown" }));
       answerEditBtn.addEventListener("click", function(e){
         e.stopPropagation();

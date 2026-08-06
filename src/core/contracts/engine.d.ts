@@ -112,7 +112,7 @@ export interface CanvasNodeContentEvent extends NodeTarget {
   /** Whole-object text weight for a standalone canvas text node. */
   font_weight?: unknown;
 }
-/** User-authored title and Markdown replacement for a settled branch answer. */
+/** User-authored title and Markdown replacement for a settled generated answer. */
 export interface AnswerNodeContentEvent extends NodeTarget {
   type: "answer_node_content";
   title?: unknown;

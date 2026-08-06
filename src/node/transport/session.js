@@ -8,7 +8,7 @@ import { maybeUpgradeBaseUrlFromFrontmatter, normalizeBaseUrl } from "../../core
 import { extractNodeAssetRefs } from "../../core/assets.js";
 import { createHoleState, holeStateToHole, holeStateToHydrationNodes, reduceHoleEvent } from "../../core/reducer.js";
 import { toPersistedHole } from "../../core/schema.js";
-import { canvasNodeKind, lineageTitlesFromMap, normalizePdfAnchor } from "../../core/model.js";
+import { isEditableAnswer, lineageTitlesFromMap, normalizePdfAnchor } from "../../core/model.js";
 import { describeChatContext, normalizeChatContextRef, resolveChatContext } from "../../core/chat-context.js";
 import { buildJsonError, closeServerGracefully, CLOSE_TIMEOUT_MS } from "./http.js";
 import { writeSseEvent } from "./sse.js";
@@ -1185,6 +1185,5 @@ export class RabbitHoleSession {
 }
 
 function isRevisableAnswer(node) {
-  return !!node && node.parent_id != null && node.status === "answered"
-    && !canvasNodeKind(node) && !normalizePdfExtension(node);
+  return isEditableAnswer(node) && !normalizePdfExtension(node);
 }
