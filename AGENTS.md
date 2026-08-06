@@ -5,6 +5,12 @@ need to clone or build anything. Follow the Quick start in [README.md](./README.
 (one `claude mcp add` / `codex mcp add` line). This file is for agents
 **developing** the repo.
 
+## Agent execution
+
+Work directly in the current agent process. Do not launch or delegate work to
+subagents, agent teams, multi-agent workflows, or background agents. Perform all
+repository exploration, planning, implementation, and review yourself.
+
 ## What this is
 
 An MCP server (stdio) that opens a branching-document canvas in the browser.
