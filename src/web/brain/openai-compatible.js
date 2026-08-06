@@ -1,7 +1,7 @@
 import { buildAnswerMessages } from "../../core/prompts/answering-v1.js";
 import { buildAuthorMessages } from "../../core/prompts/authoring-v1.js";
 import { buildExplainerMessages } from "../../core/prompts/explainer-v1.js";
-import { buildRevisionMessages } from "../../core/prompts/revision-v1.js";
+import { buildRevisionMessages, buildSelectionRevisionMessages } from "../../core/prompts/revision-v1.js";
 import { buildTranscribeMessages } from "../../core/prompts/transcribe-v1.js";
 import { ProviderError, normalizeProviderError } from "./errors.js";
 import { addressSpaceHint } from "./model-endpoint.js";
@@ -95,6 +95,25 @@ export class OpenAICompatibleBrain {
       extraHeaders: this.extraHeaders,
       title: this.title,
     }), { fallbackTitle: context?.title || "Untitled" });
+  }
+
+  // Plain text out, not a card: the reply replaces a span of an existing one,
+  // so it carries no title sentinel for the branch adapter to strip.
+  async *reviseSelection(context, signal) {
+    const body = {
+      model: this.model,
+      messages: buildSelectionRevisionMessages(context),
+      stream: true,
+      temperature: 0.25,
+    };
+    yield* adaptTextGeneration(streamOpenAICompatible({
+      url: chatCompletionsUrl(this.baseUrl),
+      apiKey: this.apiKey,
+      body,
+      signal,
+      extraHeaders: this.extraHeaders,
+      title: this.title,
+    }));
   }
 
   async *transcribePages(input, signal) {

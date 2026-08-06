@@ -57,6 +57,22 @@ function renderNodeMarkdown(node) {
   });
 }
 
+// Same render options as renderNodeMarkdown, so the blocks returned here
+// describe exactly the HTML this node is displaying.
+export function lexNodeBlockRegions(node) {
+  return markdownRenderer.lexBlockRegions(node && node.md, {
+    baseUrl: (node && node.base_url) || null,
+    assetNames: assetNames
+  });
+}
+
+export function renderNodeMarkdownFragment(node, markdown) {
+  return renderMarkdownToHtml(markdown, {
+    baseUrl: (node && node.base_url) || null,
+    assetNames: assetNames
+  });
+}
+
 export function refreshNodeHtml(node) {
   if (!node) return "";
   node.html = renderNodeMarkdown(node);

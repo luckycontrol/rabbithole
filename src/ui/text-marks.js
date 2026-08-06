@@ -88,7 +88,7 @@ export function removeMarks(root, childId){
   }
 }
 
-function rangeFromOffsets(container, startOff, endOff){
+export function rangeFromOffsets(container, startOff, endOff){
   var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
   var pos = 0, sN, sO, eN, eO;
   while (walker.nextNode()){

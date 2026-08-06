@@ -13,6 +13,15 @@ const ANSWER_SCHEMA = {
   },
 };
 
+// A selection revision replaces a span of a card that already has a title, so
+// the reply carries content only.
+const FRAGMENT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["content"],
+  properties: { content: { type: "string", description: "The replacement GFM markdown for the selected region" } },
+};
+
 const TRANSCRIPTION_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -59,6 +68,7 @@ function branchPrompt(event) {
 }
 
 function revisionPrompt(event) {
+  if (event.selection) return selectionRevisionPrompt(event);
   return [
     "Revise the existing Rabbithole card according to the human's instruction.",
     "Return only the requested structured output: a short title and the complete replacement GFM Markdown.",
@@ -68,6 +78,29 @@ function revisionPrompt(event) {
     JSON.stringify({
       current_title: event.current_title,
       current_markdown: event.current_markdown,
+      instruction: event.instruction,
+      lineage: event.lineage,
+      rehydration: event.rehydration,
+    }, null, 2),
+  ].join("\n");
+}
+
+// The reply here is spliced between two exact offsets of current_markdown, so
+// anything wrapped around the region — a fence, a preamble, the untouched
+// neighbours — would land in the document verbatim.
+function selectionRevisionPrompt(event) {
+  return [
+    "Revise one region of the existing Rabbithole card according to the human's instruction.",
+    "`content` must be ONLY the replacement GFM Markdown for selection.region_markdown.",
+    "Do not restate the rest of the card, do not wrap the reply in a code fence unless the region is itself fenced, and do not describe the edits.",
+    "Change what the instruction asks about selection.selected_text and reproduce the rest of the region verbatim.",
+    "The region is whole Markdown blocks; keep its heading, list, table, or fence structure unless the instruction asks otherwise.",
+    "Do not invoke tools, inspect files, or ask for confirmation.",
+    "",
+    JSON.stringify({
+      current_title: event.current_title,
+      current_markdown: event.current_markdown,
+      selection: event.selection,
       instruction: event.instruction,
       lineage: event.lineage,
       rehydration: event.rehydration,
@@ -199,7 +232,8 @@ export class CodexWatchDriver {
   }
 
   generateRevision(event, { signal } = {}) {
-    return this.runStructuredTurn({ prompt: revisionPrompt(event), schema: ANSWER_SCHEMA, signal });
+    const schema = event.selection ? FRAGMENT_SCHEMA : ANSWER_SCHEMA;
+    return this.runStructuredTurn({ prompt: revisionPrompt(event), schema, signal });
   }
 
   async answer(event, answer, { signal } = {}) {

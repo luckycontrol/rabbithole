@@ -5,6 +5,7 @@ import { extractNodeAssetRefs } from "../../core/assets.js";
 import { GenerationRun } from "../../core/generation-run.js";
 import { applyPersistedBrowserEvent, assetsOrphanedByDeletion, buildNodeAnsweredEvent, createSaveChain, dispatchBrowserEvent } from "../../core/hole-host.js";
 import { randomId } from "../../core/utils.js";
+import { normalizeRevisionFragment, readSelectionRegion, selectionRegionMatches } from "../../core/selection-revision.js";
 import { createWhimsicalHoleId } from "../hole-id.js";
 import { ProviderError, normalizeProviderError } from "../brain/errors.js";
 import { fallbackTitleForNode } from "../brain/title-sentinel.js";
@@ -132,6 +133,9 @@ export class DirectRabbitholeHost {
             return result;
           },
           retry_branch: (event) => this.handleRetry(event),
+          // Anchors move when the text they point at is rewritten, so the
+          // surface that rewrites it also reports where they landed.
+          node_origin: (event) => this.applyPersistedBrowserEvent(event),
           node_update: (event) => this.applyPersistedBrowserEvent(event),
           nodes_update: (event) => this.applyPersistedBrowserEvent(event),
           block_state: (event) => this.applyPersistedBrowserEvent(event),
@@ -164,11 +168,22 @@ export class DirectRabbitholeHost {
   handleRevisionRequest(payload) {
     const node = this.state.nodes.get(String(payload.node_id || ""));
     if (!isRevisableAnswer(node)) throw new Error("Only completed answer cards can be revised with AI.");
-    if (!this.brain?.reviseCard) throw new ProviderError("Add your provider key to revise this card.", {
-      status: 401, code: "missing_key", retryable: true,
-    });
     const instruction = String(payload.instruction || "").trim();
     if (!instruction) throw new Error("Tell AI how to revise this card.");
+    const region = readSelectionRegion(payload.selection);
+    if (region && !selectionRegionMatches(node.markdown, region)) {
+      throw new Error("This card changed since that passage was selected — select it again.");
+    }
+    // A selection revision calls the provider through its own method, so it is
+    // gated on that capability alone rather than on whole-card revision. The
+    // order matches the MCP session: what the human can fix by reselecting is
+    // reported before what only a provider key can fix.
+    if (region ? !this.brain?.reviseSelection : !this.brain?.reviseCard) {
+      throw new ProviderError(
+        region ? "Add your provider key to revise this passage." : "Add your provider key to revise this card.",
+        { status: 401, code: "missing_key", retryable: true },
+      );
+    }
     const requestId = String(payload.request_id || randomId("revision"));
     for (const [id, active] of this.revisionByRequest) {
       if (active.nodeId !== node.id) continue;
@@ -176,24 +191,28 @@ export class DirectRabbitholeHost {
       this.revisionByRequest.delete(id);
     }
     const controller = new AbortController();
-    const active = { requestId, nodeId: node.id, instruction, controller };
+    const active = { requestId, nodeId: node.id, instruction, controller, region };
     this.revisionByRequest.set(requestId, active);
-    queueMicrotask(() => this.runRevision(active).catch((error) => this.failRevision(active, error)));
+    const run = region ? () => this.runSelectionRevision(active) : () => this.runRevision(active);
+    queueMicrotask(() => run().catch((error) => this.failRevision(active, error)));
     return { ok: true, request_id: requestId, node_id: node.id };
+  }
+
+  revisionContext(node) {
+    const root = this.state.nodes.get(this.state.root_id);
+    return {
+      root_title: root?.title || this.title || "Untitled",
+      lineage: lineageNodesFromMap(this.state.nodes, node.id).map((entry) => entry.title || "Untitled"),
+      title: node.title || "Untitled",
+      markdown: node.markdown || "",
+    };
   }
 
   async runRevision(active) {
     const node = this.state.nodes.get(active.nodeId);
     if (!isRevisableAnswer(node) || this.revisionByRequest.get(active.requestId) !== active) return;
-    const root = this.state.nodes.get(this.state.root_id);
     const run = new GenerationRun({ id: this.mintGenerationRunId(), fallbackTitle: node.title || "Untitled" });
-    const context = {
-      root_title: root?.title || this.title || "Untitled",
-      lineage: lineageNodesFromMap(this.state.nodes, node.id).map((entry) => entry.title || "Untitled"),
-      title: node.title || "Untitled",
-      markdown: node.markdown || "",
-      instruction: active.instruction,
-    };
+    const context = { ...this.revisionContext(node), instruction: active.instruction };
     for await (const event of this.brain.reviseCard(context, active.controller.signal)) {
       if (active.controller.signal.aborted || this.revisionByRequest.get(active.requestId) !== active) return;
       run.accept(event, { nodeId: node.id });
@@ -206,6 +225,34 @@ export class DirectRabbitholeHost {
     const result = run.complete({ nodeId: node.id });
     this.emit({ type: "revision_ready", request_id: active.requestId, node_id: node.id,
       title: result.title, markdown: result.markdown });
+  }
+
+  // The fragment path keeps its own accumulator rather than a GenerationRun:
+  // the reply is a span of an existing card, so there is no title to parse out
+  // of it and no block ids to mint for it.
+  async runSelectionRevision(active) {
+    const node = this.state.nodes.get(active.nodeId);
+    if (!isRevisableAnswer(node) || this.revisionByRequest.get(active.requestId) !== active) return;
+    const context = {
+      ...this.revisionContext(node),
+      instruction: active.instruction,
+      region_markdown: active.region.region_markdown,
+      selected_text: active.region.selected_text,
+    };
+    let fragment = "";
+    for await (const event of this.brain.reviseSelection(context, active.controller.signal)) {
+      if (active.controller.signal.aborted || this.revisionByRequest.get(active.requestId) !== active) return;
+      if (event?.type !== "text" || !event.delta) continue;
+      fragment += event.delta;
+      this.emit({ type: "revision_progress", request_id: active.requestId, node_id: node.id,
+        scope: "selection", selection: active.region, fragment });
+    }
+    if (active.controller.signal.aborted || this.revisionByRequest.get(active.requestId) !== active) return;
+    this.revisionByRequest.delete(active.requestId);
+    this.emit({ type: "revision_ready", request_id: active.requestId, node_id: node.id,
+      scope: "selection", selection: active.region,
+      fragment: normalizeRevisionFragment(fragment, active.region.region_markdown),
+      stale: !selectionRegionMatches(node.markdown, active.region) });
   }
 
   failRevision(active, error) {

@@ -51,6 +51,14 @@ import { cancelFrame, createModuleLifecycle, nextFrame } from "./lifecycle.js";
 import { applyComposerState } from "./composer-state.js";
 import { teardownNode } from "./node-teardown.js";
 import { ENTER_SEND_HINT, isComposingText, isSubmitEnter } from "./input-intent.js";
+import { canReviseWithAi } from "./ai-revision.js";
+import { regionRenderedRange, resolveSelectionRegion } from "./selection-region.js";
+import {
+  branchesInsideRegion,
+  cancelSelectionRevision,
+  isSelectionRevisionActive,
+  startSelectionRevision
+} from "./revise-selection.js";
 
 function defaultAskHooks(){
   return {
@@ -87,6 +95,22 @@ export function initAskFollowups(){
   askScope.listen(document.getElementById("ask-lenses"), "click", function(e){
     var b = e.target.closest ? e.target.closest(".lens") : null;
     if (b) submitAsk(b.getAttribute("data-lens"), motionSourceFromEvent(e));
+  });
+  askScope.listen(document.getElementById("ask-modes"), "click", function(e){
+    var tab = e.target.closest ? e.target.closest(".ask-mode") : null;
+    if (tab) setAskMode(tab.getAttribute("data-mode"));
+  });
+  askScope.listen(document.getElementById("ask-modes"), "keydown", function(e){
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    setAskMode(askMode === "ask" ? "revise" : "ask");
+  });
+  askScope.listen(document.getElementById("ask-revise-chips"), "click", function(e){
+    var chip = e.target.closest ? e.target.closest(".ask-chip") : null;
+    if (!chip) return;
+    askText.value = chip.getAttribute("data-instruction") || "";
+    askText.focus();
+    submitRevise();
   });
   askScope.listen(askText, "input", function(){ autoGrowEl(askText, 110); });
   askScope.listen(askText, "keydown", onAskTextKeydown);
@@ -160,6 +184,7 @@ function inAsk(e){ return e.target && e.target.closest && e.target.closest("#ask
     if (ask.classList.contains("visible")) hideAsk();
     pendingAsk = { parentId: parentId, container: dc, selectedText: sel.toString().trim(),
                    startOff: startOff, endOff: endOff, range: range.cloneRange() };
+    prepareRevise(dc, nodes[parentId], range);
     paintAskHighlight(pendingAsk.range);
     askText.value = "";
     askText.placeholder = "Ask about this…";
@@ -191,6 +216,7 @@ export function showAskFromSelection(options){
     pendingAsk = { parentId: parentId, container: anchorNode && anchorNode.closest ? anchorNode.closest(".doc-content") : null,
       selectedText: String(options.selectedText || "").trim(), startOff: options.mdStart,
       endOff: options.mdEnd, pdfAnchor: options.pdfAnchor || null, range: options.range || null };
+    prepareRevise(pendingAsk.container, parent, pendingAsk.range);
     if (pendingAsk.range) paintAskHighlight(pendingAsk.range);
     askText.value = "";
     askText.placeholder = "Ask about this…";
@@ -243,6 +269,30 @@ export function hideAsk(){
     if (askOwnerCleanup){ var cleanup = askOwnerCleanup; askOwnerCleanup = null; cleanup(); }
     askTabOwner = null;
     ask.classList.remove("visible"); pendingAsk = null; clearAskHighlight();
+    resetReviseSurface();
+  }
+
+  // Closing the surface abandons a revision in flight: its preview lives in the
+  // document, and leaving that behind with nothing to accept it would strand
+  // the reader in a diff they cannot dismiss.
+  function resetReviseSurface(){
+    if (isSelectionRevisionActive()) cancelSelectionRevision({ silent: true });
+    pendingRegion = null;
+    askMode = "ask";
+    ask.classList.remove("mode-revise", "revision-running");
+    var modes = document.getElementById("ask-modes");
+    if (modes) modes.hidden = true;
+    var input = document.querySelector(".ask-input");
+    if (input) input.hidden = false;
+    var lenses = document.getElementById("ask-lenses");
+    if (lenses) lenses.hidden = false;
+    var chips = document.getElementById("ask-revise-chips");
+    if (chips) chips.hidden = true;
+    var note = document.getElementById("ask-revise-note");
+    if (note) note.hidden = true;
+    var panel = document.getElementById("ask-revision");
+    if (panel){ panel.hidden = true; panel.replaceChildren(); }
+    askText.placeholder = "Ask about this…";
   }
 
 export function disposeAskFollowups(){
@@ -275,13 +325,121 @@ export function disposeAskFollowups(){
 
   var LENS_KEYS = { "1": "explain", "2": "eli5", "3": "example", "4": "deeper" };
   function onAskTextKeydown(e){
-    if (isSubmitEnter(e)){ e.preventDefault(); submitAsk(null, "keyboard"); }
-    // Number keys are lens shortcuts only while the box is empty — once the
-    // human starts typing a question, digits are just digits.
-    else if (!isComposingText(e) && askText.value === "" && !e.metaKey && !e.ctrlKey && !e.altKey && LENS_KEYS[e.key]){
+    if (isSubmitEnter(e)){
+      e.preventDefault();
+      if (askMode === "revise") submitRevise();
+      else submitAsk(null, "keyboard");
+      return;
+    }
+    if (isComposingText(e) || askText.value !== "" || e.metaKey || e.ctrlKey || e.altKey) return;
+    // Single letters and digits are shortcuts only while the box is empty —
+    // once the human starts typing, they are just characters.
+    if (askMode === "ask" && LENS_KEYS[e.key]){
       e.preventDefault();
       submitAsk(LENS_KEYS[e.key], "keyboard");
+    } else if (e.key === "e" && pendingRegion){
+      e.preventDefault();
+      setAskMode(askMode === "revise" ? "ask" : "revise");
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Ask / Revise
+  // ---------------------------------------------------------------------------
+  // The same drag opens both: a question that branches, or an instruction that
+  // rewrites the passage in place. Revise is offered only when the passage can
+  // actually be placed back in the card's Markdown source — see
+  // resolveSelectionRegion — so the tab is absent rather than failing on use.
+
+  var askMode = "ask", pendingRegion = null;
+
+  // Revise is offered only for a passage this card can actually splice: an
+  // editable answer, in the reader, whose selection maps back to whole blocks
+  // of its Markdown source. Everything else keeps the ask-only surface.
+  function prepareRevise(dc, node, range){
+    pendingRegion = null;
+    askMode = "ask";
+    if (canReviseWithAi(node) && mode === "reader" && dc && dc.closest("#reader-main")){
+      pendingRegion = resolveSelectionRegion(dc, node, range);
+    }
+    if (pendingRegion && pendingAsk){
+      var rendered = regionRenderedRange(dc, node, pendingRegion);
+      pendingAsk.renderedStart = rendered ? rendered.start : null;
+      pendingAsk.renderedEnd = rendered ? rendered.end : null;
+    }
+    refreshAskModes();
+  }
+
+  function refreshAskModes(){
+    var modes = document.getElementById("ask-modes");
+    if (!modes) return;
+    modes.hidden = !pendingRegion;
+    var tabs = modes.querySelectorAll(".ask-mode");
+    for (var i = 0; i < tabs.length; i++){
+      var selected = tabs[i].getAttribute("data-mode") === askMode;
+      tabs[i].classList.toggle("active", selected);
+      tabs[i].setAttribute("aria-selected", selected ? "true" : "false");
+      tabs[i].tabIndex = selected ? 0 : -1;
+    }
+    var revising = askMode === "revise";
+    ask.classList.toggle("mode-revise", revising);
+    askText.placeholder = revising ? "How should AI change this?" : "Ask about this…";
+    document.getElementById("ask-lenses").hidden = revising;
+    document.getElementById("ask-revise-chips").hidden = !revising;
+    var note = document.getElementById("ask-revise-note");
+    note.hidden = !revising;
+    if (revising) note.textContent = reviseNoteText();
+  }
+
+  function reviseNoteText(){
+    var parent = pendingAsk && nodes[pendingAsk.parentId];
+    var detached = parent && pendingAsk.renderedStart != null
+      ? branchesInsideRegion(parent, pendingAsk.renderedStart, pendingAsk.renderedEnd).length
+      : 0;
+    var base = "AI rewrites this passage in place. You review it before it is saved.";
+    if (!detached) return base;
+    return base + " " + detached + (detached === 1 ? " branch here loses" : " branches here lose")
+      + " its link to the text.";
+  }
+
+  function setAskMode(next){
+    var wanted = next === "revise" && pendingRegion ? "revise" : "ask";
+    if (wanted === askMode) return;
+    askMode = wanted;
+    refreshAskModes();
+    askText.focus({ preventScroll: true });
+    if (askPosition) askPosition.update();
+  }
+
+  function submitRevise(){
+    if (!pendingAsk || !pendingRegion || closed) return;
+    var parent = nodes[pendingAsk.parentId];
+    var instruction = askText.value.trim();
+    if (!parent){ hideAsk(); return; }
+    if (!instruction){ flashHint("Tell AI how to change this passage."); return; }
+    var panel = document.getElementById("ask-revision");
+    var started = startSelectionRevision({
+      node: parent,
+      region: pendingRegion,
+      instruction: instruction,
+      selectedText: pendingAsk.selectedText,
+      panel: panel,
+      onPhase: function(phase){
+        if (phase === "closed" || phase === "applied") hideAsk();
+        else if (askPosition) askPosition.update();
+      },
+    });
+    if (!started) return;
+    var sel = window.getSelection(); if (sel) sel.removeAllRanges();
+    // The surface stays open on the phases the panel drives, but the composer
+    // above it has done its job.
+    askText.value = "";
+    ask.classList.add("revision-running");
+    document.getElementById("ask-modes").hidden = true;
+    document.querySelector(".ask-input").hidden = true;
+    document.getElementById("ask-revise-chips").hidden = true;
+    document.getElementById("ask-revise-note").hidden = true;
+    if (askPosition) askPosition.update();
   }
 
   function retirePdfConversionAction(parent){
